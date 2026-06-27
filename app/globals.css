@@ -227,14 +227,24 @@ button {
 
 .compaction-preview dl {
   display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
   margin: 10px 0 0;
 }
 
 .compaction-preview dl div {
-  display: grid;
+  align-items: baseline;
+  display: flex;
   gap: 2px;
+  justify-content: space-between;
+}
+
+.compaction-preview dt {
+  flex: 0 0 auto;
+}
+
+.compaction-preview dd {
+  font-weight: 700;
+  text-align: right;
 }
 
 .compaction-preview strong {

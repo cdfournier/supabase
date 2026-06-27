@@ -433,8 +433,9 @@ function RuntimeHealthPanel({
           {compactionPreview ? (
             <div className="compaction-preview">
               <p>
-                <strong>{compactionPreview.mode}</strong>
+                <strong>Preview ready</strong>
               </p>
+              <p>No messages changed. This is a read-only briefing for planning the blink.</p>
               <dl>
                 <div>
                   <dt>Messages</dt>
@@ -449,7 +450,7 @@ function RuntimeHealthPanel({
                   <dd>{compactionPreview.pressure.level}</dd>
                 </div>
               </dl>
-              <p>{compactionPreview.next_step}</p>
+              <p>Next: ask the agent to review the preview and policy before any compacting tool is allowed to write.</p>
             </div>
           ) : null}
 
