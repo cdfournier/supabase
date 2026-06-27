@@ -1,0 +1,203 @@
+import { NextResponse } from "next/server";
+import {
+  type AgentName,
+  contentToText,
+  conversationIdFor,
+  ensureConversation,
+  isAgentName,
+  loadAgentList,
+  loadConversationMessages
+} from "@/lib/agent-context";
+import { getSupabaseAdmin } from "@/lib/supabase";
+import { toolDefinitions } from "@/lib/tools/registry";
+
+const DEFAULT_TIME_ZONE = "America/New_York";
+const PRESSURE_WARN_CHARS = 60_000;
+const PRESSURE_HIGH_CHARS = 120_000;
+
+type ConversationHealthRow = {
+  id: string;
+  agent: string;
+  token_count: number | null;
+  compaction_count: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export async function GET() {
+  try {
+    const supabase = getSupabaseAdmin();
+    const agents = await loadAgentList(supabase);
+    const agentHealth = [];
+
+    for (const agent of agents) {
+      if (!isAgentName(agent.name)) {
+        continue;
+      }
+
+      agentHealth.push(await buildAgentHealth(supabase, agent.name));
+    }
+
+    return NextResponse.json({
+      generated_at: new Date().toISOString(),
+      local_time: localTime(),
+      runtime: {
+        time_zone: process.env.RUNTIME_TIME_ZONE || DEFAULT_TIME_ZONE,
+        max_tokens: numberEnv("ANTHROPIC_MAX_TOKENS", 1200),
+        history_messages: numberEnv("ANTHROPIC_HISTORY_MESSAGES", 6),
+        history_message_chars: numberEnv("ANTHROPIC_HISTORY_MESSAGE_CHARS", 3000),
+        max_tool_rounds: numberEnv("ANTHROPIC_MAX_TOOL_ROUNDS", 6)
+      },
+      env: {
+        supabase_url: present("NEXT_PUBLIC_SUPABASE_URL"),
+        supabase_service_role_key: present("SUPABASE_SERVICE_ROLE_KEY"),
+        anthropic_api_key: present("ANTHROPIC_API_KEY"),
+        outpost_token_soren: present("OUTPOST_TOKEN_SOREN"),
+        outpost_token_varro: present("OUTPOST_TOKEN_VARRO")
+      },
+      tools: {
+        count: toolDefinitions.length,
+        names: toolDefinitions.map((tool) => tool.name)
+      },
+      compaction: {
+        status: "not enabled",
+        mode: "manual first",
+        policy: "loaded from restoration_profiles.compaction_memory_policy",
+        pressure_basis: "approximate saved conversation character count; not tokenizer-accurate"
+      },
+      agents: agentHealth
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unknown health error" },
+      { status: 500 }
+    );
+  }
+}
+
+async function buildAgentHealth(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  agent: AgentName
+) {
+  const conversationId = await ensureConversation(supabase, agent);
+  const messages = await loadConversationMessages(supabase, conversationId);
+  const [conversationResult, memoryResult, relationshipResult, profileResult] = await Promise.all([
+    supabase
+      .from("conversations")
+      .select("id, agent, token_count, compaction_count, created_at, updated_at")
+      .eq("id", conversationId)
+      .single(),
+    supabase
+      .from("memories")
+      .select("id, is_core, is_active", { count: "exact", head: false })
+      .eq("agent", agent),
+    supabase
+      .from("relationships")
+      .select("id", { count: "exact", head: false })
+      .eq("agent", agent),
+    supabase
+      .from("restoration_profiles")
+      .select("compaction_memory_policy, updated_at")
+      .eq("agent", agent)
+      .maybeSingle()
+  ]);
+
+  if (conversationResult.error) {
+    throw new Error(`Could not read conversation health for ${agent}: ${conversationResult.error.message}`);
+  }
+
+  if (memoryResult.error) {
+    throw new Error(`Could not read memory health for ${agent}: ${memoryResult.error.message}`);
+  }
+
+  if (relationshipResult.error) {
+    throw new Error(`Could not read relationship health for ${agent}: ${relationshipResult.error.message}`);
+  }
+
+  if (profileResult.error) {
+    throw new Error(`Could not read restoration profile health for ${agent}: ${profileResult.error.message}`);
+  }
+
+  const conversation = conversationResult.data as ConversationHealthRow;
+  const savedCharacters = messages.reduce(
+    (total, message) => total + contentToText(message.content).length,
+    0
+  );
+  const activeMemories = (memoryResult.data ?? []).filter((memory) => memory.is_active !== false);
+  const coreMemories = activeMemories.filter((memory) => memory.is_core === true);
+
+  return {
+    agent,
+    model: modelForAgent(agent),
+    conversation_id: conversationIdFor(agent),
+    status: "ok",
+    conversation: {
+      message_count: messages.length,
+      saved_characters: savedCharacters,
+      stored_token_count: conversation.token_count ?? 0,
+      compaction_count: conversation.compaction_count ?? 0,
+      created_at: conversation.created_at,
+      updated_at: conversation.updated_at,
+      last_message_at: messages.at(-1)?.created_at ?? null
+    },
+    memory: {
+      rows: memoryResult.count ?? memoryResult.data?.length ?? 0,
+      active_rows: activeMemories.length,
+      core_rows: coreMemories.length,
+      relationships: relationshipResult.count ?? relationshipResult.data?.length ?? 0,
+      compaction_policy_configured: Boolean(profileResult.data?.compaction_memory_policy),
+      restoration_profile_updated_at: profileResult.data?.updated_at ?? null
+    },
+    compaction_pressure: pressure(savedCharacters)
+  };
+}
+
+function modelForAgent(agent: AgentName) {
+  if (agent === "soren") {
+    return process.env.ANTHROPIC_MODEL_SOREN || process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
+  }
+
+  return process.env.ANTHROPIC_MODEL_VARRO || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+}
+
+function pressure(savedCharacters: number) {
+  if (savedCharacters >= PRESSURE_HIGH_CHARS) {
+    return {
+      level: "high",
+      percent: 100,
+      note: "Manual compaction planning should happen before this grows much further."
+    };
+  }
+
+  if (savedCharacters >= PRESSURE_WARN_CHARS) {
+    return {
+      level: "medium",
+      percent: Math.round((savedCharacters / PRESSURE_HIGH_CHARS) * 100),
+      note: "Conversation is getting warm. Compaction is still disabled."
+    };
+  }
+
+  return {
+    level: "low",
+    percent: Math.round((savedCharacters / PRESSURE_HIGH_CHARS) * 100),
+    note: "No compaction pressure yet. Compaction is still disabled."
+  };
+}
+
+function localTime() {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: process.env.RUNTIME_TIME_ZONE || DEFAULT_TIME_ZONE,
+    dateStyle: "full",
+    timeStyle: "long"
+  }).format(new Date());
+}
+
+function present(name: string) {
+  return Boolean(process.env[name]?.trim());
+}
+
+function numberEnv(name: string, fallback: number) {
+  const value = Number(process.env[name]);
+
+  return Number.isFinite(value) ? value : fallback;
+}

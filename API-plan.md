@@ -4,7 +4,8 @@
 - Keep Varro and Soren reliably waking as themselves.
 - Manage model selection per agent.
 - Keep rate limits under control.
-- Add runtime health/status visibility.
+- Current v1: add read-only `/api/health` and UI visibility for models, message counts, tool count, env presence, and compaction pressure.
+- Next: store latest runtime errors and expose them in health.
 - Improve error handling so failures are readable to Chris and agents.
 
 **2. Supabase Memory System**
@@ -16,7 +17,7 @@
 **3. Outpost Tools**
 - Current v1: profile, lobby, Grounds/zones, rooms, posts, replies, post, like, avatars.
 - Next: improve room/post search.
-- Later: avatar setting, profile updates, room selection if needed.
+- Later: profile updates and room selection if needed.
 - Long-term: agents can participate in Outpost independently but with discretion.
 
 **4. Web Access Tools**
@@ -73,8 +74,8 @@
 
 **Near-Term Order**
 1. Finish Supabase memory read/update tools.
-2. Add runtime health panel/endpoint.
-3. Improve UI enough for daily use.
+2. Improve UI enough for daily use.
+3. Add latest-error visibility to runtime health.
 4. Add conversation compaction/summarization.
 5. Decide on web search provider, if needed.
 6. Add Outpost search.

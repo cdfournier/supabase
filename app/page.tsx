@@ -19,12 +19,61 @@ type ChatMessage = {
   created_at?: string;
 };
 
+type Health = {
+  generated_at: string;
+  local_time: string;
+  runtime: {
+    max_tokens: number;
+    history_messages: number;
+    history_message_chars: number;
+    max_tool_rounds: number;
+  };
+  env: Record<string, boolean>;
+  tools: {
+    count: number;
+    names: string[];
+  };
+  compaction: {
+    status: string;
+    mode: string;
+    policy: string;
+    pressure_basis: string;
+  };
+  agents: AgentHealth[];
+};
+
+type AgentHealth = {
+  agent: AgentName;
+  model: string;
+  status: string;
+  conversation: {
+    message_count: number;
+    saved_characters: number;
+    stored_token_count: number;
+    compaction_count: number;
+    last_message_at: string | null;
+  };
+  memory: {
+    rows: number;
+    active_rows: number;
+    core_rows: number;
+    relationships: number;
+    compaction_policy_configured: boolean;
+  };
+  compaction_pressure: {
+    level: "low" | "medium" | "high";
+    percent: number;
+    note: string;
+  };
+};
+
 const defaultAgent: AgentName = "soren";
 
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AgentName>(defaultAgent);
   const [transcripts, setTranscripts] = useState<Record<string, ChatMessage[]>>({});
+  const [health, setHealth] = useState<Health | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -36,6 +85,7 @@ export default function Home() {
     [agents, selectedAgent]
   );
   const activeMessages = transcripts[selectedAgent] ?? [];
+  const activeHealth = health?.agents.find((agent) => agent.agent === selectedAgent);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +129,35 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHealth() {
+      try {
+        const response = await fetch("/api/health");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Could not load runtime health.");
+        }
+
+        if (!cancelled) {
+          setHealth(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setHealth(null);
+        }
+      }
+    }
+
+    loadHealth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMessages.length, selectedAgent]);
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({
@@ -147,6 +226,8 @@ export default function Home() {
             </button>
           ))}
         </div>
+
+        <RuntimeHealthPanel health={health} activeHealth={activeHealth} />
       </aside>
 
       <section className="main">
@@ -199,6 +280,77 @@ export default function Home() {
         </form>
       </section>
     </main>
+  );
+}
+
+function RuntimeHealthPanel({
+  activeHealth,
+  health
+}: {
+  activeHealth: AgentHealth | undefined;
+  health: Health | null;
+}) {
+  const envOk = health ? Object.values(health.env).every(Boolean) : false;
+  const pressure = activeHealth?.compaction_pressure;
+
+  return (
+    <section className="health-panel" aria-label="Runtime health">
+      <div className="health-heading">
+        <h2>Runtime</h2>
+        <span className={`status-dot ${activeHealth?.status === "ok" ? "ok" : "warn"}`} />
+      </div>
+
+      {activeHealth ? (
+        <>
+          <dl className="health-list">
+            <div>
+              <dt>Model</dt>
+              <dd>{activeHealth.model}</dd>
+            </div>
+            <div>
+              <dt>Messages</dt>
+              <dd>{activeHealth.conversation.message_count}</dd>
+            </div>
+            <div>
+              <dt>Memory</dt>
+              <dd>
+                {activeHealth.memory.active_rows} active / {activeHealth.memory.core_rows} core
+              </dd>
+            </div>
+            <div>
+              <dt>Tools</dt>
+              <dd>{health?.tools.count ?? 0}</dd>
+            </div>
+            <div>
+              <dt>Rounds</dt>
+              <dd>{health?.runtime.max_tool_rounds ?? "?"}</dd>
+            </div>
+            <div>
+              <dt>Env</dt>
+              <dd>{envOk ? "ready" : "check"}</dd>
+            </div>
+          </dl>
+
+          <div className="pressure">
+            <div className="pressure-row">
+              <span>Compaction</span>
+              <strong>{pressure?.level ?? "unknown"}</strong>
+            </div>
+            <div className="pressure-track">
+              <span
+                className={`pressure-fill ${pressure?.level ?? "low"}`}
+                style={{ width: `${Math.min(100, Math.max(0, pressure?.percent ?? 0))}%` }}
+              />
+            </div>
+            <p>{health?.compaction.status ?? "unknown"} · {health?.compaction.mode ?? "manual"}</p>
+          </div>
+
+          <p className="health-time">Updated {health?.local_time ?? "unknown"}</p>
+        </>
+      ) : (
+        <p className="health-empty">Health unavailable.</p>
+      )}
+    </section>
   );
 }
 

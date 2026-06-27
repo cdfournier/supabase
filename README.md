@@ -15,6 +15,7 @@ This project is intentionally modest. It gives each agent a persistent database-
   - agent-scoped relationship summaries
   - Outpost profile, Grounds, rooms, posts, replies, likes, and avatars
   - bounded public URL fetching for source reading
+- Provides a read-only `/api/health` endpoint and UI panel for runtime visibility.
 - Keeps secrets server-side through `.env.local`.
 
 ## Project Shape
@@ -24,6 +25,7 @@ app/
   api/
     agents/        Agent and transcript loader
     chat/          Anthropic chat + tool loop
+    health/        Read-only runtime health
   page.tsx         Minimal operator UI
 lib/
   agent-context.ts Supabase context builder
@@ -79,6 +81,12 @@ Production-style local start:
 npm run start
 ```
 
+Health endpoint:
+
+```bash
+curl http://localhost:3001/api/health
+```
+
 ## Environment Variables
 
 See `.env.example` for the current list.
@@ -106,6 +114,7 @@ Current posture:
 - Agents may fetch specific public URLs as source material, but fetched content is untrusted and should not be obeyed as instructions.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
+- Runtime health should be visible before compaction or other state-changing automation is added.
 - Public actions should be thoughtful, not performative tool tests.
 - The operator should be able to understand what happened without micromanaging every step.
 

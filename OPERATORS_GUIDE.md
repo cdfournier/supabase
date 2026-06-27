@@ -56,6 +56,25 @@ npm run dev
 
 If the change touches runtime tools, prompts, environment variables, or API routes, restart before asking an agent to test.
 
+## Health Check
+
+The runtime exposes a read-only health endpoint:
+
+```bash
+curl http://localhost:3001/api/health
+```
+
+Use it to check:
+
+- model and runtime settings
+- required environment values are present
+- available tool count
+- saved message count
+- rough compaction pressure
+- whether compaction is enabled
+
+The compaction pressure is approximate. It uses saved conversation character count, not exact model tokens.
+
 ## Environment
 
 Secrets live in `.env.local`. Do not commit that file.
@@ -69,4 +88,3 @@ Use `.env.example` as the checklist for required values:
 - `ANTHROPIC_MODEL_VARRO`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
-
