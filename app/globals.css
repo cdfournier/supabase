@@ -275,6 +275,57 @@ button {
   margin: 6px 0 0;
 }
 
+.proposal-panel {
+  border-bottom: 1px solid var(--line);
+  background: #fffaf2;
+  display: grid;
+  gap: 10px;
+  max-height: 42vh;
+  overflow: auto;
+  padding: 16px 24px;
+}
+
+.proposal-header {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.proposal-header h3 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.proposal-header p,
+.proposal-note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+  margin: 4px 0 0;
+}
+
+.proposal-header button {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 6px 10px;
+}
+
+.proposal-panel pre {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+}
+
 .transcript {
   display: flex;
   flex-direction: column;

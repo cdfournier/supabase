@@ -28,12 +28,13 @@
 
 **5. Conversation / Compaction Layer**
 - Current v1: manual preview endpoint, UI action, and agent-facing read-only preview tool.
+- Current v2: operator-triggered compile proposal, still non-destructive and review-only.
 - Store full conversations safely.
 - Add summaries or compactions when history gets large.
 - Preserve texture, not just facts.
 - Let agents influence what survives compression.
 - Avoid replaying too much history into every API call.
-- Next: generate an agent-reviewed summary without replacing messages.
+- Next: agent/operator review workflow for compile proposals.
 - Later: archive raw messages, replace live transcript with approved summary, and increment compaction count.
 
 **6. Operator Interface**

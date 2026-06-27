@@ -88,6 +88,23 @@ type CompactionPreview = {
   };
 };
 
+type CompactionCompile = {
+  agent: AgentName;
+  destructive: false;
+  dry_run: boolean;
+  generated_at: string;
+  next_step: string;
+  proposal: string;
+  source: {
+    bounded: boolean;
+    omitted_message_count: number;
+    selected_characters: number;
+    selected_message_count: number;
+    transcript_budget_chars: number;
+  };
+  status: string;
+};
+
 const defaultAgent: AgentName = "soren";
 
 export default function Home() {
@@ -98,6 +115,9 @@ export default function Home() {
   const [compactionPreview, setCompactionPreview] = useState<CompactionPreview | null>(null);
   const [compactionLoading, setCompactionLoading] = useState(false);
   const [compactionError, setCompactionError] = useState("");
+  const [compactionCompile, setCompactionCompile] = useState<CompactionCompile | null>(null);
+  const [compileLoading, setCompileLoading] = useState(false);
+  const [compileError, setCompileError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -192,12 +212,16 @@ export default function Home() {
 
   useEffect(() => {
     setCompactionPreview(null);
+    setCompactionCompile(null);
     setCompactionError("");
+    setCompileError("");
   }, [selectedAgent]);
 
   async function previewCompaction() {
     setCompactionLoading(true);
     setCompactionError("");
+    setCompactionCompile(null);
+    setCompileError("");
 
     try {
       const response = await fetch("/api/compaction/preview", {
@@ -222,6 +246,36 @@ export default function Home() {
       );
     } finally {
       setCompactionLoading(false);
+    }
+  }
+
+  async function compileCompactionProposal() {
+    setCompileLoading(true);
+    setCompileError("");
+
+    try {
+      const response = await fetch("/api/compaction/compile", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          agent: selectedAgent
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not compile proposal.");
+      }
+
+      setCompactionCompile(data);
+    } catch (compileFailure) {
+      setCompileError(
+        compileFailure instanceof Error ? compileFailure.message : "Could not compile proposal."
+      );
+    } finally {
+      setCompileLoading(false);
     }
   }
 
@@ -291,7 +345,10 @@ export default function Home() {
           compactionError={compactionError}
           compactionLoading={compactionLoading}
           compactionPreview={compactionPreview}
+          compileError={compileError}
+          compileLoading={compileLoading}
           health={health}
+          onCompileProposal={compileCompactionProposal}
           onPreviewCompaction={previewCompaction}
         />
       </aside>
@@ -301,6 +358,29 @@ export default function Home() {
           <h2>{activeAgent?.display_name ?? selectedAgent}</h2>
           <p>{conversationLabel(selectedAgent)}</p>
         </header>
+
+        {compactionCompile ? (
+          <section className="proposal-panel" aria-label="Compaction proposal">
+            <div className="proposal-header">
+              <div>
+                <h3>Compaction Proposal</h3>
+                <p>
+                  {compactionCompile.source.selected_message_count} messages selected
+                  {compactionCompile.source.bounded
+                    ? `, ${compactionCompile.source.omitted_message_count} omitted by budget`
+                    : ", none omitted"}
+                </p>
+              </div>
+              <button type="button" onClick={() => setCompactionCompile(null)}>
+                Close
+              </button>
+            </div>
+            <p className="proposal-note">
+              No messages changed. Review this with the agent before any compacting tool is allowed to write.
+            </p>
+            <pre>{compactionCompile.proposal}</pre>
+          </section>
+        ) : null}
 
         <div className="transcript" ref={transcriptRef}>
           {loading ? <p className="empty">Loading seeded context...</p> : null}
@@ -354,14 +434,20 @@ function RuntimeHealthPanel({
   compactionError,
   compactionLoading,
   compactionPreview,
+  compileError,
+  compileLoading,
   health,
+  onCompileProposal,
   onPreviewCompaction
 }: {
   activeHealth: AgentHealth | undefined;
   compactionError: string;
   compactionLoading: boolean;
   compactionPreview: CompactionPreview | null;
+  compileError: string;
+  compileLoading: boolean;
   health: Health | null;
+  onCompileProposal: () => void;
   onPreviewCompaction: () => void;
 }) {
   const envOk = health ? Object.values(health.env).every(Boolean) : false;
@@ -451,6 +537,15 @@ function RuntimeHealthPanel({
                 </div>
               </dl>
               <p>Next: ask the agent to review the preview and policy before any compacting tool is allowed to write.</p>
+              <button
+                className="quiet-action"
+                disabled={compileLoading}
+                onClick={onCompileProposal}
+                type="button"
+              >
+                {compileLoading ? "Compiling" : "Compile Proposal"}
+              </button>
+              {compileError ? <p className="health-error">{compileError}</p> : null}
             </div>
           ) : null}
 

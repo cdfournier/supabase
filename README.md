@@ -98,6 +98,14 @@ curl -s -X POST http://localhost:3001/api/compaction/preview \
   -d '{"agent":"varro"}'
 ```
 
+Dry-run the compile packet without calling Anthropic:
+
+```bash
+curl -s -X POST http://localhost:3001/api/compaction/compile \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"varro","dry_run":true}'
+```
+
 ## Environment Variables
 
 See `.env.example` for the current list.
@@ -128,6 +136,7 @@ Current posture:
 - `current_state` is the agent-authored handoff field and should be updated before compaction.
 - Runtime health should be visible before compaction or other state-changing automation is added.
 - Compaction starts as a manual preview. The first pass must not archive, delete, or replace messages.
+- Compile proposals are review artifacts. They are not saved automatically and do not compact the transcript.
 - Agents can inspect their own compaction preview, but they cannot compact themselves through that tool.
 - Public actions should be thoughtful, not performative tool tests.
 - The operator should be able to understand what happened without micromanaging every step.

@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   type AgentName,
+  type ChatMessage,
   contentToText,
   conversationIdFor,
   ensureConversation,
@@ -13,12 +14,22 @@ export const PRESSURE_WARN_CHARS = 60_000;
 export const PRESSURE_HIGH_CHARS = 120_000;
 const DEFAULT_TIME_ZONE = "America/New_York";
 const EXCERPT_LENGTH = 700;
+const DEFAULT_COMPILE_TRANSCRIPT_CHARS = 50_000;
+const COMPILE_OPENING_MESSAGES = 8;
 
 type RestorationProfile = {
   compaction_memory_policy: string | null;
   current_state: string | null;
   opening_orientation: string | null;
   persona_summary: string | null;
+};
+
+export type CompactionSource = {
+  omitted_message_count: number;
+  selected_characters: number;
+  selected_message_count: number;
+  text: string;
+  transcript_budget_chars: number;
 };
 
 export async function buildCompactionPreview(supabase: SupabaseClient, agent: AgentName) {
@@ -109,6 +120,63 @@ export function clampText(text: string, maxLength: number) {
   return `${text.slice(0, Math.max(0, maxLength - 18)).trimEnd()} [truncated]`;
 }
 
+export function buildCompactionSource(
+  messages: ChatMessage[],
+  maxChars = DEFAULT_COMPILE_TRANSCRIPT_CHARS
+): CompactionSource {
+  const safeMaxChars = Number.isFinite(maxChars)
+    ? Math.max(10_000, Math.min(120_000, Math.floor(maxChars)))
+    : DEFAULT_COMPILE_TRANSCRIPT_CHARS;
+  const formatted = messages.map(formatMessageForCompaction);
+  const fullText = formatted.join("\n\n---\n\n");
+
+  if (fullText.length <= safeMaxChars) {
+    return {
+      omitted_message_count: 0,
+      selected_characters: fullText.length,
+      selected_message_count: messages.length,
+      text: fullText,
+      transcript_budget_chars: safeMaxChars
+    };
+  }
+
+  const opening = formatted.slice(0, COMPILE_OPENING_MESSAGES);
+  const openingPositions = new Set(
+    messages.slice(0, COMPILE_OPENING_MESSAGES).map((message) => message.position)
+  );
+  const latest: string[] = [];
+  const selectedPositions = new Set(openingPositions);
+  let usedCharacters = opening.join("\n\n---\n\n").length;
+
+  for (let index = formatted.length - 1; index >= COMPILE_OPENING_MESSAGES; index -= 1) {
+    const nextMessage = formatted[index];
+    const nextLength = nextMessage.length + 10;
+
+    if (usedCharacters + nextLength > safeMaxChars) {
+      break;
+    }
+
+    latest.unshift(nextMessage);
+    selectedPositions.add(messages[index].position);
+    usedCharacters += nextLength;
+  }
+
+  const omittedMessageCount = Math.max(0, messages.length - selectedPositions.size);
+  const omittedNotice = [
+    `[${omittedMessageCount} middle messages omitted from this compile source because of the configured transcript budget.]`,
+    "Treat this as a source-bounded proposal. Preserve uncertainty about anything not present in the selected source."
+  ].join("\n");
+  const text = [...opening, omittedNotice, ...latest].join("\n\n---\n\n");
+
+  return {
+    omitted_message_count: omittedMessageCount,
+    selected_characters: text.length,
+    selected_message_count: selectedPositions.size,
+    text,
+    transcript_budget_chars: safeMaxChars
+  };
+}
+
 function messagePreview(message: {
   content: unknown;
   created_at?: string;
@@ -121,6 +189,13 @@ function messagePreview(message: {
     created_at: message.created_at ?? null,
     excerpt: clampText(contentToText(message.content), EXCERPT_LENGTH)
   };
+}
+
+function formatMessageForCompaction(message: ChatMessage) {
+  return [
+    `[position:${message.position} role:${message.role} created_at:${message.created_at ?? "unknown"}]`,
+    contentToText(message.content)
+  ].join("\n");
 }
 
 function buildCompactionPrompt(

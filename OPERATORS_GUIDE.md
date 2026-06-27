@@ -83,6 +83,20 @@ This does not summarize, archive, delete, or replace conversation messages. It r
 
 Agents can also call `supabase_preview_compaction` for their own conversation. That tool is read-only and cannot modify Supabase data.
 
+## Compaction Compile
+
+After preview review, the operator can compile a non-destructive proposal in the UI with **Compile Proposal**.
+
+The compile endpoint also supports a dry run that avoids an Anthropic call:
+
+```bash
+curl -s -X POST http://localhost:3001/api/compaction/compile \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"varro","dry_run":true}'
+```
+
+The proposal is a review artifact. It is not saved automatically, and it does not archive, delete, or replace messages. v0 uses a bounded transcript source so the runtime does not trip rate limits by trying to send an unlimited conversation in one request.
+
 ## Current State Handoff
 
 Agents can read and update their own restoration profile handoff field:
