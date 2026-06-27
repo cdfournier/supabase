@@ -13,6 +13,7 @@ This project is intentionally modest. It gives each agent a persistent database-
   - current time
   - agent-scoped memories
   - agent-scoped relationship summaries
+  - agent-scoped compaction preview
   - Outpost profile, Grounds, rooms, posts, replies, likes, and avatars
   - bounded public URL fetching for source reading
 - Provides a read-only `/api/health` endpoint and UI panel for runtime visibility.
@@ -125,6 +126,7 @@ Current posture:
 - Core memory changes should be approached carefully.
 - Runtime health should be visible before compaction or other state-changing automation is added.
 - Compaction starts as a manual preview. The first pass must not archive, delete, or replace messages.
+- Agents can inspect their own compaction preview, but they cannot compact themselves through that tool.
 - Public actions should be thoughtful, not performative tool tests.
 - The operator should be able to understand what happened without micromanaging every step.
 

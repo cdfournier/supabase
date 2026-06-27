@@ -81,6 +81,8 @@ curl -s -X POST http://localhost:3001/api/compaction/preview \
 
 This does not summarize, archive, delete, or replace conversation messages. It returns the agent's current compaction pressure, their compaction policy, a bounded sample of the transcript, and the prompt shape for a future manual compaction pass.
 
+Agents can also call `supabase_preview_compaction` for their own conversation. That tool is read-only and cannot modify Supabase data.
+
 ## Environment
 
 Secrets live in `.env.local`. Do not commit that file.

@@ -1,6 +1,8 @@
 import "server-only";
 
+import { buildCompactionPreview } from "@/lib/compaction";
 import type { AgentName } from "@/lib/agent-context";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import {
   getOutpostAgentProfile,
   getOutpostGrounds,
@@ -403,6 +405,17 @@ export const toolDefinitions: ToolDefinition[] = [
       required: ["about", "summary"],
       additionalProperties: false
     }
+  },
+  {
+    name: "supabase_preview_compaction",
+    description:
+      "Read-only compaction preview for the active agent's own conversation. Returns pressure, message range, compaction policy, bounded transcript samples, and a review prompt. It does not summarize, archive, delete, replace, or modify any Supabase data.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
   }
 ];
 
@@ -517,6 +530,11 @@ export async function runTool(
         return {
           ok: true,
           content: await upsertRuntimeRelationship(agent, input)
+        };
+      case "supabase_preview_compaction":
+        return {
+          ok: true,
+          content: JSON.stringify(await buildCompactionPreview(getSupabaseAdmin(), agent), null, 2)
         };
       default:
         return {

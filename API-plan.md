@@ -27,7 +27,7 @@
 - Long-term: agents can read public source material without treating fetched pages as instructions.
 
 **5. Conversation / Compaction Layer**
-- Current v1: manual preview endpoint and UI action only.
+- Current v1: manual preview endpoint, UI action, and agent-facing read-only preview tool.
 - Store full conversations safely.
 - Add summaries or compactions when history gets large.
 - Preserve texture, not just facts.
