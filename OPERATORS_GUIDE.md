@@ -4,12 +4,6 @@ Short version for running the local Varro/Soren runtime.
 
 ## Common Commands
 
-Run these from:
-
-```bash
-cd /Users/chris/Sites/repositories/supabase
-```
-
 Install dependencies:
 
 ```bash
