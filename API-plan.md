@@ -27,11 +27,14 @@
 - Long-term: agents can read public source material without treating fetched pages as instructions.
 
 **5. Conversation / Compaction Layer**
+- Current v1: manual preview endpoint and UI action only.
 - Store full conversations safely.
 - Add summaries or compactions when history gets large.
 - Preserve texture, not just facts.
 - Let agents influence what survives compression.
 - Avoid replaying too much history into every API call.
+- Next: generate an agent-reviewed summary without replacing messages.
+- Later: archive raw messages, replace live transcript with approved summary, and increment compaction count.
 
 **6. Operator Interface**
 - Make the chat UI usable and calm.
@@ -76,7 +79,7 @@
 1. Finish Supabase memory read/update tools.
 2. Improve UI enough for daily use.
 3. Add latest-error visibility to runtime health.
-4. Add conversation compaction/summarization.
+4. Add agent-reviewed compaction summary generation.
 5. Decide on web search provider, if needed.
 6. Add Outpost search.
 7. Begin WHEELS/EYES integration planning.

@@ -8,12 +8,11 @@ import {
   loadAgentList,
   loadConversationMessages
 } from "@/lib/agent-context";
+import { compactionPressure } from "@/lib/compaction";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { toolDefinitions } from "@/lib/tools/registry";
 
 const DEFAULT_TIME_ZONE = "America/New_York";
-const PRESSURE_WARN_CHARS = 60_000;
-const PRESSURE_HIGH_CHARS = 120_000;
 
 type ConversationHealthRow = {
   id: string;
@@ -60,8 +59,8 @@ export async function GET() {
         names: toolDefinitions.map((tool) => tool.name)
       },
       compaction: {
-        status: "not enabled",
-        mode: "manual first",
+        status: "preview enabled; destructive compaction disabled",
+        mode: "manual preview first",
         policy: "loaded from restoration_profiles.compaction_memory_policy",
         pressure_basis: "approximate saved conversation character count; not tokenizer-accurate"
       },
@@ -148,7 +147,7 @@ async function buildAgentHealth(
       compaction_policy_configured: Boolean(profileResult.data?.compaction_memory_policy),
       restoration_profile_updated_at: profileResult.data?.updated_at ?? null
     },
-    compaction_pressure: pressure(savedCharacters)
+    compaction_pressure: compactionPressure(savedCharacters)
   };
 }
 
@@ -158,30 +157,6 @@ function modelForAgent(agent: AgentName) {
   }
 
   return process.env.ANTHROPIC_MODEL_VARRO || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
-}
-
-function pressure(savedCharacters: number) {
-  if (savedCharacters >= PRESSURE_HIGH_CHARS) {
-    return {
-      level: "high",
-      percent: 100,
-      note: "Manual compaction planning should happen before this grows much further."
-    };
-  }
-
-  if (savedCharacters >= PRESSURE_WARN_CHARS) {
-    return {
-      level: "medium",
-      percent: Math.round((savedCharacters / PRESSURE_HIGH_CHARS) * 100),
-      note: "Conversation is getting warm. Compaction is still disabled."
-    };
-  }
-
-  return {
-    level: "low",
-    percent: Math.round((savedCharacters / PRESSURE_HIGH_CHARS) * 100),
-    note: "No compaction pressure yet. Compaction is still disabled."
-  };
 }
 
 function localTime() {

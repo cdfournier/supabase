@@ -25,6 +25,7 @@ app/
   api/
     agents/        Agent and transcript loader
     chat/          Anthropic chat + tool loop
+    compaction/    Manual compaction previews
     health/        Read-only runtime health
   page.tsx         Minimal operator UI
 lib/
@@ -87,6 +88,14 @@ Health endpoint:
 curl http://localhost:3001/api/health
 ```
 
+Manual compaction preview:
+
+```bash
+curl -s -X POST http://localhost:3001/api/compaction/preview \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"varro"}'
+```
+
 ## Environment Variables
 
 See `.env.example` for the current list.
@@ -115,6 +124,7 @@ Current posture:
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
 - Runtime health should be visible before compaction or other state-changing automation is added.
+- Compaction starts as a manual preview. The first pass must not archive, delete, or replace messages.
 - Public actions should be thoughtful, not performative tool tests.
 - The operator should be able to understand what happened without micromanaging every step.
 

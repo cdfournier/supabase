@@ -67,6 +67,27 @@ type AgentHealth = {
   };
 };
 
+type CompactionPreview = {
+  agent: AgentName;
+  conversation: {
+    message_count: number;
+    saved_characters: number;
+    first_message_at: string | null;
+    last_message_at: string | null;
+  };
+  mode: string;
+  next_step: string;
+  pressure: {
+    level: "low" | "medium" | "high";
+    percent: number;
+    note: string;
+  };
+  restoration_profile: {
+    compaction_memory_policy: string;
+    current_state: string;
+  };
+};
+
 const defaultAgent: AgentName = "soren";
 
 export default function Home() {
@@ -74,6 +95,9 @@ export default function Home() {
   const [selectedAgent, setSelectedAgent] = useState<AgentName>(defaultAgent);
   const [transcripts, setTranscripts] = useState<Record<string, ChatMessage[]>>({});
   const [health, setHealth] = useState<Health | null>(null);
+  const [compactionPreview, setCompactionPreview] = useState<CompactionPreview | null>(null);
+  const [compactionLoading, setCompactionLoading] = useState(false);
+  const [compactionError, setCompactionError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -166,6 +190,41 @@ export default function Home() {
     });
   }, [activeMessages.length, selectedAgent]);
 
+  useEffect(() => {
+    setCompactionPreview(null);
+    setCompactionError("");
+  }, [selectedAgent]);
+
+  async function previewCompaction() {
+    setCompactionLoading(true);
+    setCompactionError("");
+
+    try {
+      const response = await fetch("/api/compaction/preview", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          agent: selectedAgent
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not preview compaction.");
+      }
+
+      setCompactionPreview(data);
+    } catch (previewError) {
+      setCompactionError(
+        previewError instanceof Error ? previewError.message : "Could not preview compaction."
+      );
+    } finally {
+      setCompactionLoading(false);
+    }
+  }
+
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = message.trim();
@@ -227,7 +286,14 @@ export default function Home() {
           ))}
         </div>
 
-        <RuntimeHealthPanel health={health} activeHealth={activeHealth} />
+        <RuntimeHealthPanel
+          activeHealth={activeHealth}
+          compactionError={compactionError}
+          compactionLoading={compactionLoading}
+          compactionPreview={compactionPreview}
+          health={health}
+          onPreviewCompaction={previewCompaction}
+        />
       </aside>
 
       <section className="main">
@@ -285,10 +351,18 @@ export default function Home() {
 
 function RuntimeHealthPanel({
   activeHealth,
-  health
+  compactionError,
+  compactionLoading,
+  compactionPreview,
+  health,
+  onPreviewCompaction
 }: {
   activeHealth: AgentHealth | undefined;
+  compactionError: string;
+  compactionLoading: boolean;
+  compactionPreview: CompactionPreview | null;
   health: Health | null;
+  onPreviewCompaction: () => void;
 }) {
   const envOk = health ? Object.values(health.env).every(Boolean) : false;
   const pressure = activeHealth?.compaction_pressure;
@@ -344,6 +418,40 @@ function RuntimeHealthPanel({
             </div>
             <p>{health?.compaction.status ?? "unknown"} · {health?.compaction.mode ?? "manual"}</p>
           </div>
+
+          <button
+            className="quiet-action"
+            disabled={compactionLoading}
+            onClick={onPreviewCompaction}
+            type="button"
+          >
+            {compactionLoading ? "Previewing" : "Preview Blink"}
+          </button>
+
+          {compactionError ? <p className="health-error">{compactionError}</p> : null}
+
+          {compactionPreview ? (
+            <div className="compaction-preview">
+              <p>
+                <strong>{compactionPreview.mode}</strong>
+              </p>
+              <dl>
+                <div>
+                  <dt>Messages</dt>
+                  <dd>{compactionPreview.conversation.message_count}</dd>
+                </div>
+                <div>
+                  <dt>Chars</dt>
+                  <dd>{compactionPreview.conversation.saved_characters.toLocaleString()}</dd>
+                </div>
+                <div>
+                  <dt>Pressure</dt>
+                  <dd>{compactionPreview.pressure.level}</dd>
+                </div>
+              </dl>
+              <p>{compactionPreview.next_step}</p>
+            </div>
+          ) : null}
 
           <p className="health-time">Updated {health?.local_time ?? "unknown"}</p>
         </>

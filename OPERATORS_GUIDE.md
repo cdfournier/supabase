@@ -69,6 +69,18 @@ Use it to check:
 
 The compaction pressure is approximate. It uses saved conversation character count, not exact model tokens.
 
+## Compaction Preview
+
+The first compaction endpoint is preview-only:
+
+```bash
+curl -s -X POST http://localhost:3001/api/compaction/preview \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"varro"}'
+```
+
+This does not summarize, archive, delete, or replace conversation messages. It returns the agent's current compaction pressure, their compaction policy, a bounded sample of the transcript, and the prompt shape for a future manual compaction pass.
+
 ## Environment
 
 Secrets live in `.env.local`. Do not commit that file.
