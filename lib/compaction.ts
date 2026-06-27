@@ -16,6 +16,7 @@ const DEFAULT_TIME_ZONE = "America/New_York";
 const EXCERPT_LENGTH = 700;
 const DEFAULT_COMPILE_TRANSCRIPT_CHARS = 50_000;
 const COMPILE_OPENING_MESSAGES = 8;
+export const COMPACTION_CHECKPOINT_PREFIX = "[COMPACTION_CHECKPOINT_V1]";
 
 type RestorationProfile = {
   compaction_memory_policy: string | null;
@@ -35,6 +36,8 @@ export type CompactionSource = {
 export async function buildCompactionPreview(supabase: SupabaseClient, agent: AgentName) {
   const conversationId = await ensureConversation(supabase, agent);
   const messages = await loadConversationMessages(supabase, conversationId);
+  const checkpoint = latestCompactionCheckpoint(messages);
+  const activeMessages = checkpoint ? messagesAfterCheckpoint(messages, checkpoint) : messages;
 
   const { data: profile, error: profileError } = await supabase
     .from("restoration_profiles")
@@ -46,13 +49,17 @@ export async function buildCompactionPreview(supabase: SupabaseClient, agent: Ag
     throw new Error(`Could not load compaction profile: ${profileError.message}`);
   }
 
-  const savedCharacters = messages.reduce(
+  const totalSavedCharacters = messages.reduce(
     (total, message) => total + contentToText(message.content).length,
     0
   );
-  const firstMessage = messages[0] ?? null;
-  const lastMessage = messages.at(-1) ?? null;
-  const roleCounts = messages.reduce<Record<string, number>>((counts, message) => {
+  const savedCharacters = activeMessages.reduce(
+    (total, message) => total + contentToText(message.content).length,
+    0
+  );
+  const firstMessage = activeMessages[0] ?? null;
+  const lastMessage = activeMessages.at(-1) ?? null;
+  const roleCounts = activeMessages.reduce<Record<string, number>>((counts, message) => {
     counts[message.role] = (counts[message.role] ?? 0) + 1;
     return counts;
   }, {});
@@ -67,11 +74,15 @@ export async function buildCompactionPreview(supabase: SupabaseClient, agent: Ag
     destructive: false,
     status: "preview_ready",
     conversation: {
-      message_count: messages.length,
+      message_count: activeMessages.length,
       saved_characters: savedCharacters,
+      total_message_count: messages.length,
+      total_saved_characters: totalSavedCharacters,
       role_counts: roleCounts,
       first_message_at: firstMessage?.created_at ?? null,
-      last_message_at: lastMessage?.created_at ?? null
+      last_message_at: lastMessage?.created_at ?? null,
+      latest_checkpoint_position: checkpoint?.position ?? null,
+      latest_checkpoint_at: checkpoint?.created_at ?? null
     },
     pressure: compactionPressure(savedCharacters),
     restoration_profile: {
@@ -79,13 +90,69 @@ export async function buildCompactionPreview(supabase: SupabaseClient, agent: Ag
       compaction_memory_policy: typedProfile.compaction_memory_policy ?? ""
     },
     sample: {
-      first_messages: messages.slice(0, 2).map((message) => messagePreview(message)),
-      latest_messages: messages.slice(-4).map((message) => messagePreview(message))
+      first_messages: activeMessages.slice(0, 2).map((message) => messagePreview(message)),
+      latest_messages: activeMessages.slice(-4).map((message) => messagePreview(message))
     },
-    compaction_prompt: buildCompactionPrompt(agent, typedProfile, savedCharacters, messages.length),
+    compaction_prompt: buildCompactionPrompt(
+      agent,
+      typedProfile,
+      savedCharacters,
+      activeMessages.length
+    ),
     next_step:
       "Ask the agent to review this preview and policy. Do not run destructive compaction until the agent and operator approve the generated summary shape."
   };
+}
+
+export function isCompactionCheckpointMessage(message: ChatMessage) {
+  return contentToText(message.content).trimStart().startsWith(COMPACTION_CHECKPOINT_PREFIX);
+}
+
+export function latestCompactionCheckpoint(messages: ChatMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+
+    if (isCompactionCheckpointMessage(message)) {
+      return message;
+    }
+  }
+
+  return null;
+}
+
+export function messagesAfterCheckpoint(messages: ChatMessage[], checkpoint: ChatMessage) {
+  return messages.filter((message) => message.position > checkpoint.position);
+}
+
+export function formatCompactionCheckpoint({
+  agent,
+  approvedBy,
+  approvalNote,
+  source,
+  summary
+}: {
+  agent: AgentName;
+  approvedBy?: string;
+  approvalNote?: string;
+  source?: string;
+  summary: string;
+}) {
+  const metadata = {
+    agent,
+    approved_by: approvedBy || "operator",
+    approval_note: approvalNote || "Manually approved append-only compaction checkpoint.",
+    created_at: new Date().toISOString(),
+    destructive: false,
+    source: source || "manual_compaction_proposal"
+  };
+
+  return [
+    COMPACTION_CHECKPOINT_PREFIX,
+    JSON.stringify(metadata, null, 2),
+    "",
+    "Approved checkpoint summary:",
+    summary.trim()
+  ].join("\n");
 }
 
 export function compactionPressure(savedCharacters: number) {

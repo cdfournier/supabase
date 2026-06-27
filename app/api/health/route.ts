@@ -8,7 +8,12 @@ import {
   loadAgentList,
   loadConversationMessages
 } from "@/lib/agent-context";
-import { compactionPressure } from "@/lib/compaction";
+import {
+  compactionPressure,
+  isCompactionCheckpointMessage,
+  latestCompactionCheckpoint,
+  messagesAfterCheckpoint
+} from "@/lib/compaction";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { toolDefinitions } from "@/lib/tools/registry";
 
@@ -118,10 +123,17 @@ async function buildAgentHealth(
   }
 
   const conversation = conversationResult.data as ConversationHealthRow;
-  const savedCharacters = messages.reduce(
+  const checkpoint = latestCompactionCheckpoint(messages);
+  const activeMessages = checkpoint ? messagesAfterCheckpoint(messages, checkpoint) : messages;
+  const totalSavedCharacters = messages.reduce(
     (total, message) => total + contentToText(message.content).length,
     0
   );
+  const savedCharacters = activeMessages.reduce(
+    (total, message) => total + contentToText(message.content).length,
+    0
+  );
+  const checkpointCount = messages.filter((message) => isCompactionCheckpointMessage(message)).length;
   const activeMemories = (memoryResult.data ?? []).filter((memory) => memory.is_active !== false);
   const coreMemories = activeMemories.filter((memory) => memory.is_core === true);
 
@@ -131,13 +143,18 @@ async function buildAgentHealth(
     conversation_id: conversationIdFor(agent),
     status: "ok",
     conversation: {
-      message_count: messages.length,
+      message_count: activeMessages.length,
+      total_message_count: messages.length,
       saved_characters: savedCharacters,
+      total_saved_characters: totalSavedCharacters,
       stored_token_count: conversation.token_count ?? 0,
-      compaction_count: conversation.compaction_count ?? 0,
+      compaction_count: conversation.compaction_count ?? checkpointCount,
+      checkpoint_count: checkpointCount,
+      latest_checkpoint_position: checkpoint?.position ?? null,
+      latest_checkpoint_at: checkpoint?.created_at ?? null,
       created_at: conversation.created_at,
       updated_at: conversation.updated_at,
-      last_message_at: messages.at(-1)?.created_at ?? null
+      last_message_at: activeMessages.at(-1)?.created_at ?? messages.at(-1)?.created_at ?? null
     },
     memory: {
       rows: memoryResult.count ?? memoryResult.data?.length ?? 0,

@@ -97,6 +97,22 @@ curl -s -X POST http://localhost:3001/api/compaction/compile \
 
 The proposal is a review artifact. It is not saved automatically, and it does not archive, delete, or replace messages. v0 uses a bounded transcript source so the runtime does not trip rate limits by trying to send an unlimited conversation in one request.
 
+## Compaction Checkpoint
+
+After the agent and operator review a compiled proposal, the operator can edit the proposal in the UI and click **Create Checkpoint**.
+
+This is append-only. It saves a checkpoint marker into `conversation_messages`, increments the conversation's compaction count, and tells the runtime to use that checkpoint plus messages after it as active context. It does not delete, archive, or replace raw messages.
+
+CLI form:
+
+```bash
+curl -s -X POST http://localhost:3001/api/compaction/checkpoint \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"varro","summary":"Approved checkpoint summary..."}'
+```
+
+After a checkpoint, the health panel shows active messages separately from total messages. That lower active count is the pressure relief; the full transcript is still retained in Supabase for later archive tooling.
+
 ## Current State Handoff
 
 Agents can read and update their own restoration profile handoff field:

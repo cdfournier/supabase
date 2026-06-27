@@ -48,9 +48,13 @@ type AgentHealth = {
   status: string;
   conversation: {
     message_count: number;
+    total_message_count?: number;
     saved_characters: number;
+    total_saved_characters?: number;
     stored_token_count: number;
     compaction_count: number;
+    checkpoint_count?: number;
+    latest_checkpoint_at?: string | null;
     last_message_at: string | null;
   };
   memory: {
@@ -105,6 +109,18 @@ type CompactionCompile = {
   status: string;
 };
 
+type CompactionCheckpoint = {
+  agent: AgentName;
+  compaction_count: number;
+  destructive: false;
+  status: string;
+  checkpoint: {
+    id: string;
+    position: number;
+    created_at: string;
+  };
+};
+
 const defaultAgent: AgentName = "soren";
 
 export default function Home() {
@@ -116,6 +132,10 @@ export default function Home() {
   const [compactionLoading, setCompactionLoading] = useState(false);
   const [compactionError, setCompactionError] = useState("");
   const [compactionCompile, setCompactionCompile] = useState<CompactionCompile | null>(null);
+  const [checkpointDraft, setCheckpointDraft] = useState("");
+  const [checkpointReceipt, setCheckpointReceipt] = useState<CompactionCheckpoint | null>(null);
+  const [checkpointLoading, setCheckpointLoading] = useState(false);
+  const [checkpointError, setCheckpointError] = useState("");
   const [compileLoading, setCompileLoading] = useState(false);
   const [compileError, setCompileError] = useState("");
   const [message, setMessage] = useState("");
@@ -213,15 +233,21 @@ export default function Home() {
   useEffect(() => {
     setCompactionPreview(null);
     setCompactionCompile(null);
+    setCheckpointDraft("");
+    setCheckpointReceipt(null);
     setCompactionError("");
     setCompileError("");
+    setCheckpointError("");
   }, [selectedAgent]);
 
   async function previewCompaction() {
     setCompactionLoading(true);
     setCompactionError("");
     setCompactionCompile(null);
+    setCheckpointDraft("");
+    setCheckpointReceipt(null);
     setCompileError("");
+    setCheckpointError("");
 
     try {
       const response = await fetch("/api/compaction/preview", {
@@ -270,12 +296,62 @@ export default function Home() {
       }
 
       setCompactionCompile(data);
+      setCheckpointDraft(data.proposal ?? "");
+      setCheckpointReceipt(null);
     } catch (compileFailure) {
       setCompileError(
         compileFailure instanceof Error ? compileFailure.message : "Could not compile proposal."
       );
     } finally {
       setCompileLoading(false);
+    }
+  }
+
+  async function createCompactionCheckpoint() {
+    const summary = checkpointDraft.trim();
+
+    if (!summary || checkpointLoading) {
+      return;
+    }
+
+    setCheckpointLoading(true);
+    setCheckpointError("");
+
+    try {
+      const response = await fetch("/api/compaction/checkpoint", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          agent: selectedAgent,
+          summary,
+          approved_by: "operator",
+          approval_note: "Operator-created checkpoint from reviewed compaction proposal."
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not create checkpoint.");
+      }
+
+      setCheckpointReceipt(data);
+
+      const healthResponse = await fetch("/api/health");
+      const healthData = await healthResponse.json();
+
+      if (healthResponse.ok) {
+        setHealth(healthData);
+      }
+    } catch (checkpointFailure) {
+      setCheckpointError(
+        checkpointFailure instanceof Error
+          ? checkpointFailure.message
+          : "Could not create checkpoint."
+      );
+    } finally {
+      setCheckpointLoading(false);
     }
   }
 
@@ -376,9 +452,31 @@ export default function Home() {
               </button>
             </div>
             <p className="proposal-note">
-              No messages changed. Review this with the agent before any compacting tool is allowed to write.
+              No messages changed yet. Edit this proposal after agent/operator review, then create an append-only checkpoint.
             </p>
-            <pre>{compactionCompile.proposal}</pre>
+            <textarea
+              className="proposal-draft"
+              onChange={(event) => setCheckpointDraft(event.target.value)}
+              value={checkpointDraft}
+            />
+            <div className="proposal-actions">
+              <button
+                className="checkpoint-action"
+                disabled={checkpointLoading || !checkpointDraft.trim()}
+                onClick={createCompactionCheckpoint}
+                type="button"
+              >
+                {checkpointLoading ? "Creating" : "Create Checkpoint"}
+              </button>
+              <span>Append-only. Raw messages stay in Supabase.</span>
+            </div>
+            {checkpointError ? <p className="error">{checkpointError}</p> : null}
+            {checkpointReceipt ? (
+              <p className="proposal-receipt">
+                Checkpoint saved at position {checkpointReceipt.checkpoint.position}. Active
+                pressure now starts after this marker.
+              </p>
+            ) : null}
           </section>
         ) : null}
 
@@ -468,8 +566,14 @@ function RuntimeHealthPanel({
               <dd>{activeHealth.model}</dd>
             </div>
             <div>
-              <dt>Messages</dt>
-              <dd>{activeHealth.conversation.message_count}</dd>
+              <dt>Active messages</dt>
+              <dd>
+                {activeHealth.conversation.message_count}
+                {activeHealth.conversation.total_message_count &&
+                activeHealth.conversation.total_message_count !== activeHealth.conversation.message_count
+                  ? ` / ${activeHealth.conversation.total_message_count} total`
+                  : ""}
+              </dd>
             </div>
             <div>
               <dt>Memory</dt>
@@ -503,6 +607,9 @@ function RuntimeHealthPanel({
               />
             </div>
             <p>{health?.compaction.status ?? "unknown"} · {health?.compaction.mode ?? "manual"}</p>
+            {activeHealth.conversation.latest_checkpoint_at ? (
+              <p>checkpoint active; raw transcript retained</p>
+            ) : null}
           </div>
 
           <button

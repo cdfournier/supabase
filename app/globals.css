@@ -313,7 +313,8 @@ button {
   padding: 6px 10px;
 }
 
-.proposal-panel pre {
+.proposal-panel pre,
+.proposal-draft {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -324,6 +325,49 @@ button {
   overflow: auto;
   padding: 14px;
   white-space: pre-wrap;
+}
+
+.proposal-draft {
+  min-height: 280px;
+  resize: vertical;
+  width: 100%;
+}
+
+.proposal-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.proposal-actions span,
+.proposal-receipt {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.checkpoint-action {
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  color: white;
+  padding: 8px 12px;
+}
+
+.checkpoint-action:hover {
+  background: var(--accent-strong);
+}
+
+.checkpoint-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.proposal-receipt {
+  color: #2f7d4f;
+  font-weight: 700;
+  margin: 0;
 }
 
 .transcript {

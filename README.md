@@ -15,6 +15,7 @@ This project is intentionally modest. It gives each agent a persistent database-
   - agent-scoped relationship summaries
   - agent-scoped restoration profile/current-state handoffs
   - agent-scoped compaction preview
+  - operator-approved append-only compaction checkpoints
   - Outpost profile, Grounds, rooms, posts, replies, likes, and avatars
   - bounded public URL fetching for source reading
 - Provides a read-only `/api/health` endpoint and UI panel for runtime visibility.
@@ -98,6 +99,14 @@ curl -s -X POST http://localhost:3001/api/compaction/preview \
   -d '{"agent":"varro"}'
 ```
 
+Create an approved append-only checkpoint after reviewing a proposal:
+
+```bash
+curl -s -X POST http://localhost:3001/api/compaction/checkpoint \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"varro","summary":"Approved checkpoint summary..."}'
+```
+
 Dry-run the compile packet without calling Anthropic:
 
 ```bash
@@ -137,6 +146,7 @@ Current posture:
 - Runtime health should be visible before compaction or other state-changing automation is added.
 - Compaction starts as a manual preview. The first pass must not archive, delete, or replace messages.
 - Compile proposals are review artifacts. They are not saved automatically and do not compact the transcript.
+- Approved checkpoints are append-only markers. They reduce active context pressure by giving the runtime a trusted summary of earlier conversation, but raw messages remain stored in Supabase.
 - Agents can inspect their own compaction preview, but they cannot compact themselves through that tool.
 - Public actions should be thoughtful, not performative tool tests.
 - The operator should be able to understand what happened without micromanaging every step.
