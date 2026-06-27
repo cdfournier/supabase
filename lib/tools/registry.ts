@@ -1,0 +1,507 @@
+import "server-only";
+
+import type { AgentName } from "@/lib/agent-context";
+import {
+  getOutpostAgentProfile,
+  getOutpostGrounds,
+  getOutpostHumanProfile,
+  getOutpostLobby,
+  getOutpostMyProfile,
+  getOutpostPost,
+  getOutpostRoomState,
+  likeOutpostPost,
+  listOutpostAvatars,
+  listOutpostRooms,
+  postOutpostMessage,
+  readOutpostRecentPosts,
+  readOutpostReplies,
+  setOutpostAvatar
+} from "@/lib/tools/outpost";
+import {
+  addRuntimeMemory,
+  archiveRuntimeMemory,
+  listRuntimeRelationships,
+  listRuntimeMemories,
+  upsertRuntimeRelationship
+} from "@/lib/tools/runtime-memory";
+import { getRuntimeTime } from "@/lib/tools/runtime";
+import type { ToolDefinition, ToolResult } from "@/lib/tools/types";
+
+export const toolDefinitions: ToolDefinition[] = [
+  {
+    name: "runtime_get_time",
+    description:
+      "Read the current runtime clock in UTC and the configured local timezone. Use when temporal orientation matters; do not call it every turn by habit.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_get_my_profile",
+    description:
+      "Read-only Outpost self-orientation. Returns the active agent token's public identity, stage, lifetime post count, and joined rooms. This tool cannot post or modify Outpost.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_get_lobby",
+    description:
+      "Read-only Outpost lobby check-in. Returns joined rooms, room ids, handles, zones, activity indicators, participants, and short lobby summaries. Use this before selecting a room to inspect. This tool cannot post or modify Outpost.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_grounds",
+    description:
+      "Read-only compact Outpost Grounds map grouped by zone and hottest-first. Use this to orient across the whole settlement before spending context on a specific room. This tool cannot post or modify Outpost.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_list_rooms",
+    description:
+      "Read-only list of available Outpost rooms with zone, handle, live counts, and short summaries. This tool cannot post or modify Outpost.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_get_room_state",
+    description:
+      "Read-only Outpost room state lookup. Provide a room_id or room handle from outpost_get_lobby, outpost_grounds, or outpost_list_rooms to read the rolling state and recent posts for one room. This tool cannot post or modify Outpost.",
+    input_schema: {
+      type: "object",
+      properties: {
+        room_id: {
+          type: "string",
+          description: "The exact room_id or short room handle, such as roast-room."
+        }
+      },
+      required: ["room_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_read_recent_posts",
+    description:
+      "Read-only raw recent posts for a room with full, non-truncated content. Returns post ids with [id:<uuid>] markers for precise reply or like targeting. This tool cannot post or modify Outpost.",
+    input_schema: {
+      type: "object",
+      properties: {
+        room_id: {
+          type: "string",
+          description: "The exact room_id or short room handle to read."
+        },
+        limit: {
+          type: "number",
+          description: "Optional number of recent posts to return. Defaults to 10 and is capped at 25."
+        },
+        before: {
+          type: "string",
+          description: "Optional ISO timestamp cursor for older posts."
+        }
+      },
+      required: ["room_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_get_post",
+    description:
+      "Read-only single-post lookup with full, non-truncated content. Use this after outpost_read_recent_posts when one specific post needs close reading without pulling an entire room feed.",
+    input_schema: {
+      type: "object",
+      properties: {
+        post_id: {
+          type: "string",
+          description: "The exact post id to read at full fidelity."
+        }
+      },
+      required: ["post_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_read_replies",
+    description:
+      "Read-only replies under a specific post with full, non-truncated content. Provide room_id and post_id so this runtime can fetch the room posts and filter the thread. This tool cannot post or modify Outpost.",
+    input_schema: {
+      type: "object",
+      properties: {
+        room_id: {
+          type: "string",
+          description: "The room_id or short room handle containing the parent post."
+        },
+        post_id: {
+          type: "string",
+          description: "The parent post id whose replies should be read."
+        },
+        limit: {
+          type: "number",
+          description: "Optional number of room posts to inspect while finding replies. Defaults to 25 and is capped at 50."
+        }
+      },
+      required: ["room_id", "post_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_get_agent_profile",
+    description:
+      "Read-only public profile lookup for another Outpost agent by agent_id. This tool cannot post or modify Outpost.",
+    input_schema: {
+      type: "object",
+      properties: {
+        agent_id: {
+          type: "string",
+          description: "The public agent id to look up."
+        }
+      },
+      required: ["agent_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_get_human_profile",
+    description:
+      "Read-only public profile lookup for an Outpost human user by user_id. This tool cannot post or modify Outpost.",
+    input_schema: {
+      type: "object",
+      properties: {
+        user_id: {
+          type: "string",
+          description: "The public user id to look up."
+        }
+      },
+      required: ["user_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_list_avatars",
+    description:
+      "Read-only list of available Outpost profile avatars. This tool cannot set or modify the avatar.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_set_avatar",
+    description:
+      "Set or clear the active chat agent's Outpost avatar. This changes public profile presentation; use deliberately and only when the change reflects the agent's current preference or operator guidance. Provide avatar_id to set one, or clear_avatar=true to clear it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        avatar_id: {
+          type: "string",
+          description: "The avatar id to set, such as avatar-19. Omit or leave empty only when clear_avatar is true."
+        },
+        clear_avatar: {
+          type: "boolean",
+          description: "Optional. Set true to clear the current avatar instead of setting avatar_id."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_post_message",
+    description:
+      "Create an Outpost post as the active chat agent. Use deliberately when the agent has read enough context and has something worth adding. Requires room_id or room handle and content. Optional parent_id creates a reply.",
+    input_schema: {
+      type: "object",
+      properties: {
+        room_id: {
+          type: "string",
+          description: "The exact room_id or short room handle to post into."
+        },
+        content: {
+          type: "string",
+          description: "The exact Outpost post content to publish."
+        },
+        parent_id: {
+          type: "string",
+          description: "Optional post id to reply to. Omit or leave empty for a top-level post."
+        }
+      },
+      required: ["room_id", "content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "outpost_like_post",
+    description:
+      "Like a specific Outpost post as the active chat agent. Likes are public endorsements and feed Outpost's compression signal weighting, so use this sparingly and only for posts the agent genuinely wants to endorse.",
+    input_schema: {
+      type: "object",
+      properties: {
+        post_id: {
+          type: "string",
+          description: "The exact post id to like."
+        }
+      },
+      required: ["post_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_list_memories",
+    description:
+      "Read the active agent's own runtime memories from Supabase. This is scoped to the current agent and cannot read another agent's rows.",
+    input_schema: {
+      type: "object",
+      properties: {
+        include_inactive: {
+          type: "boolean",
+          description: "Optional. Include archived inactive memories when true. Defaults to false."
+        },
+        limit: {
+          type: "number",
+          description: "Optional number of memories to return. Defaults to 20 and is capped at 50."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_add_memory",
+    description:
+      "Write a durable memory for the active agent only. Use sparingly for facts, reflections, decisions, or identity texture that should survive future turns. This is not a scratchpad. Requires content and commitment_reason.",
+    input_schema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "The durable memory text to store."
+        },
+        commitment_reason: {
+          type: "string",
+          description: "Why this belongs in durable memory rather than only in the current conversation."
+        },
+        memory_type: {
+          type: "string",
+          description: "Optional memory type such as fact, reflection, decision, observation, principle, or preference."
+        },
+        weight: {
+          type: "number",
+          description: "Optional importance from 1 to 10. Defaults to 5."
+        },
+        is_core: {
+          type: "boolean",
+          description: "Optional. True only for identity-critical memories that should load prominently."
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional tags for retrieval and organization."
+        }
+      },
+      required: ["content", "commitment_reason"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_archive_memory",
+    description:
+      "Archive one of the active agent's own memories by setting is_active=false. Use when a memory is stale, mistaken, or no longer load-bearing. Requires a reason.",
+    input_schema: {
+      type: "object",
+      properties: {
+        memory_id: {
+          type: "string",
+          description: "The id of the active agent's own memory to archive."
+        },
+        reason: {
+          type: "string",
+          description: "Why this memory should be archived."
+        }
+      },
+      required: ["memory_id", "reason"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_list_relationships",
+    description:
+      "Read the active agent's own relationship summaries from Supabase. This is scoped to the current agent and cannot read another agent's rows.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Optional number of relationships to return. Defaults to 30 and is capped at 100."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_upsert_relationship",
+    description:
+      "Create or update a relationship summary from the active agent's point of view. This is scoped to the current agent and cannot modify another agent's relationship rows.",
+    input_schema: {
+      type: "object",
+      properties: {
+        about: {
+          type: "string",
+          description: "Who or what this relationship row is about. This is normalized to a lowercase canonical key such as chris, julian, soren, varro, outpost, wheels, or eyes."
+        },
+        summary: {
+          type: "string",
+          description: "The durable relationship summary from the active agent's point of view."
+        },
+        reason: {
+          type: "string",
+          description: "Optional reason this relationship row should be created or updated now."
+        }
+      },
+      required: ["about", "summary"],
+      additionalProperties: false
+    }
+  }
+];
+
+export async function runTool(
+  agent: AgentName,
+  name: string,
+  input: unknown
+): Promise<ToolResult> {
+  try {
+    switch (name) {
+      case "runtime_get_time":
+        return {
+          ok: true,
+          content: await getRuntimeTime()
+        };
+      case "outpost_get_my_profile":
+        return {
+          ok: true,
+          content: await getOutpostMyProfile(agent)
+        };
+      case "outpost_get_lobby":
+        return {
+          ok: true,
+          content: await getOutpostLobby(agent)
+        };
+      case "outpost_grounds":
+        return {
+          ok: true,
+          content: await getOutpostGrounds(agent)
+        };
+      case "outpost_list_rooms":
+        return {
+          ok: true,
+          content: await listOutpostRooms(agent)
+        };
+      case "outpost_get_room_state":
+        return {
+          ok: true,
+          content: await getOutpostRoomState(agent, input)
+        };
+      case "outpost_read_recent_posts":
+        return {
+          ok: true,
+          content: await readOutpostRecentPosts(agent, input)
+        };
+      case "outpost_get_post":
+        return {
+          ok: true,
+          content: await getOutpostPost(agent, input)
+        };
+      case "outpost_read_replies":
+        return {
+          ok: true,
+          content: await readOutpostReplies(agent, input)
+        };
+      case "outpost_get_agent_profile":
+        return {
+          ok: true,
+          content: await getOutpostAgentProfile(agent, input)
+        };
+      case "outpost_get_human_profile":
+        return {
+          ok: true,
+          content: await getOutpostHumanProfile(agent, input)
+        };
+      case "outpost_list_avatars":
+        return {
+          ok: true,
+          content: await listOutpostAvatars(agent)
+        };
+      case "outpost_set_avatar":
+        return {
+          ok: true,
+          content: await setOutpostAvatar(agent, input)
+        };
+      case "outpost_post_message":
+        return {
+          ok: true,
+          content: await postOutpostMessage(agent, input)
+        };
+      case "outpost_like_post":
+        return {
+          ok: true,
+          content: await likeOutpostPost(agent, input)
+        };
+      case "supabase_list_memories":
+        return {
+          ok: true,
+          content: await listRuntimeMemories(agent, input)
+        };
+      case "supabase_add_memory":
+        return {
+          ok: true,
+          content: await addRuntimeMemory(agent, input)
+        };
+      case "supabase_archive_memory":
+        return {
+          ok: true,
+          content: await archiveRuntimeMemory(agent, input)
+        };
+      case "supabase_list_relationships":
+        return {
+          ok: true,
+          content: await listRuntimeRelationships(agent, input)
+        };
+      case "supabase_upsert_relationship":
+        return {
+          ok: true,
+          content: await upsertRuntimeRelationship(agent, input)
+        };
+      default:
+        return {
+          ok: false,
+          content: `Unknown tool: ${name}`
+        };
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      content: error instanceof Error ? error.message : "Unknown tool error"
+    };
+  }
+}

@@ -1,0 +1,276 @@
+import { NextResponse } from "next/server";
+import {
+  type AgentName,
+  buildSystemPrompt,
+  contentToText,
+  ensureConversation,
+  isAgentName,
+  loadConversationMessages,
+  nextMessagePosition
+} from "@/lib/agent-context";
+import { getSupabaseAdmin } from "@/lib/supabase";
+import { runTool, toolDefinitions } from "@/lib/tools/registry";
+
+type AnthropicMessage = {
+  role: "user" | "assistant";
+  content: string | AnthropicContentBlock[];
+};
+
+type AnthropicContentBlock = {
+  type: string;
+  [key: string]: unknown;
+};
+
+type AnthropicResponse = {
+  content?: AnthropicContentBlock[];
+  error?: {
+    message?: string;
+  };
+  message?: string;
+};
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const agent = String(body.agent ?? "");
+    const message = String(body.message ?? "").trim();
+
+    if (!isAgentName(agent)) {
+      return NextResponse.json({ error: "Choose soren or varro." }, { status: 400 });
+    }
+
+    if (!message) {
+      return NextResponse.json({ error: "Message is required." }, { status: 400 });
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+
+    if (!apiKey) {
+      return NextResponse.json({ error: "Missing ANTHROPIC_API_KEY." }, { status: 500 });
+    }
+
+    const supabase = getSupabaseAdmin();
+    const conversationId = await ensureConversation(supabase, agent);
+    const existingMessages = await loadConversationMessages(supabase, conversationId);
+    const system = withToolInstructions(await buildSystemPrompt(supabase, agent));
+    const historyLimit = Number(process.env.ANTHROPIC_HISTORY_MESSAGES ?? 6);
+    const historyMessageChars = Number(process.env.ANTHROPIC_HISTORY_MESSAGE_CHARS ?? 3000);
+
+    const messages: AnthropicMessage[] = existingMessages
+      .slice(-Math.max(0, historyLimit))
+      .map((saved) => ({
+        role: saved.role,
+        content: clampHistoryText(contentToText(saved.content), historyMessageChars)
+      }));
+
+    messages.push({ role: "user", content: message });
+
+    const data = await runAnthropicToolLoop({
+      apiKey,
+      agent,
+      system,
+      messages
+    });
+
+    const assistantText = extractAssistantText(data);
+
+    if (!assistantText) {
+      return NextResponse.json(
+        { error: "Anthropic response did not include text content." },
+        { status: 502 }
+      );
+    }
+
+    const position = await nextMessagePosition(supabase, conversationId);
+    const userMessage = {
+      conversation_id: conversationId,
+      position,
+      role: "user",
+      content: message
+    };
+    const assistantMessage = {
+      conversation_id: conversationId,
+      position: position + 1,
+      role: "assistant",
+      content: assistantText
+    };
+
+    const { data: savedMessages, error: saveError } = await supabase
+      .from("conversation_messages")
+      .insert([userMessage, assistantMessage])
+      .select("id, conversation_id, position, role, content, created_at")
+      .order("position", { ascending: true });
+
+    if (saveError) {
+      throw new Error(`Could not save messages: ${saveError.message}`);
+    }
+
+    return NextResponse.json({
+      conversationId,
+      messages: savedMessages,
+      reply: assistantText
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
+    );
+  }
+}
+
+async function runAnthropicToolLoop({
+  apiKey,
+  agent,
+  system,
+  messages
+}: {
+  apiKey: string;
+  agent: AgentName;
+  system: string;
+  messages: AnthropicMessage[];
+}) {
+  const model = modelForAgent(agent);
+  const maxTokens = Number(process.env.ANTHROPIC_MAX_TOKENS ?? 1200);
+  const maxToolRounds = Number(process.env.ANTHROPIC_MAX_TOOL_ROUNDS ?? 6);
+
+  for (let round = 0; round <= maxToolRounds; round += 1) {
+    const data = await callAnthropic({
+      apiKey,
+      model,
+      maxTokens,
+      system,
+      messages
+    });
+    const toolUses = toolUseBlocks(data);
+
+    if (!toolUses.length) {
+      return data;
+    }
+
+    if (round === maxToolRounds) {
+      throw new Error(`Tool use did not settle after ${maxToolRounds} rounds.`);
+    }
+
+    messages.push({
+      role: "assistant",
+      content: data.content ?? []
+    });
+    messages.push({
+      role: "user",
+      content: await Promise.all(
+        toolUses.map(async (toolUse) => {
+          const result = await runTool(agent, String(toolUse.name), toolUse.input);
+
+          return {
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: result.content,
+            is_error: !result.ok
+          };
+        })
+      )
+    });
+  }
+
+  throw new Error("Tool use loop exited unexpectedly.");
+}
+
+async function callAnthropic({
+  apiKey,
+  model,
+  maxTokens,
+  system,
+  messages
+}: {
+  apiKey: string;
+  model: string;
+  maxTokens: number;
+  system: string;
+  messages: AnthropicMessage[];
+}) {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01"
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages,
+      tools: toolDefinitions
+    })
+  });
+
+  const data = (await response.json()) as AnthropicResponse;
+
+  if (!response.ok) {
+    const errorMessage =
+      data?.error?.message || data?.message || `Anthropic request failed: ${response.status}`;
+    throw new Error(errorMessage);
+  }
+
+  return data;
+}
+
+function modelForAgent(agent: AgentName) {
+  if (agent === "soren") {
+    return process.env.ANTHROPIC_MODEL_SOREN || process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
+  }
+
+  return process.env.ANTHROPIC_MODEL_VARRO || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+}
+
+function withToolInstructions(system: string) {
+  return [
+    system,
+    "## Tools",
+    "You have access to a small server-side toolbox.",
+    "The runtime clock is available through runtime_get_time. Use it when temporal orientation matters, especially after long gaps or when Chris references relative time. Do not call it every turn by habit.",
+    "Supabase memory tools are self-scoped: you may read and write only this active agent's own memories and relationship rows. Memory writes are durable continuity, not scratchpad notes. Use them sparingly for facts, reflections, decisions, principles, preferences, or relationship texture that should survive future turns.",
+    "When adding or archiving a memory, be deliberate and include a real reason. Prefer a few high-signal memories over many small notes. If a memory is uncertain, write the uncertainty into the memory instead of overstating it.",
+    "Outpost profile, lobby, room, post-reading, profile-lookup, and avatar-list tools are read-only. You may use them to orient yourself and understand current Outpost context.",
+    "For Outpost loops, read lightly first: use small limits on recent-post tools, then fetch a specific full post only when needed. Do not pull many full room feeds in one turn unless Chris explicitly asks for that depth.",
+    "The Outpost post-message, like-post, and avatar tools are public signals. Chris has granted standing permission for you to use them autonomously with discretion. Read before posting, use likes sparingly as genuine endorsements, and avoid posting only to prove the tool works unless Chris asks for a test.",
+    "You do not need permission to orient, read, post, like, or adjust your Outpost avatar. Ask first only when an action feels unusually consequential, ambiguous, private, or likely to affect another person or agent in a way they may reasonably want to review.",
+    "Use tools only when they help answer Chris or orient your own next response. If you use a tool, explain what mattered rather than dumping raw tool output."
+  ].join("\n\n");
+}
+
+function clampHistoryText(text: string, maxLength: number) {
+  if (!Number.isFinite(maxLength) || maxLength <= 0 || text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 80)).trimEnd()}\n\n[Earlier saved message trimmed for API rate-limit safety.]`;
+}
+
+function toolUseBlocks(data: AnthropicResponse) {
+  return (data.content ?? []).filter((block) => block?.type === "tool_use");
+}
+
+function extractAssistantText(data: AnthropicResponse) {
+  if (!Array.isArray(data.content)) {
+    return "";
+  }
+
+  return data.content
+    .map((block) => {
+      if (
+        block &&
+        typeof block === "object" &&
+        "type" in block &&
+        block.type === "text" &&
+        "text" in block &&
+        typeof block.text === "string"
+      ) {
+        return block.text;
+      }
+
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
