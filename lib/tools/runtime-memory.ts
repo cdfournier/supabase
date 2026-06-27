@@ -7,6 +7,25 @@ type JsonRecord = Record<string, unknown>;
 
 const MAX_MEMORY_CONTENT = 2200;
 const MAX_RELATIONSHIP_SUMMARY = 2400;
+const MAX_CURRENT_STATE = 6000;
+
+export async function getRuntimeProfile(agent: AgentName) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("restoration_profiles")
+    .select("agent, opening_orientation, persona_summary, current_state, compaction_memory_policy, updated_at")
+    .eq("agent", agent)
+    .single();
+
+  if (error) {
+    throw new Error(`Could not read restoration profile: ${error.message}`);
+  }
+
+  return stringifyToolPayload({
+    note: "Restoration profile for the active agent only.",
+    profile: data
+  });
+}
 
 export async function listRuntimeMemories(agent: AgentName, input: unknown) {
   const includeInactive = isRecord(input) && input.include_inactive === true;
@@ -199,6 +218,50 @@ export async function upsertRuntimeRelationship(agent: AgentName, input: unknown
   });
 }
 
+export async function updateRuntimeCurrentState(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("supabase_update_current_state requires an object input.");
+  }
+
+  const currentState = cleanMultilineText(input.current_state);
+  const reason = cleanText(input.reason);
+
+  if (!currentState) {
+    throw new Error("supabase_update_current_state requires current_state.");
+  }
+
+  if (!reason) {
+    throw new Error("supabase_update_current_state requires reason.");
+  }
+
+  if (currentState.length > MAX_CURRENT_STATE) {
+    throw new Error(
+      `supabase_update_current_state current_state must be ${MAX_CURRENT_STATE} characters or fewer.`
+    );
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("restoration_profiles")
+    .update({
+      current_state: currentState,
+      updated_at: new Date().toISOString()
+    })
+    .eq("agent", agent)
+    .select("agent, current_state, updated_at")
+    .single();
+
+  if (error) {
+    throw new Error(`Could not update current state: ${error.message}`);
+  }
+
+  return stringifyToolPayload({
+    note: "Current state updated for the active agent only. This is the pre-compaction handoff field.",
+    reason,
+    profile: data
+  });
+}
+
 function parseTags(value: unknown) {
   const rawTags = Array.isArray(value)
     ? value
@@ -215,6 +278,13 @@ function parseTags(value: unknown) {
 function cleanText(value: unknown) {
   return String(value ?? "")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanMultilineText(value: unknown) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
     .trim();
 }
 

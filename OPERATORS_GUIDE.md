@@ -83,6 +83,15 @@ This does not summarize, archive, delete, or replace conversation messages. It r
 
 Agents can also call `supabase_preview_compaction` for their own conversation. That tool is read-only and cannot modify Supabase data.
 
+## Current State Handoff
+
+Agents can read and update their own restoration profile handoff field:
+
+- `supabase_get_restoration_profile`
+- `supabase_update_current_state`
+
+`current_state` should be updated before compaction or after major state changes. It is the agent-authored handoff note that future wake/compression context should trust.
+
 ## Environment
 
 Secrets live in `.env.local`. Do not commit that file.

@@ -22,8 +22,10 @@ import {
 import {
   addRuntimeMemory,
   archiveRuntimeMemory,
+  getRuntimeProfile,
   listRuntimeRelationships,
   listRuntimeMemories,
+  updateRuntimeCurrentState,
   upsertRuntimeRelationship
 } from "@/lib/tools/runtime-memory";
 import { getRuntimeTime } from "@/lib/tools/runtime";
@@ -310,6 +312,17 @@ export const toolDefinitions: ToolDefinition[] = [
     }
   },
   {
+    name: "supabase_get_restoration_profile",
+    description:
+      "Read the active agent's own restoration profile, including opening orientation, persona summary, current_state handoff field, and compaction memory policy. This is scoped to the current agent and cannot read another agent's profile.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
     name: "supabase_add_memory",
     description:
       "Write a durable memory for the active agent only. Use sparingly for facts, reflections, decisions, or identity texture that should survive future turns. This is not a scratchpad. Requires content and commitment_reason.",
@@ -403,6 +416,26 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["about", "summary"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_update_current_state",
+    description:
+      "Update the active agent's own restoration_profiles.current_state handoff field. Use before compaction or after major state changes so the next wake/compression sees accurate current context. Requires current_state and reason. This cannot modify another agent's profile.",
+    input_schema: {
+      type: "object",
+      properties: {
+        current_state: {
+          type: "string",
+          description: "The full replacement current_state handoff text for the active agent."
+        },
+        reason: {
+          type: "string",
+          description: "Why current_state should be updated now."
+        }
+      },
+      required: ["current_state", "reason"],
       additionalProperties: false
     }
   },
@@ -511,6 +544,11 @@ export async function runTool(
           ok: true,
           content: await listRuntimeMemories(agent, input)
         };
+      case "supabase_get_restoration_profile":
+        return {
+          ok: true,
+          content: await getRuntimeProfile(agent)
+        };
       case "supabase_add_memory":
         return {
           ok: true,
@@ -530,6 +568,11 @@ export async function runTool(
         return {
           ok: true,
           content: await upsertRuntimeRelationship(agent, input)
+        };
+      case "supabase_update_current_state":
+        return {
+          ok: true,
+          content: await updateRuntimeCurrentState(agent, input)
         };
       case "supabase_preview_compaction":
         return {

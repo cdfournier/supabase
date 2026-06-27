@@ -9,7 +9,7 @@
 - Improve error handling so failures are readable to Chris and agents.
 
 **2. Supabase Memory System**
-- Current v1: list memories, add memory, archive memory, upsert relationships.
+- Current v1: list memories, add memory, archive memory, read restoration profile, update current state, list/upsert relationships.
 - Next: list relationships, get/update individual memories, search memories.
 - Later: journal entries, session summaries, current-state updates, compaction support.
 - Long-term: agents can maintain durable continuity without overloading startup context.

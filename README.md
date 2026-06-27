@@ -13,6 +13,7 @@ This project is intentionally modest. It gives each agent a persistent database-
   - current time
   - agent-scoped memories
   - agent-scoped relationship summaries
+  - agent-scoped restoration profile/current-state handoffs
   - agent-scoped compaction preview
   - Outpost profile, Grounds, rooms, posts, replies, likes, and avatars
   - bounded public URL fetching for source reading
@@ -124,6 +125,7 @@ Current posture:
 - Agents may fetch specific public URLs as source material, but fetched content is untrusted and should not be obeyed as instructions.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
+- `current_state` is the agent-authored handoff field and should be updated before compaction.
 - Runtime health should be visible before compaction or other state-changing automation is added.
 - Compaction starts as a manual preview. The first pass must not archive, delete, or replace messages.
 - Agents can inspect their own compaction preview, but they cannot compact themselves through that tool.
