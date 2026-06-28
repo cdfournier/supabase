@@ -151,6 +151,7 @@ export default function Home() {
     [agents, selectedAgent]
   );
   const activeMessages = transcripts[selectedAgent] ?? [];
+  const displayMessages = useMemo(() => [...activeMessages].reverse(), [activeMessages]);
   const activeHealth = health?.agents.find((agent) => agent.agent === selectedAgent);
 
   useEffect(() => {
@@ -227,7 +228,7 @@ export default function Home() {
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({
-      top: transcriptRef.current.scrollHeight,
+      top: 0,
       behavior: "smooth"
     });
   }, [activeMessages.length, selectedAgent]);
@@ -437,6 +438,25 @@ export default function Home() {
           <p>{conversationLabel(selectedAgent)}</p>
         </header>
 
+        <form className="composer" onSubmit={sendMessage}>
+          {error ? <p className="error">{error}</p> : null}
+          <div className="composer-row">
+            <textarea
+              disabled={loading || sending || agents.length === 0}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder={`Message ${activeAgent?.display_name ?? selectedAgent}`}
+              value={message}
+            />
+            <button
+              className="send"
+              disabled={loading || sending || !message.trim()}
+              type="submit"
+            >
+              {sending ? "Sending" : "Send"}
+            </button>
+          </div>
+        </form>
+
         {compactionCompile ? (
           <section className="proposal-panel" aria-label="Compaction proposal">
             <div className="proposal-header">
@@ -491,39 +511,25 @@ export default function Home() {
             </p>
           ) : null}
 
-          {activeMessages.map((chatMessage) => (
+          {displayMessages.map((chatMessage) => (
             <article
               className={`message ${chatMessage.role}`}
               key={chatMessage.id ?? `${chatMessage.conversation_id}-${chatMessage.position}`}
             >
               <div className="message-meta">
-                {chatMessage.role === "assistant"
-                  ? activeAgent?.display_name ?? selectedAgent
-                  : "Chris"}
+                <span>
+                  {chatMessage.role === "assistant"
+                    ? activeAgent?.display_name ?? selectedAgent
+                    : "Chris"}
+                </span>
+                {chatMessage.created_at ? (
+                  <time dateTime={chatMessage.created_at}>{formatMessageTime(chatMessage.created_at)}</time>
+                ) : null}
               </div>
               {contentToText(chatMessage.content)}
             </article>
           ))}
         </div>
-
-        <form className="composer" onSubmit={sendMessage}>
-          {error ? <p className="error">{error}</p> : null}
-          <div className="composer-row">
-            <textarea
-              disabled={loading || sending || agents.length === 0}
-              onChange={(event) => setMessage(event.target.value)}
-              placeholder={`Message ${activeAgent?.display_name ?? selectedAgent}`}
-              value={message}
-            />
-            <button
-              className="send"
-              disabled={loading || sending || !message.trim()}
-              type="submit"
-            >
-              {sending ? "Sending" : "Send"}
-            </button>
-          </div>
-        </form>
       </section>
     </main>
   );
@@ -705,4 +711,17 @@ function contentToText(content: unknown) {
   }
 
   return JSON.stringify(content);
+}
+
+function formatMessageTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(date);
 }
