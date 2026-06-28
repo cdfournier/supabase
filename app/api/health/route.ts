@@ -14,6 +14,7 @@ import {
   latestCompactionCheckpoint,
   messagesAfterCheckpoint
 } from "@/lib/compaction";
+import { ANTHROPIC_PROMPT_CACHE_TTL, anthropicPromptCacheEnabled } from "@/lib/anthropic-cache";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { toolDefinitions } from "@/lib/tools/registry";
 
@@ -50,7 +51,9 @@ export async function GET() {
         max_tokens: numberEnv("ANTHROPIC_MAX_TOKENS", 1200),
         history_messages: numberEnv("ANTHROPIC_HISTORY_MESSAGES", 6),
         history_message_chars: numberEnv("ANTHROPIC_HISTORY_MESSAGE_CHARS", 3000),
-        max_tool_rounds: numberEnv("ANTHROPIC_MAX_TOOL_ROUNDS", 6)
+        max_tool_rounds: numberEnv("ANTHROPIC_MAX_TOOL_ROUNDS", 6),
+        prompt_cache: anthropicPromptCacheEnabled(),
+        prompt_cache_ttl: anthropicPromptCacheEnabled() ? ANTHROPIC_PROMPT_CACHE_TTL : "off"
       },
       env: {
         supabase_url: present("NEXT_PUBLIC_SUPABASE_URL"),

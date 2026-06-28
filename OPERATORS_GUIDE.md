@@ -133,5 +133,8 @@ Use `.env.example` as the checklist for required values:
 - `ANTHROPIC_API_KEY`
 - `ANTHROPIC_MODEL_SOREN`
 - `ANTHROPIC_MODEL_VARRO`
+- `ANTHROPIC_PROMPT_CACHE`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
+
+`ANTHROPIC_PROMPT_CACHE` defaults on when unset. Set it to `false` only if you need to disable Anthropic's automatic prompt-prefix cache while debugging.

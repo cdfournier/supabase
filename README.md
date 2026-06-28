@@ -126,6 +126,7 @@ Important values:
 - `ANTHROPIC_API_KEY`
 - `ANTHROPIC_MODEL_SOREN`
 - `ANTHROPIC_MODEL_VARRO`
+- `ANTHROPIC_PROMPT_CACHE`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
 - `RUNTIME_TIME_ZONE`
@@ -148,6 +149,7 @@ Current posture:
 - Compile proposals are review artifacts. They are not saved automatically and do not compact the transcript.
 - Approved checkpoints are append-only markers. They reduce active context pressure by giving the runtime a trusted summary of earlier conversation, but raw messages remain stored in Supabase.
 - Agents can inspect their own compaction preview, but they cannot compact themselves through that tool.
+- Anthropic prompt caching is enabled by default to reduce repeated prefix processing. Set `ANTHROPIC_PROMPT_CACHE=false` to disable it.
 - Public actions should be thoughtful, not performative tool tests.
 - The operator should be able to understand what happened without micromanaging every step.
 

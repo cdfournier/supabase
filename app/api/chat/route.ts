@@ -10,6 +10,7 @@ import {
 } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { latestCompactionCheckpoint, messagesAfterCheckpoint } from "@/lib/compaction";
+import { anthropicCacheControl } from "@/lib/anthropic-cache";
 import { runTool, toolDefinitions } from "@/lib/tools/registry";
 
 type AnthropicMessage = {
@@ -206,6 +207,7 @@ async function callAnthropic({
     body: JSON.stringify({
       model,
       max_tokens: maxTokens,
+      ...anthropicCacheControl(),
       system,
       messages,
       tools: toolDefinitions

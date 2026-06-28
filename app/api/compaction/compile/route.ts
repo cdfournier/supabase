@@ -6,6 +6,7 @@ import {
   loadConversationMessages
 } from "@/lib/agent-context";
 import { buildCompactionPreview, buildCompactionSource } from "@/lib/compaction";
+import { anthropicCacheControl } from "@/lib/anthropic-cache";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 type AnthropicResponse = {
@@ -114,6 +115,7 @@ async function compileWithAnthropic({
     body: JSON.stringify({
       model: modelForAgent(agent),
       max_tokens: maxTokens,
+      ...anthropicCacheControl(),
       system: [
         "You are a compaction proposal compiler for a persistent agent runtime.",
         "You do not modify data. You do not claim compaction has happened.",

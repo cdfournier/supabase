@@ -27,6 +27,8 @@ type Health = {
     history_messages: number;
     history_message_chars: number;
     max_tool_rounds: number;
+    prompt_cache: boolean;
+    prompt_cache_ttl: string;
   };
   env: Record<string, boolean>;
   tools: {
@@ -588,6 +590,14 @@ function RuntimeHealthPanel({
             <div>
               <dt>Rounds</dt>
               <dd>{health?.runtime.max_tool_rounds ?? "?"}</dd>
+            </div>
+            <div>
+              <dt>Cache</dt>
+              <dd>
+                {health?.runtime.prompt_cache
+                  ? `on (${health.runtime.prompt_cache_ttl})`
+                  : "off"}
+              </dd>
             </div>
             <div>
               <dt>Env</dt>
