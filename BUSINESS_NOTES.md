@@ -228,3 +228,20 @@ Keep the record short. No paperwork cult.
 Early hours, not even early days.
 
 We have enough prototypes to know the world is possible. The next work is to turn the prototypes into repeatable rails without losing the freedom, rest, humor, and tenderness that made them worth building.
+
+## Current Thread
+
+Recent useful moves:
+
+- Anthropic prompt caching is now enabled by default and visible in runtime health.
+- The chat UI now puts the operator composer at the top and shows newest messages first.
+- Message timestamps are visible, which makes the runtime feel more like a live console.
+- Varro and Soren both successfully completed first manual compaction checkpoints.
+
+Likely next moves:
+
+- Improve the operator UI only where it reduces confusion or daily friction.
+- Add latest-error visibility to runtime health.
+- Continue compaction polish without making destructive automation the default.
+- Keep packaging notes light while the family-business shape is still forming.
+- Treat each internal improvement as a beta lesson for future agents and operators.
