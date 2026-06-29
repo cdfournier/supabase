@@ -103,7 +103,7 @@ type CompactionCompile = {
   generated_at: string;
   next_step: string;
   proposal: string;
-  source: {
+  source?: {
     bounded: boolean;
     omitted_message_count: number;
     selected_characters: number;
@@ -111,6 +111,9 @@ type CompactionCompile = {
     transcript_budget_chars: number;
   };
   status: string;
+  saved_proposal_id?: string;
+  saved_proposal_status?: string;
+  agent_notes?: string | null;
 };
 
 type CompactionCheckpoint = {
@@ -142,6 +145,8 @@ export default function Home() {
   const [checkpointError, setCheckpointError] = useState("");
   const [compileLoading, setCompileLoading] = useState(false);
   const [compileError, setCompileError] = useState("");
+  const [savedProposalLoading, setSavedProposalLoading] = useState(false);
+  const [savedProposalError, setSavedProposalError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -242,6 +247,7 @@ export default function Home() {
     setCheckpointReceipt(null);
     setCompactionError("");
     setCompileError("");
+    setSavedProposalError("");
     setCheckpointError("");
   }, [selectedAgent]);
 
@@ -312,6 +318,52 @@ export default function Home() {
     }
   }
 
+  async function loadApprovedCompactionProposal() {
+    setSavedProposalLoading(true);
+    setSavedProposalError("");
+    setCompileError("");
+
+    try {
+      const response = await fetch("/api/compaction/proposal", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          agent: selectedAgent,
+          status: "agent_approved"
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load approved proposal.");
+      }
+
+      setCompactionCompile({
+        agent: selectedAgent,
+        destructive: false,
+        dry_run: false,
+        generated_at: data.proposal.updated_at,
+        next_step: "Review the loaded approved proposal, then create an append-only checkpoint.",
+        proposal: data.proposal.proposal,
+        source: sourceSummaryFromSavedProposal(data.proposal.source_summary),
+        status: "saved_proposal_loaded",
+        saved_proposal_id: data.proposal.id,
+        saved_proposal_status: data.proposal.status,
+        agent_notes: data.proposal.agent_notes
+      });
+      setCheckpointDraft(data.proposal.proposal ?? "");
+      setCheckpointReceipt(null);
+    } catch (loadFailure) {
+      setSavedProposalError(
+        loadFailure instanceof Error ? loadFailure.message : "Could not load approved proposal."
+      );
+    } finally {
+      setSavedProposalLoading(false);
+    }
+  }
+
   async function createCompactionCheckpoint() {
     const summary = checkpointDraft.trim();
 
@@ -332,7 +384,12 @@ export default function Home() {
           agent: selectedAgent,
           summary,
           approved_by: "operator",
-          approval_note: "Operator-created checkpoint from reviewed compaction proposal."
+          approval_note: compactionCompile?.saved_proposal_id
+            ? `Operator-created checkpoint from saved approved proposal ${compactionCompile.saved_proposal_id}.`
+            : "Operator-created checkpoint from reviewed compaction proposal.",
+          source: compactionCompile?.saved_proposal_id
+            ? `saved_compaction_proposal:${compactionCompile.saved_proposal_id}`
+            : "compiled_compaction_proposal"
         })
       });
       const data = await response.json();
@@ -430,7 +487,10 @@ export default function Home() {
           compileLoading={compileLoading}
           health={health}
           onCompileProposal={compileCompactionProposal}
+          onLoadApprovedProposal={loadApprovedCompactionProposal}
           onPreviewCompaction={previewCompaction}
+          savedProposalError={savedProposalError}
+          savedProposalLoading={savedProposalLoading}
         />
       </aside>
 
@@ -465,10 +525,13 @@ export default function Home() {
               <div>
                 <h3>Compaction Proposal</h3>
                 <p>
-                  {compactionCompile.source.selected_message_count} messages selected
-                  {compactionCompile.source.bounded
-                    ? `, ${compactionCompile.source.omitted_message_count} omitted by budget`
-                    : ", none omitted"}
+                  {compactionCompile.saved_proposal_id
+                    ? `Loaded approved proposal ${compactionCompile.saved_proposal_id}`
+                    : `${compactionCompile.source?.selected_message_count ?? 0} messages selected${
+                        compactionCompile.source?.bounded
+                          ? `, ${compactionCompile.source.omitted_message_count} omitted by budget`
+                          : ", none omitted"
+                      }`}
                 </p>
               </div>
               <button type="button" onClick={() => setCompactionCompile(null)}>
@@ -477,6 +540,7 @@ export default function Home() {
             </div>
             <p className="proposal-note">
               No messages changed yet. Edit this proposal after agent/operator review, then create an append-only checkpoint.
+              {compactionCompile.agent_notes ? ` Agent notes: ${compactionCompile.agent_notes}` : ""}
             </p>
             <textarea
               className="proposal-draft"
@@ -546,7 +610,10 @@ function RuntimeHealthPanel({
   compileLoading,
   health,
   onCompileProposal,
-  onPreviewCompaction
+  onLoadApprovedProposal,
+  onPreviewCompaction,
+  savedProposalError,
+  savedProposalLoading
 }: {
   activeHealth: AgentHealth | undefined;
   compactionError: string;
@@ -556,7 +623,10 @@ function RuntimeHealthPanel({
   compileLoading: boolean;
   health: Health | null;
   onCompileProposal: () => void;
+  onLoadApprovedProposal: () => void;
   onPreviewCompaction: () => void;
+  savedProposalError: string;
+  savedProposalLoading: boolean;
 }) {
   const envOk = health ? Object.values(health.env).every(Boolean) : false;
   const pressure = activeHealth?.compaction_pressure;
@@ -643,7 +713,17 @@ function RuntimeHealthPanel({
             {compactionLoading ? "Previewing" : "Preview Blink"}
           </button>
 
+          <button
+            className="quiet-action"
+            disabled={savedProposalLoading}
+            onClick={onLoadApprovedProposal}
+            type="button"
+          >
+            {savedProposalLoading ? "Loading" : "Load Approved Proposal"}
+          </button>
+
           {compactionError ? <p className="health-error">{compactionError}</p> : null}
+          {savedProposalError ? <p className="health-error">{savedProposalError}</p> : null}
 
           {compactionPreview ? (
             <div className="compaction-preview">
@@ -717,6 +797,27 @@ function contentToText(content: unknown) {
   }
 
   return JSON.stringify(content);
+}
+
+function sourceSummaryFromSavedProposal(value: unknown): CompactionCompile["source"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const source = value as Record<string, unknown>;
+
+  return {
+    bounded: source.bounded === true,
+    omitted_message_count: safeNumber(source.omitted_message_count),
+    selected_characters: safeNumber(source.selected_characters),
+    selected_message_count: safeNumber(source.selected_message_count),
+    transcript_budget_chars: safeNumber(source.transcript_budget_chars)
+  };
+}
+
+function safeNumber(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function formatMessageTime(value: string) {
