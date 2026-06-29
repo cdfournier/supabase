@@ -30,7 +30,7 @@ import {
 } from "@/lib/tools/runtime-memory";
 import { getRuntimeTime } from "@/lib/tools/runtime";
 import type { ToolDefinition, ToolResult } from "@/lib/tools/types";
-import { extractWebLinks, fetchWebMany, fetchWebUrl } from "@/lib/tools/web";
+import { extractWebLinks, fetchWebMany, fetchWebUrl, searchWeb } from "@/lib/tools/web";
 
 export const toolDefinitions: ToolDefinition[] = [
   {
@@ -268,6 +268,30 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["post_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "web_search",
+    description:
+      "Search the public web for candidate source URLs. Returns a bounded ranked list of titles, URLs, and snippets only; it does not fetch full pages. Use web_fetch_url or web_fetch_many before relying on a result as source material. Optional site scopes the search to one public hostname.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query, up to 200 characters. Keep it specific."
+        },
+        limit: {
+          type: "number",
+          description: "Optional number of results. Defaults to 5 and is capped at 10."
+        },
+        site: {
+          type: "string",
+          description: "Optional public hostname to scope the search, such as docs.anthropic.com. Do not include private or localhost hosts."
+        }
+      },
+      required: ["query"],
       additionalProperties: false
     }
   },
@@ -574,6 +598,11 @@ export async function runTool(
         return {
           ok: true,
           content: await likeOutpostPost(agent, input)
+        };
+      case "web_search":
+        return {
+          ok: true,
+          content: await searchWeb(input)
         };
       case "web_fetch_url":
         return {

@@ -75,11 +75,12 @@ The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stop
 
 Agents have read-only URL tools:
 
+- `web_search` returns public web result candidates with title, URL, and snippet. It uses Brave Search and requires `BRAVE_SEARCH_API_KEY`.
 - `web_fetch_url` reads one specific public URL.
 - `web_extract_links` reads one specific public URL and returns public http/https links found on it.
 - `web_fetch_many` reads up to 3 specific public URLs and reports per-URL success or failure.
 
-These tools are not search, browser automation, form submission, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
+Search finds candidates; fetch reads sources. Agents should fetch before relying on a search result. These tools are not browser automation, form submission, authentication, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
 
 ## Compaction Preview
 
@@ -147,6 +148,7 @@ Use `.env.example` as the checklist for required values:
 - `ANTHROPIC_MODEL_VARRO`
 - `ANTHROPIC_MAX_TOKENS`
 - `ANTHROPIC_PROMPT_CACHE`
+- `BRAVE_SEARCH_API_KEY`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
 

@@ -10,6 +10,11 @@ const MAX_REDIRECTS = 5;
 const DEFAULT_LINK_LIMIT = 40;
 const MAX_LINK_LIMIT = 100;
 const MAX_FETCH_MANY_URLS = 3;
+const DEFAULT_SEARCH_LIMIT = 5;
+const MAX_SEARCH_LIMIT = 10;
+const MAX_SEARCH_QUERY_CHARS = 200;
+const MAX_SEARCH_SNIPPET_CHARS = 320;
+const BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 
 type JsonRecord = Record<string, unknown>;
 type FetchedReadableUrl = {
@@ -120,6 +125,69 @@ export async function fetchWebMany(input: unknown) {
     max_chars_per_url: maxCharsPerUrl,
     results
   });
+}
+
+export async function searchWeb(input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("web_search requires an object input.");
+  }
+
+  const apiKey = process.env.BRAVE_SEARCH_API_KEY?.trim();
+  const rawQuery = cleanText(input.query);
+  const limit = clampNumber(input.limit, DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT);
+  const site = normalizeSearchSite(input.site);
+
+  if (!apiKey) {
+    throw new Error("Missing BRAVE_SEARCH_API_KEY. Add it to .env.local and restart the runtime.");
+  }
+
+  if (!rawQuery) {
+    throw new Error("web_search requires query.");
+  }
+
+  if (rawQuery.length > MAX_SEARCH_QUERY_CHARS) {
+    throw new Error(`web_search query is too long. Max characters: ${MAX_SEARCH_QUERY_CHARS}.`);
+  }
+
+  const query = site ? `site:${site} ${rawQuery}` : rawQuery;
+  const url = new URL(BRAVE_SEARCH_ENDPOINT);
+
+  url.searchParams.set("q", query);
+  url.searchParams.set("count", String(limit));
+  url.searchParams.set("safesearch", "moderate");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json",
+        "x-subscription-token": apiKey
+      },
+      signal: controller.signal
+    });
+    const data = (await response.json()) as JsonRecord;
+
+    if (!response.ok) {
+      throw new Error(braveSearchError(data, response.status));
+    }
+
+    const results = await normalizeSearchResults(data, limit);
+
+    return stringifyToolPayload({
+      note: "Search results are discovery metadata, not verified source content. Fetch a result URL before relying on it as source material.",
+      provider: "brave",
+      query: rawQuery,
+      site: site || null,
+      limit,
+      returned: results.length,
+      rate_limit: responseRateLimit(response),
+      results
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchReadableUrl(rawUrl: string, toolName: string): Promise<FetchedReadableUrl> {
@@ -233,6 +301,111 @@ async function extractPublicLinks(html: string, baseUrl: string, limit: number) 
   }
 
   return links;
+}
+
+async function normalizeSearchResults(data: JsonRecord, limit: number) {
+  const web = isRecord(data.web) ? data.web : {};
+  const values = Array.isArray(web.results) ? web.results : [];
+  const results = [];
+  const seen = new Set<string>();
+
+  for (const value of values) {
+    if (results.length >= limit) {
+      break;
+    }
+
+    if (!isRecord(value)) {
+      continue;
+    }
+
+    const title = cleanText(htmlToText(String(value.title ?? ""))).slice(0, 180);
+    const rawUrl = cleanText(value.url);
+    const snippet = searchSnippet(value);
+
+    if (!rawUrl) {
+      continue;
+    }
+
+    let parsed: URL;
+
+    try {
+      parsed = normalizeAndValidateUrl(rawUrl, "web_search");
+      await assertPublicHostname(parsed, "web_search");
+    } catch {
+      continue;
+    }
+
+    const normalizedUrl = parsed.toString();
+
+    if (seen.has(normalizedUrl)) {
+      continue;
+    }
+
+    seen.add(normalizedUrl);
+    results.push({
+      title: title || null,
+      url: normalizedUrl,
+      snippet: snippet || null
+    });
+  }
+
+  return results;
+}
+
+function searchSnippet(value: JsonRecord) {
+  const description = cleanText(htmlToText(String(value.description ?? "")));
+  const extraSnippets = Array.isArray(value.extra_snippets)
+    ? value.extra_snippets.map((snippet) => cleanText(htmlToText(String(snippet)))).filter(Boolean)
+    : [];
+  const combined = [description, ...extraSnippets].filter(Boolean).join(" ");
+
+  return combined.slice(0, MAX_SEARCH_SNIPPET_CHARS);
+}
+
+function normalizeSearchSite(value: unknown) {
+  const rawSite = cleanText(value);
+
+  if (!rawSite) {
+    return "";
+  }
+
+  let hostname = rawSite;
+
+  try {
+    hostname = new URL(rawSite.includes("://") ? rawSite : `https://${rawSite}`).hostname;
+  } catch {
+    throw new Error("web_search site must be a valid public hostname.");
+  }
+
+  const normalized = hostname.toLowerCase();
+
+  if (
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    isPrivateIp(normalized)
+  ) {
+    throw new Error("web_search site cannot be localhost or a private network address.");
+  }
+
+  return normalized.replace(/^www\./, "");
+}
+
+function braveSearchError(data: JsonRecord, status: number) {
+  const message =
+    cleanText(data.message) ||
+    cleanText(isRecord(data.error) ? data.error.message : "") ||
+    cleanText(typeof data.error === "string" ? data.error : "") ||
+    `Brave Search request failed: ${status}`;
+
+  return message;
+}
+
+function responseRateLimit(response: Response) {
+  return {
+    limit: response.headers.get("x-ratelimit-limit"),
+    remaining: response.headers.get("x-ratelimit-remaining"),
+    reset: response.headers.get("x-ratelimit-reset")
+  };
 }
 
 function normalizeAndValidateUrl(value: string, toolName: string) {
