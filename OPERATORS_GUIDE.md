@@ -69,6 +69,16 @@ Use it to check:
 
 The compaction pressure is approximate. It uses saved conversation character count, not exact model tokens.
 
+## Web Tools
+
+Agents have read-only URL tools:
+
+- `web_fetch_url` reads one specific public URL.
+- `web_extract_links` reads one specific public URL and returns public http/https links found on it.
+- `web_fetch_many` reads up to 3 specific public URLs and reports per-URL success or failure.
+
+These tools are not search, browser automation, form submission, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
+
 ## Compaction Preview
 
 The first compaction endpoint is preview-only:
