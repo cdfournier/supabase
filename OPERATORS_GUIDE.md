@@ -117,6 +117,8 @@ curl -s -X POST http://localhost:3001/api/compaction/compile \
 
 The proposal is a review artifact. It is not saved automatically, and it does not archive, delete, or replace messages. v0 uses a bounded transcript source so the runtime does not trip rate limits by trying to send an unlimited conversation in one request.
 
+If compiled proposals are truncated before sections 6 or 7, increase `COMPACTION_COMPILE_MAX_TOKENS` in `.env.local` and restart the server. This is separate from the normal chat `ANTHROPIC_MAX_TOKENS` setting.
+
 ## Compaction Checkpoint
 
 After the agent and operator review a compiled proposal, the operator can edit the proposal in the UI and click **Create Checkpoint**.

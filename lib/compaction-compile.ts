@@ -24,7 +24,7 @@ type AnthropicResponse = {
   message?: string;
 };
 
-const DEFAULT_COMPILE_MAX_TOKENS = 2600;
+const DEFAULT_COMPILE_MAX_TOKENS = 5200;
 const DEFAULT_COMPILE_TRANSCRIPT_CHARS = 50_000;
 const PROPOSAL_OUTPUT_CONTRACT = [
   "Write an authored compaction proposal, not a transcript excerpt packet.",
@@ -38,6 +38,7 @@ const PROPOSAL_OUTPUT_CONTRACT = [
   "6. Candidate durable memories",
   "7. What can be safely compressed away",
   "In section 6, format candidate memories as reviewable bullets with suggested memory_type, weight, core/supporting judgment, and tags when the source supports them.",
+  "Sections 6 and 7 are mandatory. If output space is tight, shorten sections 1-5 before omitting candidate memories or compression recommendations.",
   "Mark uncertainty plainly when the bounded source does not prove something.",
   "The output should be useful for agent/operator review before a future checkpoint."
 ].join("\n");
