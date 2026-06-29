@@ -64,6 +64,8 @@ type AgentHealth = {
     active_rows: number;
     core_rows: number;
     relationships: number;
+    compaction_proposals: number;
+    compaction_proposals_error?: string | null;
     compaction_policy_configured: boolean;
   };
   compaction_pressure: {

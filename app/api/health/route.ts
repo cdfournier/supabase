@@ -88,7 +88,13 @@ async function buildAgentHealth(
 ) {
   const conversationId = await ensureConversation(supabase, agent);
   const messages = await loadConversationMessages(supabase, conversationId);
-  const [conversationResult, memoryResult, relationshipResult, profileResult] = await Promise.all([
+  const [
+    conversationResult,
+    memoryResult,
+    relationshipResult,
+    proposalResult,
+    profileResult
+  ] = await Promise.all([
     supabase
       .from("conversations")
       .select("id, agent, token_count, compaction_count, created_at, updated_at")
@@ -100,6 +106,10 @@ async function buildAgentHealth(
       .eq("agent", agent),
     supabase
       .from("relationships")
+      .select("id", { count: "exact", head: false })
+      .eq("agent", agent),
+    supabase
+      .from("compaction_proposals")
       .select("id", { count: "exact", head: false })
       .eq("agent", agent),
     supabase
@@ -164,6 +174,10 @@ async function buildAgentHealth(
       active_rows: activeMemories.length,
       core_rows: coreMemories.length,
       relationships: relationshipResult.count ?? relationshipResult.data?.length ?? 0,
+      compaction_proposals: proposalResult.error
+        ? 0
+        : proposalResult.count ?? proposalResult.data?.length ?? 0,
+      compaction_proposals_error: proposalResult.error?.message ?? null,
       compaction_policy_configured: Boolean(profileResult.data?.compaction_memory_policy),
       restoration_profile_updated_at: profileResult.data?.updated_at ?? null
     },

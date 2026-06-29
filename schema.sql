@@ -65,9 +65,25 @@ create table if not exists public.restoration_profiles (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.compaction_proposals (
+  id uuid primary key default gen_random_uuid(),
+  agent text not null references public.agents(name),
+  conversation_id text not null references public.conversations(id),
+  proposal text not null,
+  source_summary jsonb default '{}'::jsonb,
+  status text default 'draft',
+  agent_notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists compaction_proposals_by_agent
+  on public.compaction_proposals (agent, updated_at desc);
+
 alter table public.agents enable row level security;
 alter table public.conversations enable row level security;
 alter table public.conversation_messages enable row level security;
 alter table public.memories enable row level security;
 alter table public.relationships enable row level security;
 alter table public.restoration_profiles enable row level security;
+alter table public.compaction_proposals enable row level security;

@@ -148,6 +148,7 @@ Current posture:
 - Compaction starts as a manual preview. The first pass must not archive, delete, or replace messages.
 - Compile proposals are review artifacts. They are not saved automatically and do not compact the transcript.
 - Agents can compile their own non-destructive compaction proposals with the same compiler used by the Operator UI, then revise the draft in conversation before any checkpoint is created.
+- Agents can save and revise proposal drafts in Supabase. Saved proposal status is a review signal only; it does not compact or checkpoint anything.
 - Approved checkpoints are append-only markers. They reduce active context pressure by giving the runtime a trusted summary of earlier conversation, but raw messages remain stored in Supabase.
 - Agents can inspect their own compaction preview, but they cannot compact themselves through that tool.
 - Anthropic prompt caching is enabled by default to reduce repeated prefix processing. Set `ANTHROPIC_PROMPT_CACHE=false` to disable it.

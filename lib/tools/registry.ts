@@ -23,9 +23,13 @@ import {
   addRuntimeMemory,
   archiveRuntimeMemory,
   compileRuntimeCompactionProposal,
+  getRuntimeCompactionProposal,
   getRuntimeProfile,
+  listRuntimeCompactionProposals,
   listRuntimeRelationships,
   listRuntimeMemories,
+  saveRuntimeCompactionProposal,
+  updateRuntimeCompactionProposal,
   updateRuntimeCurrentState,
   upsertRuntimeRelationship
 } from "@/lib/tools/runtime-memory";
@@ -511,6 +515,90 @@ export const toolDefinitions: ToolDefinition[] = [
       required: [],
       additionalProperties: false
     }
+  },
+  {
+    name: "supabase_save_compaction_proposal",
+    description:
+      "Save a non-destructive compaction proposal draft for the active agent. This stores a review draft only; it does not checkpoint, archive, delete, replace, or modify active conversation context.",
+    input_schema: {
+      type: "object",
+      properties: {
+        proposal: {
+          type: "string",
+          description: "The full proposal draft text to save."
+        },
+        agent_notes: {
+          type: "string",
+          description: "Optional agent-authored review notes, concerns, or intended edits."
+        },
+        source_summary: {
+          type: "object",
+          description: "Optional source metadata from supabase_compile_compaction_proposal."
+        }
+      },
+      required: ["proposal"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_update_compaction_proposal",
+    description:
+      "Update one of the active agent's saved compaction proposal drafts. Use this to revise proposal text, add agent notes, or mark status such as agent_reviewed or agent_approved. This does not create a checkpoint.",
+    input_schema: {
+      type: "object",
+      properties: {
+        proposal_id: {
+          type: "string",
+          description: "The saved proposal id to update."
+        },
+        proposal: {
+          type: "string",
+          description: "Optional full replacement proposal text."
+        },
+        agent_notes: {
+          type: "string",
+          description: "Optional full replacement agent notes."
+        },
+        status: {
+          type: "string",
+          description: "Optional status: draft, agent_reviewed, agent_approved, or operator_review."
+        }
+      },
+      required: ["proposal_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_list_compaction_proposals",
+    description:
+      "List saved compaction proposal drafts for the active agent only. Returns metadata, not the full proposal text.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Optional number of proposals to return. Defaults to 5 and is capped at 20."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_get_compaction_proposal",
+    description:
+      "Read one saved compaction proposal draft for the active agent only, including the full proposal text and agent notes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        proposal_id: {
+          type: "string",
+          description: "The saved proposal id to read."
+        }
+      },
+      required: ["proposal_id"],
+      additionalProperties: false
+    }
   }
 ];
 
@@ -655,6 +743,26 @@ export async function runTool(
         return {
           ok: true,
           content: await compileRuntimeCompactionProposal(agent, input)
+        };
+      case "supabase_save_compaction_proposal":
+        return {
+          ok: true,
+          content: await saveRuntimeCompactionProposal(agent, input)
+        };
+      case "supabase_update_compaction_proposal":
+        return {
+          ok: true,
+          content: await updateRuntimeCompactionProposal(agent, input)
+        };
+      case "supabase_list_compaction_proposals":
+        return {
+          ok: true,
+          content: await listRuntimeCompactionProposals(agent, input)
+        };
+      case "supabase_get_compaction_proposal":
+        return {
+          ok: true,
+          content: await getRuntimeCompactionProposal(agent, input)
         };
       default:
         return {

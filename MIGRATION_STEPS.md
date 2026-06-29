@@ -32,6 +32,7 @@ The schema creates only the v0 tables:
 - `memories`
 - `relationships`
 - `restoration_profiles`
+- `compaction_proposals`
 
 RLS is enabled on all tables with no public policies, so browser clients using the anon key cannot read or write these records. A server-side runtime should use the service-role key.
 
@@ -201,7 +202,7 @@ Time is pull-based rather than injected into every request. Agents should use it
 
 Useful but not required for v0:
 
-- Compaction archive tables
+- Compaction archive tables for destructive/live transcript replacement
 - Embeddings or semantic memory search
 - Revision history
 - Admin UI

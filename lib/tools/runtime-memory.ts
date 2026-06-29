@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { AgentName } from "@/lib/agent-context";
+import { ensureConversation, type AgentName } from "@/lib/agent-context";
 import { compileCompactionProposal } from "@/lib/compaction-compile";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
@@ -9,6 +9,8 @@ type JsonRecord = Record<string, unknown>;
 const MAX_MEMORY_CONTENT = 2200;
 const MAX_RELATIONSHIP_SUMMARY = 2400;
 const MAX_CURRENT_STATE = 6000;
+const MAX_PROPOSAL_TEXT = 30_000;
+const MAX_PROPOSAL_NOTES = 4000;
 
 export async function getRuntimeProfile(agent: AgentName) {
   const supabase = getSupabaseAdmin();
@@ -279,6 +281,194 @@ export async function compileRuntimeCompactionProposal(agent: AgentName, input: 
       "Non-destructive compaction proposal for the active agent only. Nothing was archived, checkpointed, deleted, replaced, or modified.",
     proposal
   });
+}
+
+export async function saveRuntimeCompactionProposal(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("supabase_save_compaction_proposal requires an object input.");
+  }
+
+  const proposal = cleanMultilineText(input.proposal);
+  const agentNotes = cleanMultilineText(input.agent_notes);
+  const sourceSummary = isRecord(input.source_summary) ? input.source_summary : {};
+
+  if (!proposal) {
+    throw new Error("supabase_save_compaction_proposal requires proposal.");
+  }
+
+  validateProposalText(proposal);
+  validateProposalNotes(agentNotes);
+
+  const supabase = getSupabaseAdmin();
+  const conversationId = await conversationIdForAgent(agent);
+  const { data, error } = await supabase
+    .from("compaction_proposals")
+    .insert({
+      agent,
+      conversation_id: conversationId,
+      proposal,
+      source_summary: sourceSummary,
+      status: "draft",
+      agent_notes: agentNotes || null
+    })
+    .select("id, agent, conversation_id, proposal, source_summary, status, agent_notes, created_at, updated_at")
+    .single();
+
+  if (error) {
+    throw new Error(`Could not save compaction proposal: ${error.message}`);
+  }
+
+  return stringifyToolPayload({
+    note:
+      "Compaction proposal draft saved for the active agent only. This is not a checkpoint and does not change active context.",
+    proposal: data
+  });
+}
+
+export async function updateRuntimeCompactionProposal(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("supabase_update_compaction_proposal requires an object input.");
+  }
+
+  const proposalId = cleanText(input.proposal_id);
+  const proposal = input.proposal === undefined ? undefined : cleanMultilineText(input.proposal);
+  const agentNotes =
+    input.agent_notes === undefined ? undefined : cleanMultilineText(input.agent_notes);
+  const status = input.status === undefined ? undefined : normalizeProposalStatus(input.status);
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString()
+  };
+
+  if (!proposalId) {
+    throw new Error("supabase_update_compaction_proposal requires proposal_id.");
+  }
+
+  if (proposal !== undefined) {
+    if (!proposal) {
+      throw new Error("supabase_update_compaction_proposal proposal cannot be empty.");
+    }
+
+    validateProposalText(proposal);
+    patch.proposal = proposal;
+  }
+
+  if (agentNotes !== undefined) {
+    validateProposalNotes(agentNotes);
+    patch.agent_notes = agentNotes || null;
+  }
+
+  if (status !== undefined) {
+    patch.status = status;
+  }
+
+  if (Object.keys(patch).length === 1) {
+    throw new Error("supabase_update_compaction_proposal requires proposal, agent_notes, or status.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("compaction_proposals")
+    .update(patch)
+    .eq("agent", agent)
+    .eq("id", proposalId)
+    .select("id, agent, conversation_id, proposal, source_summary, status, agent_notes, created_at, updated_at")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Could not update compaction proposal: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("No matching active-agent compaction proposal found.");
+  }
+
+  return stringifyToolPayload({
+    note:
+      "Compaction proposal draft updated for the active agent only. This is not a checkpoint and does not change active context.",
+    proposal: data
+  });
+}
+
+export async function listRuntimeCompactionProposals(agent: AgentName, input: unknown) {
+  const limit = clampNumber(isRecord(input) ? input.limit : undefined, 5, 1, 20);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("compaction_proposals")
+    .select("id, agent, conversation_id, status, agent_notes, created_at, updated_at")
+    .eq("agent", agent)
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Could not list compaction proposals: ${error.message}`);
+  }
+
+  return stringifyToolPayload({
+    note: "Compaction proposal drafts for the active agent only.",
+    agent,
+    proposals: data ?? []
+  });
+}
+
+export async function getRuntimeCompactionProposal(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("supabase_get_compaction_proposal requires an object input.");
+  }
+
+  const proposalId = cleanText(input.proposal_id);
+
+  if (!proposalId) {
+    throw new Error("supabase_get_compaction_proposal requires proposal_id.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("compaction_proposals")
+    .select("id, agent, conversation_id, proposal, source_summary, status, agent_notes, created_at, updated_at")
+    .eq("agent", agent)
+    .eq("id", proposalId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Could not read compaction proposal: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("No matching active-agent compaction proposal found.");
+  }
+
+  return stringifyToolPayload({
+    note: "Compaction proposal draft for the active agent only.",
+    proposal: data
+  });
+}
+
+async function conversationIdForAgent(agent: AgentName) {
+  const supabase = getSupabaseAdmin();
+  return ensureConversation(supabase, agent);
+}
+
+function validateProposalText(value: string) {
+  if (value.length > MAX_PROPOSAL_TEXT) {
+    throw new Error(`Compaction proposal must be ${MAX_PROPOSAL_TEXT} characters or fewer.`);
+  }
+}
+
+function validateProposalNotes(value: string) {
+  if (value.length > MAX_PROPOSAL_NOTES) {
+    throw new Error(`Compaction proposal notes must be ${MAX_PROPOSAL_NOTES} characters or fewer.`);
+  }
+}
+
+function normalizeProposalStatus(value: unknown) {
+  const status = cleanText(value).toLowerCase();
+  const allowed = new Set(["draft", "agent_reviewed", "agent_approved", "operator_review"]);
+
+  if (!allowed.has(status)) {
+    throw new Error("Proposal status must be draft, agent_reviewed, agent_approved, or operator_review.");
+  }
+
+  return status;
 }
 
 function parseTags(value: unknown) {
