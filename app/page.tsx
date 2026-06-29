@@ -594,6 +594,10 @@ function RuntimeHealthPanel({
               <dd>{health?.tools.count ?? 0}</dd>
             </div>
             <div>
+              <dt>Output cap</dt>
+              <dd>{health?.runtime.max_tokens ?? "?"}</dd>
+            </div>
+            <div>
               <dt>Rounds</dt>
               <dd>{health?.runtime.max_tool_rounds ?? "?"}</dd>
             </div>

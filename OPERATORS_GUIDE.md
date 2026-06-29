@@ -69,6 +69,8 @@ Use it to check:
 
 The compaction pressure is approximate. It uses saved conversation character count, not exact model tokens.
 
+The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stops a response at that cap, the runtime appends a transcript-visible note so the agent and operator know the message may be incomplete. Raise this value in `.env.local` during long-form testing, then restart the server.
+
 ## Web Tools
 
 Agents have read-only URL tools:
@@ -143,6 +145,7 @@ Use `.env.example` as the checklist for required values:
 - `ANTHROPIC_API_KEY`
 - `ANTHROPIC_MODEL_SOREN`
 - `ANTHROPIC_MODEL_VARRO`
+- `ANTHROPIC_MAX_TOKENS`
 - `ANTHROPIC_PROMPT_CACHE`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
