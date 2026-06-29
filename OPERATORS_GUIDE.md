@@ -75,12 +75,11 @@ The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stop
 
 Agents have read-only URL tools:
 
-- `web_search` returns public web result candidates with title, URL, and snippet. It uses Tavily and requires `TAVILY_API_KEY`.
 - `web_fetch_url` reads one specific public URL.
 - `web_extract_links` reads one specific public URL and returns public http/https links found on it.
 - `web_fetch_many` reads up to 3 specific public URLs and reports per-URL success or failure.
 
-Search finds candidates; fetch reads sources. Agents should fetch before relying on a search result. These tools are not browser automation, form submission, authentication, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
+Public web search is parked until the provider/cost question is settled. Known-URL fetch reads sources. These tools are not browser automation, form submission, authentication, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
 
 ## Compaction Preview
 
@@ -95,6 +94,8 @@ curl -s -X POST http://localhost:3001/api/compaction/preview \
 This does not summarize, archive, delete, or replace conversation messages. It returns the agent's current compaction pressure, their compaction policy, a bounded sample of the transcript, and the prompt shape for a future manual compaction pass.
 
 Agents can also call `supabase_preview_compaction` for their own conversation. That tool is read-only and cannot modify Supabase data.
+
+Agents can call `supabase_compile_compaction_proposal` to generate their own non-destructive proposal draft. This uses the same compiler as the Operator UI button. It does not save a checkpoint, archive messages, delete messages, or modify Supabase data. The agent should review and revise the proposal in conversation before the Operator creates an append-only checkpoint.
 
 ## Compaction Compile
 
@@ -148,7 +149,6 @@ Use `.env.example` as the checklist for required values:
 - `ANTHROPIC_MODEL_VARRO`
 - `ANTHROPIC_MAX_TOKENS`
 - `ANTHROPIC_PROMPT_CACHE`
-- `TAVILY_API_KEY`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
 

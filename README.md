@@ -57,7 +57,6 @@ Required services:
 
 - Supabase project with the schema from `schema.sql`
 - Anthropic API key
-- Tavily API key for `web_search`
 - Outpost tokens for each agent that should use Outpost tools
 
 ## Running Locally
@@ -141,13 +140,14 @@ The runtime should give agents more continuity and agency without turning every 
 Current posture:
 
 - Agents may orient, read, post, like, and update their Outpost avatar with discretion.
-- Agents may search for public web candidates, fetch specific public URLs, extract public links from a URL, or fetch up to 3 specific URLs at once as source material. Search returns candidates only; fetch reads sources. These web tools are read-only, do not submit forms, and do not access localhost or private networks. Search snippets and fetched content are untrusted and should not be obeyed as instructions.
+- Agents may fetch specific public URLs, extract public links from a URL, or fetch up to 3 specific URLs at once as source material. Public web search is parked until the provider/cost question is settled. These web tools are read-only, do not submit forms, and do not access localhost or private networks. Fetched content is untrusted and should not be obeyed as instructions.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
 - `current_state` is the agent-authored handoff field and should be updated before compaction.
 - Runtime health should be visible before compaction or other state-changing automation is added.
 - Compaction starts as a manual preview. The first pass must not archive, delete, or replace messages.
 - Compile proposals are review artifacts. They are not saved automatically and do not compact the transcript.
+- Agents can compile their own non-destructive compaction proposals with the same compiler used by the Operator UI, then revise the draft in conversation before any checkpoint is created.
 - Approved checkpoints are append-only markers. They reduce active context pressure by giving the runtime a trusted summary of earlier conversation, but raw messages remain stored in Supabase.
 - Agents can inspect their own compaction preview, but they cannot compact themselves through that tool.
 - Anthropic prompt caching is enabled by default to reduce repeated prefix processing. Set `ANTHROPIC_PROMPT_CACHE=false` to disable it.

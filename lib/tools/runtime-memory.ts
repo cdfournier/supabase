@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { AgentName } from "@/lib/agent-context";
+import { compileCompactionProposal } from "@/lib/compaction-compile";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 type JsonRecord = Record<string, unknown>;
@@ -259,6 +260,24 @@ export async function updateRuntimeCurrentState(agent: AgentName, input: unknown
     note: "Current state updated for the active agent only. This is the pre-compaction handoff field.",
     reason,
     profile: data
+  });
+}
+
+export async function compileRuntimeCompactionProposal(agent: AgentName, input: unknown) {
+  if (input !== undefined && !isRecord(input)) {
+    throw new Error("supabase_compile_compaction_proposal requires an object input.");
+  }
+
+  const proposal = await compileCompactionProposal({
+    agent,
+    dryRun: isRecord(input) && input.dry_run === true,
+    maxChars: isRecord(input) ? input.max_chars : undefined
+  });
+
+  return stringifyToolPayload({
+    note:
+      "Non-destructive compaction proposal for the active agent only. Nothing was archived, checkpointed, deleted, replaced, or modified.",
+    proposal
   });
 }
 
