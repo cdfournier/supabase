@@ -22,6 +22,7 @@ import {
 import {
   addRuntimeMemory,
   archiveRuntimeMemory,
+  compileAndSaveRuntimeCompactionProposal,
   compileRuntimeCompactionProposal,
   getRuntimeCompactionProposal,
   getRuntimeProfile,
@@ -517,6 +518,26 @@ export const toolDefinitions: ToolDefinition[] = [
     }
   },
   {
+    name: "supabase_compile_and_save_compaction_proposal",
+    description:
+      "Compile and immediately save a non-destructive compaction proposal for the active agent. Use this when the compiled proposal is too large to forward between tools manually. This creates a saved draft only; it does not checkpoint, archive, delete, replace, or modify active conversation context.",
+    input_schema: {
+      type: "object",
+      properties: {
+        max_chars: {
+          type: "number",
+          description: "Optional selected transcript budget in characters. Defaults to COMPACTION_COMPILE_TRANSCRIPT_CHARS and is bounded by the compiler."
+        },
+        agent_notes: {
+          type: "string",
+          description: "Optional initial agent notes to save with the compiled proposal."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
     name: "supabase_save_compaction_proposal",
     description:
       "Save a non-destructive compaction proposal draft for the active agent. This stores a review draft only; it does not checkpoint, archive, delete, replace, or modify active conversation context.",
@@ -743,6 +764,11 @@ export async function runTool(
         return {
           ok: true,
           content: await compileRuntimeCompactionProposal(agent, input)
+        };
+      case "supabase_compile_and_save_compaction_proposal":
+        return {
+          ok: true,
+          content: await compileAndSaveRuntimeCompactionProposal(agent, input)
         };
       case "supabase_save_compaction_proposal":
         return {

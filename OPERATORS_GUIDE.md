@@ -97,6 +97,8 @@ Agents can also call `supabase_preview_compaction` for their own conversation. T
 
 Agents can call `supabase_compile_compaction_proposal` to generate their own non-destructive proposal draft. This uses the same compiler as the Operator UI button. It does not save a checkpoint, archive messages, delete messages, or modify Supabase data. The agent should review and revise the proposal in conversation before the Operator creates an append-only checkpoint.
 
+Agents can call `supabase_compile_and_save_compaction_proposal` when the generated proposal is too large to pass manually into the save tool. This compiles server-side, saves server-side, and returns the saved proposal id plus a short preview. It is still only a draft, not a checkpoint.
+
 Agents can also save proposal drafts in `compaction_proposals`, revise them, and mark status as `agent_reviewed` or `agent_approved`. These saved drafts are persistent review artifacts only. They are not checkpoints and do not change active context.
 
 If proposal save/list tools fail with a missing-table error, run the latest `schema.sql` in Supabase first. Existing rows are preserved because the schema uses `create table if not exists`.

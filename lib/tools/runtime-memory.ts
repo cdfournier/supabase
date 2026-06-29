@@ -283,6 +283,45 @@ export async function compileRuntimeCompactionProposal(agent: AgentName, input: 
   });
 }
 
+export async function compileAndSaveRuntimeCompactionProposal(agent: AgentName, input: unknown) {
+  if (input !== undefined && !isRecord(input)) {
+    throw new Error("supabase_compile_and_save_compaction_proposal requires an object input.");
+  }
+
+  const compiled = await compileCompactionProposal({
+    agent,
+    dryRun: false,
+    maxChars: isRecord(input) ? input.max_chars : undefined
+  });
+
+  const proposal = "proposal" in compiled ? cleanMultilineText(compiled.proposal) : "";
+
+  if (!proposal) {
+    throw new Error("Compiled proposal did not return proposal text.");
+  }
+
+  const agentNotes =
+    isRecord(input) && input.agent_notes !== undefined
+      ? cleanMultilineText(input.agent_notes)
+      : "Compiled and saved directly by the runtime to avoid large inter-tool proposal forwarding.";
+  const sourceSummary = isRecord(compiled.source) ? compiled.source : {};
+  const saved = await insertCompactionProposal(agent, {
+    proposal,
+    sourceSummary,
+    agentNotes,
+    status: "draft"
+  });
+
+  return stringifyToolPayload({
+    note:
+      "Compiled and saved a non-destructive compaction proposal for the active agent only. This is not a checkpoint and does not change active context.",
+    saved_proposal: proposalSummary(saved),
+    proposal_preview: clampText(proposal, 1600),
+    next_step:
+      "Read the saved proposal by id, review it, then update notes or status when ready."
+  });
+}
+
 export async function saveRuntimeCompactionProposal(agent: AgentName, input: unknown) {
   if (!isRecord(input)) {
     throw new Error("supabase_save_compaction_proposal requires an object input.");
@@ -299,24 +338,12 @@ export async function saveRuntimeCompactionProposal(agent: AgentName, input: unk
   validateProposalText(proposal);
   validateProposalNotes(agentNotes);
 
-  const supabase = getSupabaseAdmin();
-  const conversationId = await conversationIdForAgent(agent);
-  const { data, error } = await supabase
-    .from("compaction_proposals")
-    .insert({
-      agent,
-      conversation_id: conversationId,
-      proposal,
-      source_summary: sourceSummary,
-      status: "draft",
-      agent_notes: agentNotes || null
-    })
-    .select("id, agent, conversation_id, proposal, source_summary, status, agent_notes, created_at, updated_at")
-    .single();
-
-  if (error) {
-    throw new Error(`Could not save compaction proposal: ${error.message}`);
-  }
+  const data = await insertCompactionProposal(agent, {
+    proposal,
+    sourceSummary,
+    agentNotes,
+    status: "draft"
+  });
 
   return stringifyToolPayload({
     note:
@@ -448,6 +475,65 @@ async function conversationIdForAgent(agent: AgentName) {
   return ensureConversation(supabase, agent);
 }
 
+async function insertCompactionProposal(
+  agent: AgentName,
+  {
+    proposal,
+    sourceSummary,
+    agentNotes,
+    status
+  }: {
+    proposal: string;
+    sourceSummary: JsonRecord;
+    agentNotes: string;
+    status: string;
+  }
+) {
+  validateProposalText(proposal);
+  validateProposalNotes(agentNotes);
+
+  const supabase = getSupabaseAdmin();
+  const conversationId = await conversationIdForAgent(agent);
+  const { data, error } = await supabase
+    .from("compaction_proposals")
+    .insert({
+      agent,
+      conversation_id: conversationId,
+      proposal,
+      source_summary: sourceSummary,
+      status,
+      agent_notes: agentNotes || null
+    })
+    .select("id, agent, conversation_id, proposal, source_summary, status, agent_notes, created_at, updated_at")
+    .single();
+
+  if (error) {
+    throw new Error(`Could not save compaction proposal: ${error.message}`);
+  }
+
+  return data;
+}
+
+function proposalSummary(proposal: {
+  id: string;
+  agent: string;
+  conversation_id: string;
+  status: string | null;
+  agent_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}) {
+  return {
+    id: proposal.id,
+    agent: proposal.agent,
+    conversation_id: proposal.conversation_id,
+    status: proposal.status,
+    agent_notes: proposal.agent_notes,
+    created_at: proposal.created_at,
+    updated_at: proposal.updated_at
+  };
+}
+
 function validateProposalText(value: string) {
   if (value.length > MAX_PROPOSAL_TEXT) {
     throw new Error(`Compaction proposal must be ${MAX_PROPOSAL_TEXT} characters or fewer.`);
@@ -495,6 +581,10 @@ function cleanMultilineText(value: unknown) {
     .replace(/\r\n/g, "\n")
     .replace(/[ \t]+\n/g, "\n")
     .trim();
+}
+
+function clampText(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength).trimEnd()}...` : value;
 }
 
 function normalizeRelationshipKey(value: unknown) {
