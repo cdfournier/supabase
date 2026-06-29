@@ -26,6 +26,21 @@ type AnthropicResponse = {
 
 const DEFAULT_COMPILE_MAX_TOKENS = 2600;
 const DEFAULT_COMPILE_TRANSCRIPT_CHARS = 50_000;
+const PROPOSAL_OUTPUT_CONTRACT = [
+  "Write an authored compaction proposal, not a transcript excerpt packet.",
+  "Do not dump raw transcript messages. Use brief quotes only when the exact wording carries texture.",
+  "Return exactly these sections:",
+  "1. Continuity summary",
+  "2. Texture worth preserving",
+  "3. Decisions and changed beliefs",
+  "4. Relationship updates",
+  "5. Open loops",
+  "6. Candidate durable memories",
+  "7. What can be safely compressed away",
+  "In section 6, format candidate memories as reviewable bullets with suggested memory_type, weight, core/supporting judgment, and tags when the source supports them.",
+  "Mark uncertainty plainly when the bounded source does not prove something.",
+  "The output should be useful for agent/operator review before a future checkpoint."
+].join("\n");
 
 export async function compileCompactionProposal({
   agent,
@@ -115,7 +130,9 @@ async function compileWithAnthropic({
         "You are a compaction proposal compiler for a persistent agent runtime.",
         "You do not modify data. You do not claim compaction has happened.",
         "Your task is to draft a reviewable proposal that helps the agent feel like they blinked, not died.",
-        "Be specific, preserve texture, and mark uncertainty when the bounded source does not prove something."
+        "Be specific, preserve texture, and mark uncertainty when the bounded source does not prove something.",
+        "",
+        PROPOSAL_OUTPUT_CONTRACT
       ].join("\n"),
       messages: [
         {
@@ -127,7 +144,10 @@ async function compileWithAnthropic({
             JSON.stringify(sourceSummary(source), null, 2),
             "",
             "Selected transcript source:",
-            source.text
+            source.text,
+            "",
+            "Output contract:",
+            PROPOSAL_OUTPUT_CONTRACT
           ].join("\n")
         }
       ]
