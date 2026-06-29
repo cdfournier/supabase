@@ -75,7 +75,7 @@ The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stop
 
 Agents have read-only URL tools:
 
-- `web_search` returns public web result candidates with title, URL, and snippet. It uses Brave Search and requires `BRAVE_SEARCH_API_KEY`.
+- `web_search` returns public web result candidates with title, URL, and snippet. It uses Tavily and requires `TAVILY_API_KEY`.
 - `web_fetch_url` reads one specific public URL.
 - `web_extract_links` reads one specific public URL and returns public http/https links found on it.
 - `web_fetch_many` reads up to 3 specific public URLs and reports per-URL success or failure.
@@ -148,7 +148,7 @@ Use `.env.example` as the checklist for required values:
 - `ANTHROPIC_MODEL_VARRO`
 - `ANTHROPIC_MAX_TOKENS`
 - `ANTHROPIC_PROMPT_CACHE`
-- `BRAVE_SEARCH_API_KEY`
+- `TAVILY_API_KEY`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
 

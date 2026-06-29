@@ -14,7 +14,7 @@ const DEFAULT_SEARCH_LIMIT = 5;
 const MAX_SEARCH_LIMIT = 10;
 const MAX_SEARCH_QUERY_CHARS = 200;
 const MAX_SEARCH_SNIPPET_CHARS = 320;
-const BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
+const TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search";
 
 type JsonRecord = Record<string, unknown>;
 type FetchedReadableUrl = {
@@ -132,13 +132,13 @@ export async function searchWeb(input: unknown) {
     throw new Error("web_search requires an object input.");
   }
 
-  const apiKey = process.env.BRAVE_SEARCH_API_KEY?.trim();
+  const apiKey = process.env.TAVILY_API_KEY?.trim();
   const rawQuery = cleanText(input.query);
   const limit = clampNumber(input.limit, DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT);
   const site = normalizeSearchSite(input.site);
 
   if (!apiKey) {
-    throw new Error("Missing BRAVE_SEARCH_API_KEY. Add it to .env.local and restart the runtime.");
+    throw new Error("Missing TAVILY_API_KEY. Add it to .env.local and restart the runtime.");
   }
 
   if (!rawQuery) {
@@ -149,35 +149,39 @@ export async function searchWeb(input: unknown) {
     throw new Error(`web_search query is too long. Max characters: ${MAX_SEARCH_QUERY_CHARS}.`);
   }
 
-  const query = site ? `site:${site} ${rawQuery}` : rawQuery;
-  const url = new URL(BRAVE_SEARCH_ENDPOINT);
-
-  url.searchParams.set("q", query);
-  url.searchParams.set("count", String(limit));
-  url.searchParams.set("safesearch", "moderate");
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(TAVILY_SEARCH_ENDPOINT, {
+      method: "POST",
       headers: {
         accept: "application/json",
-        "x-subscription-token": apiKey
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`
       },
+      body: JSON.stringify({
+        query: rawQuery,
+        max_results: limit,
+        include_domains: site ? [site] : undefined,
+        include_answer: false,
+        include_raw_content: false,
+        search_depth: "basic",
+        topic: "general"
+      }),
       signal: controller.signal
     });
     const data = (await response.json()) as JsonRecord;
 
     if (!response.ok) {
-      throw new Error(braveSearchError(data, response.status));
+      throw new Error(tavilySearchError(data, response.status));
     }
 
     const results = await normalizeSearchResults(data, limit);
 
     return stringifyToolPayload({
       note: "Search results are discovery metadata, not verified source content. Fetch a result URL before relying on it as source material.",
-      provider: "brave",
+      provider: "tavily",
       query: rawQuery,
       site: site || null,
       limit,
@@ -305,7 +309,11 @@ async function extractPublicLinks(html: string, baseUrl: string, limit: number) 
 
 async function normalizeSearchResults(data: JsonRecord, limit: number) {
   const web = isRecord(data.web) ? data.web : {};
-  const values = Array.isArray(web.results) ? web.results : [];
+  const values = Array.isArray(data.results)
+    ? data.results
+    : Array.isArray(web.results)
+      ? web.results
+      : [];
   const results = [];
   const seen = new Set<string>();
 
@@ -390,12 +398,13 @@ function normalizeSearchSite(value: unknown) {
   return normalized.replace(/^www\./, "");
 }
 
-function braveSearchError(data: JsonRecord, status: number) {
+function tavilySearchError(data: JsonRecord, status: number) {
   const message =
+    cleanText(data.detail) ||
     cleanText(data.message) ||
     cleanText(isRecord(data.error) ? data.error.message : "") ||
     cleanText(typeof data.error === "string" ? data.error : "") ||
-    `Brave Search request failed: ${status}`;
+    `Tavily Search request failed: ${status}`;
 
   return message;
 }

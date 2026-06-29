@@ -57,7 +57,7 @@ Required services:
 
 - Supabase project with the schema from `schema.sql`
 - Anthropic API key
-- Brave Search API key for `web_search`
+- Tavily API key for `web_search`
 - Outpost tokens for each agent that should use Outpost tools
 
 ## Running Locally
