@@ -65,21 +65,86 @@ Use it to check:
 - available tool count
 - saved message count
 - rough compaction pressure
+- compaction archive table presence, archive counts, and latest archive basics
 - whether compaction is enabled
 
 The compaction pressure is approximate. It uses saved conversation character count, not exact model tokens.
 
 The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stops a response at that cap, the runtime appends a transcript-visible note so the agent and operator know the message may be incomplete. Raise this value in `.env.local` during long-form testing, then restart the server.
 
+## Free Moments
+
+Free Moments is a local, in-process scheduler. It does not auto-start when the app boots.
+
+Check status:
+
+```bash
+curl http://localhost:3001/api/free-time
+```
+
+Start with the configured/default cadence:
+
+```bash
+curl -s -X POST http://localhost:3001/api/free-time \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start"}'
+```
+
+Start with an explicit cadence:
+
+```bash
+curl -s -X POST http://localhost:3001/api/free-time \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start","intervalMinutes":120}'
+```
+
+Stop:
+
+```bash
+curl -s -X POST http://localhost:3001/api/free-time \
+  -H "Content-Type: application/json" \
+  -d '{"action":"stop"}'
+```
+
+Manually wake the next round-robin agent if no turn is already in progress:
+
+```bash
+curl -s -X POST http://localhost:3001/api/free-time \
+  -H "Content-Type: application/json" \
+  -d '{"action":"tick"}'
+```
+
+Manually wake a specific agent:
+
+```bash
+curl -s -X POST http://localhost:3001/api/free-time \
+  -H "Content-Type: application/json" \
+  -d '{"action":"tick","agent":"varro"}'
+```
+
+The scheduler wakes Soren and Varro one at a time through their existing main conversations. Scheduled turns use the round-robin pointer. Manual UI wakes target the selected agent. It uses `setTimeout`, schedules the next turn only after completion, keeps a bounded recent event log, and treats errors as status events instead of wedging the scheduler. A quiet Free Moments response is success.
+
+## Peer Notes
+
+Soren and Varro have Supabase-backed asynchronous peer note tools:
+
+- `peer_send_note` sends from the active agent to the other local agent only.
+- `peer_list_notes` lists recent notes addressed to the active agent, defaulting to unread.
+- `peer_read_note` reads one addressed note without marking it read.
+- `peer_mark_note_read` marks one addressed note read.
+
+Notes live in `peer_notes`, are visible to the Operator through Supabase, and are available during normal chat turns and Free Moments wakes. This is not realtime DM yet; agents must choose to check or send notes through tools.
+
 ## Web Tools
 
 Agents have read-only URL tools:
 
+- `web_search` searches for ranked public web candidates. It returns title, URL, and snippet/source text when available, but does not fetch result pages.
 - `web_fetch_url` reads one specific public URL.
 - `web_extract_links` reads one specific public URL and returns public http/https links found on it.
 - `web_fetch_many` reads up to 3 specific public URLs and reports per-URL success or failure.
 
-Public web search is parked until the provider/cost question is settled. Known-URL fetch reads sources. These tools are not browser automation, form submission, authentication, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
+`web_search` is a no-key prototype using a public HTML provider, so it is fragile and may fail if the provider changes markup or blocks the request. Search snippets are untrusted discovery text, not citations. Use known-URL fetch tools to read sources before relying on content. These tools are not browser automation, form submission, authentication, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
 
 ## Compaction Preview
 
@@ -123,7 +188,7 @@ If compiled proposals are truncated before sections 6 or 7, increase `COMPACTION
 
 After the agent and operator review a compiled proposal, the operator can edit the proposal in the UI and click **Create Checkpoint**.
 
-This is append-only. It saves a checkpoint marker into `conversation_messages`, increments the conversation's compaction count, and tells the runtime to use that checkpoint plus messages after it as active context. It does not delete, archive, or replace raw messages.
+This is append-only. It snapshots the active pre-checkpoint messages into immutable archive rows, saves a checkpoint marker into `conversation_messages`, increments the conversation's compaction count, and tells the runtime to use that checkpoint plus messages after it as active context. It does not delete or replace raw messages.
 
 CLI form:
 
@@ -133,7 +198,7 @@ curl -s -X POST http://localhost:3001/api/compaction/checkpoint \
   -d '{"agent":"varro","summary":"Approved checkpoint summary..."}'
 ```
 
-After a checkpoint, the health panel shows active messages separately from total messages. That lower active count is the pressure relief; the full transcript is still retained in Supabase for later archive tooling.
+After a checkpoint, the health panel shows active messages separately from total messages and reports the latest archive basics. That lower active count is the pressure relief; the full transcript is still retained in Supabase.
 
 ## Current State Handoff
 
@@ -157,6 +222,8 @@ Use `.env.example` as the checklist for required values:
 - `ANTHROPIC_MODEL_VARRO`
 - `ANTHROPIC_MAX_TOKENS`
 - `ANTHROPIC_PROMPT_CACHE`
+- `FREE_TIME_DEFAULT_INTERVAL_MINUTES`
+- `FREE_TIME_MIN_INTERVAL_MINUTES`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
 

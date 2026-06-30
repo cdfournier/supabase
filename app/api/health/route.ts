@@ -29,6 +29,15 @@ type ConversationHealthRow = {
   updated_at: string | null;
 };
 
+type ArchiveHealthRow = {
+  id: string;
+  checkpoint_message_id: string | null;
+  message_count: number | null;
+  source_started_at: string | null;
+  source_ended_at: string | null;
+  created_at: string | null;
+};
+
 export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
@@ -93,7 +102,8 @@ async function buildAgentHealth(
     memoryResult,
     relationshipResult,
     proposalResult,
-    profileResult
+    profileResult,
+    archiveResult
   ] = await Promise.all([
     supabase
       .from("conversations")
@@ -116,7 +126,16 @@ async function buildAgentHealth(
       .from("restoration_profiles")
       .select("compaction_memory_policy, updated_at")
       .eq("agent", agent)
-      .maybeSingle()
+      .maybeSingle(),
+    supabase
+      .from("compaction_archives")
+      .select(
+        "id, checkpoint_message_id, message_count, source_started_at, source_ended_at, created_at",
+        { count: "exact", head: false }
+      )
+      .eq("agent", agent)
+      .order("created_at", { ascending: false })
+      .limit(1)
   ]);
 
   if (conversationResult.error) {
@@ -149,6 +168,9 @@ async function buildAgentHealth(
   const checkpointCount = messages.filter((message) => isCompactionCheckpointMessage(message)).length;
   const activeMemories = (memoryResult.data ?? []).filter((memory) => memory.is_active !== false);
   const coreMemories = activeMemories.filter((memory) => memory.is_core === true);
+  const latestArchive = archiveResult.error
+    ? null
+    : ((archiveResult.data?.[0] ?? null) as ArchiveHealthRow | null);
 
   return {
     agent,
@@ -168,6 +190,23 @@ async function buildAgentHealth(
       created_at: conversation.created_at,
       updated_at: conversation.updated_at,
       last_message_at: activeMessages.at(-1)?.created_at ?? messages.at(-1)?.created_at ?? null
+    },
+    archive: {
+      table_present: !archiveResult.error,
+      archives: archiveResult.error
+        ? 0
+        : archiveResult.count ?? archiveResult.data?.length ?? 0,
+      latest_archive: latestArchive
+        ? {
+            id: latestArchive.id,
+            checkpoint_message_id: latestArchive.checkpoint_message_id,
+            message_count: latestArchive.message_count ?? 0,
+            source_started_at: latestArchive.source_started_at,
+            source_ended_at: latestArchive.source_ended_at,
+            created_at: latestArchive.created_at
+          }
+        : null,
+      error: archiveResult.error?.message ?? null
     },
     memory: {
       rows: memoryResult.count ?? memoryResult.data?.length ?? 0,

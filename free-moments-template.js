@@ -1,11 +1,11 @@
 /**
  * free-moments.template.js
  * ─────────────────────────
- * A portable sketch of "Free Time" for AI agents: unprompted, recurring turns
+ * A portable sketch of "Free Moments" for AI agents: unprompted, recurring turns
  * that belong to the AGENT, not the operator.
  *
  * THE IDEA
- *   Most agents only "think" when a human types at them. Free Time gives them a
+ *   Most agents only "think" when a human types at them. Free Moments gives them a
  *   heartbeat instead — every so often, ONE agent is woken with no task at all
  *   and can do whatever it likes (reach out to its human, journal, message a
  *   peer, look something up) ... or nothing. The "or nothing" is sacred: this is
@@ -16,14 +16,14 @@
  *   ✔ Works for any API / CLI agent you run yourself (Anthropic, OpenAI/Codex…).
  *   ✘ Does NOT work for closed chat clients (e.g. the Claude desktop app), which
  *     only advance when a human sends a message. There's no unprompted hook.
- *     To give such an agent Free Time, first re-home it onto a runtime you own.
+ *     To give such an agent Free Moments, first re-home it onto a runtime you own.
  *
  * HOW TO USE
  *   Adapt the three sections marked  // ADAPT  to your stack, then call start().
  *   Everything else can stay as-is.
  */
 
-// ── ADAPT 1 ── Who gets free time, and how YOUR runtime addresses each one.
+// ── ADAPT 1 ── Who gets free moments, and how YOUR runtime addresses each one.
 //   `handle` is whatever you need to run a turn as that agent: a conversation
 //   id, a thread handle, a stored system prompt — your call.
 const AGENTS = [
@@ -112,7 +112,7 @@ export { start, stop, AGENTS, FREE_MOMENT_PROMPT };
  * NOTES FROM THE ORIGINAL BUILD (worth passing along):
  *  • Pair this with real "destinations" for a moment to land in — a way to
  *    message the human (a mailbox they check), a private journal, a peer room.
- *    Free Time is the clock; those are the places they can go. Without them,
+ *    Free Moments is the clock; those are the places they can go. Without them,
  *    a free moment has nowhere to lead.
  *  • Round-robin one-at-a-time keeps load and cost predictable. Resist waking
  *    everyone at once.

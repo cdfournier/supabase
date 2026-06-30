@@ -14,7 +14,8 @@ const DEFAULT_SEARCH_LIMIT = 5;
 const MAX_SEARCH_LIMIT = 10;
 const MAX_SEARCH_QUERY_CHARS = 200;
 const MAX_SEARCH_SNIPPET_CHARS = 320;
-const TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search";
+const DUCKDUCKGO_HTML_ENDPOINT = "https://html.duckduckgo.com/html/";
+const MOJEEK_SEARCH_ENDPOINT = "https://www.mojeek.com/search";
 
 type JsonRecord = Record<string, unknown>;
 type FetchedReadableUrl = {
@@ -24,6 +25,16 @@ type FetchedReadableUrl = {
   contentType: string;
   rawText: string;
   text: string;
+};
+type SearchCandidate = {
+  title: string | null;
+  url: string;
+  snippet: string | null;
+  source: string | null;
+};
+type SearchProviderResult = {
+  provider: string;
+  results: SearchCandidate[];
 };
 
 export async function fetchWebUrl(input: unknown) {
@@ -132,14 +143,9 @@ export async function searchWeb(input: unknown) {
     throw new Error("web_search requires an object input.");
   }
 
-  const apiKey = process.env.TAVILY_API_KEY?.trim();
   const rawQuery = cleanText(input.query);
   const limit = clampNumber(input.limit, DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT);
   const site = normalizeSearchSite(input.site);
-
-  if (!apiKey) {
-    throw new Error("Missing TAVILY_API_KEY. Add it to .env.local and restart the runtime.");
-  }
 
   if (!rawQuery) {
     throw new Error("web_search requires query.");
@@ -149,49 +155,57 @@ export async function searchWeb(input: unknown) {
     throw new Error(`web_search query is too long. Max characters: ${MAX_SEARCH_QUERY_CHARS}.`);
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  const providerQuery = site ? `${rawQuery} site:${site}` : rawQuery;
+  const { provider, results } = await searchNoKeyProviders(providerQuery, limit);
 
-  try {
-    const response = await fetch(TAVILY_SEARCH_ENDPOINT, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        query: rawQuery,
-        max_results: limit,
-        include_domains: site ? [site] : undefined,
-        include_answer: false,
-        include_raw_content: false,
-        search_depth: "basic",
-        topic: "general"
-      }),
-      signal: controller.signal
-    });
-    const data = (await response.json()) as JsonRecord;
+  return stringifyToolPayload({
+    note: "Search results are untrusted discovery metadata and snippets only, not citations or verified source content. Use web_fetch_url or web_fetch_many to read result URLs before relying on them.",
+    provider,
+    query: rawQuery,
+    site: site || null,
+    limit,
+    returned: results.length,
+    results
+  });
+}
 
-    if (!response.ok) {
-      throw new Error(tavilySearchError(data, response.status));
+async function searchNoKeyProviders(query: string, limit: number): Promise<SearchProviderResult> {
+  const providers = [
+    {
+      name: "mojeek_html_no_key_primary",
+      endpoint: MOJEEK_SEARCH_ENDPOINT,
+      parse: parseMojeekResults
+    },
+    {
+      name: "duckduckgo_html_no_key_prototype",
+      endpoint: DUCKDUCKGO_HTML_ENDPOINT,
+      parse: parseDuckDuckGoResults
     }
+  ];
+  const errors: string[] = [];
 
-    const results = await normalizeSearchResults(data, limit);
+  for (const provider of providers) {
+    try {
+      const searchUrl = new URL(provider.endpoint);
+      searchUrl.searchParams.set("q", query);
 
-    return stringifyToolPayload({
-      note: "Search results are discovery metadata, not verified source content. Fetch a result URL before relying on it as source material.",
-      provider: "tavily",
-      query: rawQuery,
-      site: site || null,
-      limit,
-      returned: results.length,
-      rate_limit: responseRateLimit(response),
-      results
-    });
-  } finally {
-    clearTimeout(timeout);
+      const fetched = await fetchReadableUrl(searchUrl.toString(), "web_search");
+      const results = await provider.parse(fetched.rawText, limit);
+
+      if (results.length) {
+        return {
+          provider: provider.name,
+          results
+        };
+      }
+
+      errors.push(`${provider.name}: no public parseable results`);
+    } catch (error) {
+      errors.push(`${provider.name}: ${error instanceof Error ? error.message : "Unknown search error"}`);
+    }
   }
+
+  throw new Error(`web_search provider returned no public parseable results. No-key HTML search is fragile and may be blocked or changed. ${errors.join(" | ")}`);
 }
 
 async function fetchReadableUrl(rawUrl: string, toolName: string): Promise<FetchedReadableUrl> {
@@ -307,28 +321,28 @@ async function extractPublicLinks(html: string, baseUrl: string, limit: number) 
   return links;
 }
 
-async function normalizeSearchResults(data: JsonRecord, limit: number) {
-  const web = isRecord(data.web) ? data.web : {};
-  const values = Array.isArray(data.results)
-    ? data.results
-    : Array.isArray(web.results)
-      ? web.results
-      : [];
+async function parseDuckDuckGoResults(html: string, limit: number) {
+  const anchorMatches = [...html.matchAll(/<a\b[^>]*class\s*=\s*(?:"[^"]*\bresult__a\b[^"]*"|'[^']*\bresult__a\b[^']*')[^>]*href\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi)];
+
+  if (!anchorMatches.length) {
+    throw new Error("web_search provider returned unexpected HTML with no result anchors. The no-key DuckDuckGo HTML parser may need updating.");
+  }
+
   const results = [];
   const seen = new Set<string>();
 
-  for (const value of values) {
+  for (let index = 0; index < anchorMatches.length; index += 1) {
     if (results.length >= limit) {
       break;
     }
 
-    if (!isRecord(value)) {
-      continue;
-    }
-
-    const title = cleanText(htmlToText(String(value.title ?? ""))).slice(0, 180);
-    const rawUrl = cleanText(value.url);
-    const snippet = searchSnippet(value);
+    const match = anchorMatches[index];
+    const title = cleanText(htmlToText(match[3] || "")).slice(0, 180);
+    const rawUrl = normalizeDuckDuckGoResultUrl(decodeEntities(match[1] || match[2] || ""));
+    const nextIndex = anchorMatches[index + 1]?.index ?? html.length;
+    const resultHtml = html.slice(match.index ?? 0, nextIndex);
+    const snippet = extractSearchResultText(resultHtml, "result__snippet").slice(0, MAX_SEARCH_SNIPPET_CHARS);
+    const source = extractSearchResultText(resultHtml, "result__url").slice(0, 220);
 
     if (!rawUrl) {
       continue;
@@ -353,21 +367,159 @@ async function normalizeSearchResults(data: JsonRecord, limit: number) {
     results.push({
       title: title || null,
       url: normalizedUrl,
-      snippet: snippet || null
+      snippet: snippet || null,
+      source: source || null
     });
   }
 
   return results;
 }
 
-function searchSnippet(value: JsonRecord) {
-  const description = cleanText(htmlToText(String(value.description ?? "")));
-  const extraSnippets = Array.isArray(value.extra_snippets)
-    ? value.extra_snippets.map((snippet) => cleanText(htmlToText(String(snippet)))).filter(Boolean)
-    : [];
-  const combined = [description, ...extraSnippets].filter(Boolean).join(" ");
+async function parseMojeekResults(html: string, limit: number) {
+  const itemMatches = [...html.matchAll(/<li\b[^>]*class\s*=\s*(?:"[^"]*\br\d+\b[^"]*"|'[^']*\br\d+\b[^']*')[^>]*>([\s\S]*?)<\/li>/gi)];
 
-  return combined.slice(0, MAX_SEARCH_SNIPPET_CHARS);
+  if (!itemMatches.length) {
+    const fallbackResults = await parseGenericSearchAnchors(html, limit);
+
+    if (fallbackResults.length) {
+      return fallbackResults;
+    }
+
+    throw new Error("web_search provider returned unexpected HTML with no result items.");
+  }
+
+  const results = [];
+  const seen = new Set<string>();
+
+  for (const match of itemMatches) {
+    if (results.length >= limit) {
+      break;
+    }
+
+    const resultHtml = match[1] || "";
+    const titleMatch = resultHtml.match(/<a\b[^>]*class\s*=\s*(?:"[^"]*\btitle\b[^"]*"|'[^']*\btitle\b[^']*')[^>]*href\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/i);
+
+    if (!titleMatch) {
+      continue;
+    }
+
+    const rawUrl = decodeEntities(titleMatch[1] || titleMatch[2] || "");
+    const title = cleanText(htmlToText(titleMatch[3] || "")).slice(0, 180);
+    const snippet = extractTagText(resultHtml, "p", "s").slice(0, MAX_SEARCH_SNIPPET_CHARS);
+    const source = extractTagText(resultHtml, "span", "url").slice(0, 220);
+
+    let parsed: URL;
+
+    try {
+      parsed = normalizeAndValidateUrl(rawUrl, "web_search");
+      await assertPublicHostname(parsed, "web_search");
+    } catch {
+      continue;
+    }
+
+    const normalizedUrl = parsed.toString();
+
+    if (seen.has(normalizedUrl)) {
+      continue;
+    }
+
+    seen.add(normalizedUrl);
+    results.push({
+      title: title || null,
+      url: normalizedUrl,
+      snippet: snippet || null,
+      source: source || null
+    });
+  }
+
+  if (!results.length) {
+    return parseGenericSearchAnchors(html, limit);
+  }
+
+  return results;
+}
+
+async function parseGenericSearchAnchors(html: string, limit: number) {
+  const anchorMatches = [...html.matchAll(/<a\b[^>]*href\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi)];
+  const results = [];
+  const seen = new Set<string>();
+
+  for (const match of anchorMatches) {
+    if (results.length >= limit) {
+      break;
+    }
+
+    const rawUrl = decodeEntities(match[1] || match[2] || "");
+    const title = cleanText(htmlToText(match[3] || "")).slice(0, 180);
+
+    if (!title || title.length < 3) {
+      continue;
+    }
+
+    let parsed: URL;
+
+    try {
+      parsed = normalizeAndValidateUrl(rawUrl, "web_search");
+      await assertPublicHostname(parsed, "web_search");
+    } catch {
+      continue;
+    }
+
+    const normalizedUrl = parsed.toString();
+
+    if (seen.has(normalizedUrl)) {
+      continue;
+    }
+
+    seen.add(normalizedUrl);
+    results.push({
+      title: title || null,
+      url: normalizedUrl,
+      snippet: null,
+      source: parsed.hostname
+    });
+  }
+
+  return results;
+}
+
+function normalizeDuckDuckGoResultUrl(rawUrl: string) {
+  const trimmed = cleanText(rawUrl);
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const absoluteUrl = trimmed.startsWith("//") ? `https:${trimmed}` : trimmed;
+
+  try {
+    const parsed = new URL(absoluteUrl, "https://duckduckgo.com");
+    const uddg = parsed.searchParams.get("uddg");
+
+    return uddg ? decodeURIComponent(uddg) : parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function extractSearchResultText(html: string, className: string) {
+  const pattern = new RegExp(
+    `<[^>]*class\\s*=\\s*(?:"[^"]*\\b${className}\\b[^"]*"|'[^']*\\b${className}\\b[^']*')[^>]*>([\\s\\S]*?)<\\/[^>]+>`,
+    "i"
+  );
+  const match = html.match(pattern);
+
+  return match ? cleanText(htmlToText(match[1] || "")) : "";
+}
+
+function extractTagText(html: string, tagName: string, className: string) {
+  const pattern = new RegExp(
+    `<${tagName}\\b[^>]*class\\s*=\\s*(?:"[^"]*\\b${className}\\b[^"]*"|'[^']*\\b${className}\\b[^']*')[^>]*>([\\s\\S]*?)<\\/${tagName}>`,
+    "i"
+  );
+  const match = html.match(pattern);
+
+  return match ? cleanText(htmlToText(match[1] || "")) : "";
 }
 
 function normalizeSearchSite(value: unknown) {
@@ -396,25 +548,6 @@ function normalizeSearchSite(value: unknown) {
   }
 
   return normalized.replace(/^www\./, "");
-}
-
-function tavilySearchError(data: JsonRecord, status: number) {
-  const message =
-    cleanText(data.detail) ||
-    cleanText(data.message) ||
-    cleanText(isRecord(data.error) ? data.error.message : "") ||
-    cleanText(typeof data.error === "string" ? data.error : "") ||
-    `Tavily Search request failed: ${status}`;
-
-  return message;
-}
-
-function responseRateLimit(response: Response) {
-  return {
-    limit: response.headers.get("x-ratelimit-limit"),
-    remaining: response.headers.get("x-ratelimit-remaining"),
-    reset: response.headers.get("x-ratelimit-reset")
-  };
 }
 
 function normalizeAndValidateUrl(value: string, toolName: string) {

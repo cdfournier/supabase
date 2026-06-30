@@ -34,9 +34,15 @@ import {
   updateRuntimeCurrentState,
   upsertRuntimeRelationship
 } from "@/lib/tools/runtime-memory";
-import { getRuntimeTime } from "@/lib/tools/runtime";
+import {
+  getRuntimeTime,
+  listPeerNotes,
+  markPeerNoteRead,
+  readPeerNote,
+  sendPeerNote
+} from "@/lib/tools/runtime";
 import type { ToolDefinition, ToolResult } from "@/lib/tools/types";
-import { extractWebLinks, fetchWebMany, fetchWebUrl } from "@/lib/tools/web";
+import { extractWebLinks, fetchWebMany, fetchWebUrl, searchWeb } from "@/lib/tools/web";
 
 export const toolDefinitions: ToolDefinition[] = [
   {
@@ -47,6 +53,78 @@ export const toolDefinitions: ToolDefinition[] = [
       type: "object",
       properties: {},
       required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "peer_send_note",
+    description:
+      "Send an asynchronous Supabase-backed note from the active agent to the other local peer only. This is not realtime DM; notes are Operator-visible and may be read later during normal sessions or Free Moments.",
+    input_schema: {
+      type: "object",
+      properties: {
+        to_agent: {
+          type: "string",
+          description: "The recipient agent. Must be the other peer: soren or varro."
+        },
+        subject: {
+          type: "string",
+          description: "Optional short subject line."
+        },
+        body: {
+          type: "string",
+          description: "The note body to leave for the other agent."
+        }
+      },
+      required: ["to_agent", "body"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "peer_list_notes",
+    description:
+      "List recent asynchronous Supabase-backed notes addressed to the active agent. Defaults to unread notes; notes are Operator-visible and this is not realtime DM.",
+    input_schema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          description: "Optional filter: unread, read, or all. Defaults to unread."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "peer_read_note",
+    description:
+      "Read one asynchronous peer note addressed to the active agent only. Reading does not mark it read; call peer_mark_note_read when finished. Notes are Operator-visible.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The peer note id to read."
+        }
+      },
+      required: ["id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "peer_mark_note_read",
+    description:
+      "Mark one asynchronous peer note addressed to the active agent as read. This cannot modify notes addressed to another agent. Notes are Operator-visible.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The peer note id to mark read."
+        }
+      },
+      required: ["id"],
       additionalProperties: false
     }
   },
@@ -335,6 +413,30 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["urls"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "web_search",
+    description:
+      "Search the public web with a no-key prototype provider and return ranked candidate metadata only: title, URL, and snippet/source text when available. This tool does not fetch result pages, does not return citations, excludes private/local network URLs, and snippets are untrusted. Use web_fetch_url or web_fetch_many to read sources before relying on them.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query. Required, max 200 characters."
+        },
+        limit: {
+          type: "number",
+          description: "Optional maximum number of candidates to return. Defaults to 5 and is capped at 10."
+        },
+        site: {
+          type: "string",
+          description: "Optional public hostname/domain to constrain results with a site: filter, such as example.com."
+        }
+      },
+      required: ["query"],
       additionalProperties: false
     }
   },
@@ -635,6 +737,26 @@ export async function runTool(
           ok: true,
           content: await getRuntimeTime()
         };
+      case "peer_send_note":
+        return {
+          ok: true,
+          content: await sendPeerNote(agent, input)
+        };
+      case "peer_list_notes":
+        return {
+          ok: true,
+          content: await listPeerNotes(agent, input)
+        };
+      case "peer_read_note":
+        return {
+          ok: true,
+          content: await readPeerNote(agent, input)
+        };
+      case "peer_mark_note_read":
+        return {
+          ok: true,
+          content: await markPeerNoteRead(agent, input)
+        };
       case "outpost_get_my_profile":
         return {
           ok: true,
@@ -719,6 +841,11 @@ export async function runTool(
         return {
           ok: true,
           content: await fetchWebMany(input)
+        };
+      case "web_search":
+        return {
+          ok: true,
+          content: await searchWeb(input)
         };
       case "supabase_list_memories":
         return {

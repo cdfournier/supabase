@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type AgentName = "soren" | "varro";
 
@@ -128,13 +128,37 @@ type CompactionCheckpoint = {
   };
 };
 
+type FreeTimeEvent = {
+  at: string;
+  type: string;
+  agent?: AgentName;
+  message: string;
+};
+
+type FreeTimeStatus = {
+  running: boolean;
+  turn_in_progress: boolean;
+  interval_minutes: number;
+  next_agent: AgentName;
+  last_agent: AgentName | null;
+  last_turn_at: string | null;
+  next_turn_at: string | null;
+  last_error: string | null;
+  recent_events: FreeTimeEvent[];
+};
+
 const defaultAgent: AgentName = "soren";
+const freeTimePollMs = 30_000;
 
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AgentName>(defaultAgent);
   const [transcripts, setTranscripts] = useState<Record<string, ChatMessage[]>>({});
   const [health, setHealth] = useState<Health | null>(null);
+  const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
+  const [freeTimeLoading, setFreeTimeLoading] = useState(true);
+  const [freeTimeRequestInProgress, setFreeTimeRequestInProgress] = useState(false);
+  const [freeTimeError, setFreeTimeError] = useState("");
   const [compactionPreview, setCompactionPreview] = useState<CompactionPreview | null>(null);
   const [compactionLoading, setCompactionLoading] = useState(false);
   const [compactionError, setCompactionError] = useState("");
@@ -160,6 +184,26 @@ export default function Home() {
   const activeMessages = transcripts[selectedAgent] ?? [];
   const displayMessages = useMemo(() => [...activeMessages].reverse(), [activeMessages]);
   const activeHealth = health?.agents.find((agent) => agent.agent === selectedAgent);
+
+  const loadFreeTimeStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/free-time");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load Free Moments status.");
+      }
+
+      setFreeTime(data);
+      setFreeTimeError("");
+    } catch (statusError) {
+      setFreeTimeError(
+        statusError instanceof Error ? statusError.message : "Could not load Free Moments status."
+      );
+    } finally {
+      setFreeTimeLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -232,6 +276,26 @@ export default function Home() {
       cancelled = true;
     };
   }, [activeMessages.length, selectedAgent]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function pollFreeTime() {
+      if (cancelled) {
+        return;
+      }
+
+      await loadFreeTimeStatus();
+    }
+
+    pollFreeTime();
+    const interval = window.setInterval(pollFreeTime, freeTimePollMs);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [loadFreeTimeStatus]);
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({
@@ -417,6 +481,40 @@ export default function Home() {
     }
   }
 
+  async function runFreeTimeAction(action: "start" | "stop" | "tick") {
+    if (freeTimeRequestInProgress) {
+      return;
+    }
+
+    setFreeTimeRequestInProgress(true);
+    setFreeTimeError("");
+
+    try {
+      const response = await fetch("/api/free-time", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(action === "tick" ? { action, agent: selectedAgent } : { action })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Free Moments request failed.");
+      }
+
+      setFreeTime(data);
+      await loadFreeTimeStatus();
+    } catch (actionError) {
+      setFreeTimeError(
+        actionError instanceof Error ? actionError.message : "Free Moments request failed."
+      );
+    } finally {
+      setFreeTimeRequestInProgress(false);
+      setFreeTimeLoading(false);
+    }
+  }
+
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = message.trim();
@@ -491,6 +589,15 @@ export default function Home() {
           onPreviewCompaction={previewCompaction}
           savedProposalError={savedProposalError}
           savedProposalLoading={savedProposalLoading}
+        />
+
+        <FreeTimePanel
+          selectedAgent={selectedAgent}
+          error={freeTimeError}
+          loading={freeTimeLoading}
+          onAction={runFreeTimeAction}
+          requestInProgress={freeTimeRequestInProgress}
+          status={freeTime}
         />
       </aside>
 
@@ -598,6 +705,123 @@ export default function Home() {
         </div>
       </section>
     </main>
+  );
+}
+
+function FreeTimePanel({
+  error,
+  loading,
+  onAction,
+  requestInProgress,
+  selectedAgent,
+  status
+}: {
+  error: string;
+  loading: boolean;
+  onAction: (action: "start" | "stop" | "tick") => void;
+  requestInProgress: boolean;
+  selectedAgent: AgentName;
+  status: FreeTimeStatus | null;
+}) {
+  const disabled = loading || requestInProgress;
+  const recentEvents = status?.recent_events ?? [];
+
+  return (
+    <section className="health-panel free-time-panel" aria-label="Free Moments">
+      <div className="health-heading">
+        <h2>Free Moments</h2>
+        <span className={`status-dot ${status?.running ? "ok" : "warn"}`} />
+      </div>
+
+      {status ? (
+        <>
+          <dl className="health-list free-time-list">
+            <div>
+              <dt>Status</dt>
+              <dd>{status.running ? "running" : "stopped"}</dd>
+            </div>
+            <div>
+              <dt>Turn</dt>
+              <dd>{status.turn_in_progress ? "in progress" : "idle"}</dd>
+            </div>
+            <div>
+              <dt>Next agent</dt>
+              <dd>{status.next_agent}</dd>
+            </div>
+            <div>
+              <dt>Last agent</dt>
+              <dd>{status.last_agent ?? "none"}</dd>
+            </div>
+            <div>
+              <dt>Cadence</dt>
+              <dd>{status.interval_minutes} min</dd>
+            </div>
+            <div>
+              <dt>Next turn</dt>
+              <dd>{formatStatusTime(status.next_turn_at)}</dd>
+            </div>
+            <div>
+              <dt>Last turn</dt>
+              <dd>{formatStatusTime(status.last_turn_at)}</dd>
+            </div>
+            <div>
+              <dt>Last error</dt>
+              <dd>{status.last_error ?? "none"}</dd>
+            </div>
+          </dl>
+
+          <div className="free-time-actions">
+            <button
+              className="quiet-action"
+              disabled={disabled || status.running}
+              onClick={() => onAction("start")}
+              type="button"
+            >
+              {requestInProgress ? "Working" : "Start"}
+            </button>
+            <button
+              className="quiet-action"
+              disabled={disabled || !status.running}
+              onClick={() => onAction("stop")}
+              type="button"
+            >
+              Stop
+            </button>
+            <button
+              className="quiet-action"
+              disabled={disabled || status.turn_in_progress}
+              onClick={() => onAction("tick")}
+              type="button"
+            >
+              Wake {selectedAgent} Now
+            </button>
+          </div>
+
+          <div className="free-time-events">
+            <div className="pressure-row">
+              <span>Recent events</span>
+              <strong>{recentEvents.length}</strong>
+            </div>
+            {recentEvents.length > 0 ? (
+              <ol>
+                {recentEvents.map((event) => (
+                  <li key={`${event.at}-${event.type}-${event.message}`}>
+                    <time dateTime={event.at}>{formatShortTime(event.at)}</time>
+                    <span>{event.agent ? `${event.agent}: ` : ""}{event.message}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p>No Free Moments events yet.</p>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="health-empty">{loading ? "Loading Free Moments..." : "Free Moments unavailable."}</p>
+      )}
+
+      {error ? <p className="health-error">{error}</p> : null}
+    </section>
   );
 }
 
@@ -818,6 +1042,27 @@ function sourceSummaryFromSavedProposal(value: unknown): CompactionCompile["sour
 function safeNumber(value: unknown) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function formatStatusTime(value: string | null) {
+  if (!value) {
+    return "none";
+  }
+
+  return formatMessageTime(value) || value;
+}
+
+function formatShortTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
 }
 
 function formatMessageTime(value: string) {

@@ -16,6 +16,7 @@ const DEFAULT_TIME_ZONE = "America/New_York";
 const EXCERPT_LENGTH = 700;
 const DEFAULT_COMPILE_TRANSCRIPT_CHARS = 50_000;
 const COMPILE_OPENING_MESSAGES = 8;
+const ARCHIVE_INSERT_CHUNK_SIZE = 500;
 export const COMPACTION_CHECKPOINT_PREFIX = "[COMPACTION_CHECKPOINT_V1]";
 
 type RestorationProfile = {
@@ -31,6 +32,17 @@ export type CompactionSource = {
   selected_message_count: number;
   text: string;
   transcript_budget_chars: number;
+};
+
+export type CompactionArchiveReceipt = {
+  id: string;
+  agent: AgentName;
+  conversation_id: string;
+  checkpoint_message_id: string | null;
+  message_count: number;
+  source_started_at: string | null;
+  source_ended_at: string | null;
+  created_at: string | null;
 };
 
 export async function buildCompactionPreview(supabase: SupabaseClient, agent: AgentName) {
@@ -122,6 +134,87 @@ export function latestCompactionCheckpoint(messages: ChatMessage[]) {
 
 export function messagesAfterCheckpoint(messages: ChatMessage[], checkpoint: ChatMessage) {
   return messages.filter((message) => message.position > checkpoint.position);
+}
+
+export async function createCompactionArchive(
+  supabase: SupabaseClient,
+  {
+    agent,
+    checkpointMessageId,
+    conversationId,
+    proposalId,
+    source
+  }: {
+    agent: AgentName;
+    checkpointMessageId?: string | null;
+    conversationId: string;
+    proposalId?: string | null;
+    source?: string;
+  }
+): Promise<CompactionArchiveReceipt> {
+  const messages = await loadConversationMessages(supabase, conversationId);
+  const checkpoint = latestCompactionCheckpoint(messages);
+  const activeMessages = checkpoint ? messagesAfterCheckpoint(messages, checkpoint) : messages;
+  const firstMessage = activeMessages[0] ?? null;
+  const lastMessage = activeMessages.at(-1) ?? null;
+
+  const { data: archive, error: archiveError } = await supabase
+    .from("compaction_archives")
+    .insert({
+      agent,
+      checkpoint_message_id: checkpointMessageId ?? null,
+      conversation_id: conversationId,
+      latest_checkpoint_position: checkpoint?.position ?? null,
+      message_count: activeMessages.length,
+      proposal_id: proposalId ?? null,
+      source: source || "manual_compaction_checkpoint",
+      source_started_at: firstMessage?.created_at ?? null,
+      source_ended_at: lastMessage?.created_at ?? null
+    })
+    .select(
+      "id, agent, conversation_id, checkpoint_message_id, message_count, source_started_at, source_ended_at, created_at"
+    )
+    .single();
+
+  if (archiveError) {
+    throw new Error(`Could not create compaction archive metadata: ${archiveError.message}`);
+  }
+
+  const archiveId = String(archive.id);
+
+  for (let index = 0; index < activeMessages.length; index += ARCHIVE_INSERT_CHUNK_SIZE) {
+    const chunk = activeMessages.slice(index, index + ARCHIVE_INSERT_CHUNK_SIZE);
+    const rows = chunk.map((message) => ({
+      archive_id: archiveId,
+      content: message.content,
+      conversation_id: message.conversation_id,
+      message_created_at: message.created_at ?? null,
+      original_message_id: message.id ?? null,
+      position: message.position,
+      role: message.role
+    }));
+
+    const { error: messageError } = await supabase.from("compaction_archive_messages").insert(rows);
+
+    if (messageError) {
+      await supabase.from("compaction_archive_messages").delete().eq("archive_id", archiveId);
+      await supabase.from("compaction_archives").delete().eq("id", archiveId);
+      throw new Error(`Could not create compaction archive messages: ${messageError.message}`);
+    }
+  }
+
+  return {
+    id: archiveId,
+    agent: archive.agent as AgentName,
+    conversation_id: String(archive.conversation_id),
+    checkpoint_message_id: archive.checkpoint_message_id
+      ? String(archive.checkpoint_message_id)
+      : null,
+    message_count: Number(archive.message_count ?? activeMessages.length),
+    source_started_at: archive.source_started_at ? String(archive.source_started_at) : null,
+    source_ended_at: archive.source_ended_at ? String(archive.source_ended_at) : null,
+    created_at: archive.created_at ? String(archive.created_at) : null
+  };
 }
 
 export function formatCompactionCheckpoint({

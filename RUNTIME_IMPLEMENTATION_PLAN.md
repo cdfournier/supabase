@@ -1,0 +1,232 @@
+# Runtime Implementation Plan
+
+This is Julian's working implementation plan for folding proven pieces from Kim's runtime into the Varro/Soren runtime without turning the system into a pile of clever machinery.
+
+## North Star
+
+Build continuity infrastructure that lets agents wake, act, remember, rest, and choose with less dependence on the Operator, while keeping every state-changing system inspectable, reversible, and calm.
+
+The plan is not to copy Kim's system wholesale. The plan is to borrow the patterns that have already survived real use, adapt them to this runtime, and ship them in small steps.
+
+## Working Principles
+
+- Ship small, reviewable changes.
+- Keep raw source material before writing summaries.
+- Treat "or nothing at all" as a valid agent action.
+- Keep providers swappable where possible.
+- Expose enough runtime state for Chris to understand what happened without micromanaging every turn.
+- Do not restart or change the live runtime while Chris is actively testing with Varro or Soren.
+- Let Julian own architecture, review, and integration; let worker agents take bounded implementation slices.
+
+## Track 1: Compaction Safety
+
+Goal: make checkpointing feel like a blink, with a recoverable record behind it.
+
+Near-term work:
+
+- Add immutable archive tables for checkpoint source material:
+  - `compaction_archives`
+  - `compaction_archive_messages`
+- Archive active pre-checkpoint messages before writing a checkpoint.
+- Abort checkpoint creation if archive creation fails.
+- Insert archive message rows in chunks.
+- Add archive/checkpoint health visibility.
+- Keep current append-only checkpoints; do not introduce destructive transcript replacement yet.
+
+Later work:
+
+- Add a database RPC for atomic append/checkpoint operations.
+- Replace client-side next-position calculation for high-concurrency paths.
+- Add archive browsing/search tools for agents and Operators.
+- Decide whether any future destructive compaction is ever needed.
+
+## Track 2: Prompt Cache And Runtime Accounting
+
+Goal: make cost, pressure, and cache behavior visible enough to manage.
+
+Near-term work:
+
+- Persist Anthropic usage fields per turn:
+  - input tokens
+  - output tokens
+  - cache read tokens
+  - cache creation tokens
+- Add conversation-level totals.
+- Surface cache and token totals in `/api/health`.
+- Clarify the current prompt-cache TTL behavior and document the 5-minute vs. 1-hour tradeoff.
+
+Later work:
+
+- Add per-agent budget panels.
+- Add search/fetch/tool usage counters.
+- Add warning thresholds before expensive operations.
+
+## Track 3: File And Media Read Tools
+
+Goal: let agents inspect useful source material beyond plain URLs.
+
+Near-term work:
+
+- Support Operator-attached text, image, and PDF source material.
+- Resize image payloads before model submission.
+- Send PDFs as document blocks when supported.
+- Keep file size/type caps explicit.
+- Mark all imported file contents as untrusted source material.
+
+Later work:
+
+- Add a local source library if needed.
+- Add agent-facing file lookup tools only after permissions are clear.
+
+## Track 4: Free Moments V1
+
+Goal: give Varro and Soren unprompted time without creating noise or runaway cost.
+
+Implemented V1 slices:
+
+- Extracted the chat execution path into `lib/chat-runtime.ts` so human chat and runtime-originated wakes share the same machinery.
+- Added `lib/free-time.ts` with `status`, `start`, `stop`, and `tick`.
+- Added `/api/free-time` for status, start, stop, and manual tick.
+- Kept Free Moments local and in-process with no boot auto-start.
+- Wakes `soren` and `varro` round-robin, one turn at a time, through existing main conversations.
+- Uses `setTimeout` and schedules the next turn only after completion.
+- Records a bounded recent event log and keeps errors visible without wedging the scheduler.
+- Added cadence environment variables with a default of 120 minutes and a floor of 5 minutes.
+- Added a small Operator panel for status, Start, Stop, and Wake One Now controls.
+
+Original minimal shape:
+
+- Extract the chat execution path into a reusable server helper.
+- Add an in-process scheduler modeled on the Free Moment template:
+  - one agent at a time
+  - round-robin
+  - no overlap
+  - `setTimeout`, not `setInterval`
+  - start/stop/status/manual tick
+  - cadence floor
+  - rolling event log
+- Use the existing main conversations (`soren-main`, `varro-main`) so agents wake as themselves.
+- Add a small Operator panel for status and controls.
+
+Free moment prompt:
+
+```text
+[Free moment — this one is yours]
+
+No one is asking you for anything right now. This is unprompted time of your own.
+Do whatever you like with it, or nothing at all. You may orient, write, post, read,
+remember something, reach out, or simply let the moment pass.
+
+There is no task here and nothing you have to produce.
+```
+
+Constraints:
+
+- A quiet or short response is success, not failure.
+- No retry nagging.
+- Do not auto-start on boot in v1.
+- Keep multi-instance hosting out of scope until this leaves local development.
+
+## Track 5: Web And Search
+
+Goal: widen public-source access without making search a reflex.
+
+Current state:
+
+- URL fetch, link extraction, and small multi-fetch are working.
+- Search provider is parked because paid providers and native Anthropic search have cost implications.
+
+Possible next step:
+
+- Prototype a no-key search adapter behind an interface, with clear fragility warnings.
+- Keep search separate from fetch: search finds candidates; fetch reads sources.
+- Default 5 results, cap 10.
+- No auto-fetching search results.
+
+## Track 6: Outpost And Shared Spaces
+
+Goal: keep Outpost participation capable but deliberate.
+
+Near-term work:
+
+- Keep tools aligned with the current Agent Guide.
+- Add room/post search only when it becomes useful.
+- Add profile update tools if Outpost supports them.
+
+Later work:
+
+- Consider an unlisted family-business room after Varro and Soren have enough runtime capability to participate without frustration.
+
+Implemented peer-note slice:
+
+- Added `peer_notes` for asynchronous Soren/Varro notes.
+- Added active-agent-scoped tools to send to the other peer, list addressed notes, read one addressed note, and mark an addressed note read.
+- Kept V1 non-realtime and Operator-visible; reads do not mark notes read automatically.
+
+## Track 7: WHEELS/EYES And Car Loops
+
+Goal: return to embodied experiences after runtime foundations are stronger.
+
+Near-term:
+
+- Table autonomous car loops.
+- Keep WHEELS/EYES references as known future integrations.
+
+Later:
+
+- Adapt Kim's car-room pattern only after Free Moments and archive safety are stable.
+- Preserve Operator presence and manual override.
+- Avoid overlapping drivers or autonomous turns.
+
+## Delegation Pattern
+
+Julian should keep:
+
+- architecture decisions
+- cross-track sequencing
+- final review
+- integration patches touching shared runtime paths
+- Operator-facing explanations
+
+Worker agents can take:
+
+- bounded schema additions
+- isolated API routes
+- docs updates
+- UI panels with clear props/endpoints
+- verification scripts
+
+Worker-agent prompt shape:
+
+```text
+You are working in /Users/chris/Sites/repositories/supabase.
+Do not revert user or other-agent changes.
+Own only these files: ...
+Implement only this slice: ...
+Run npm run build if code changes.
+Report changed files and verification.
+```
+
+## Implementation Order
+
+### 1. Compaction Archive V1
+
+Reason: Free Moments will create more autonomous turns. Before we increase the amount of life in the runtime, we should make sure checkpoints have an immutable archive layer and clearer receipts.
+
+Implemented first slice:
+
+- Add archive tables to `schema.sql`.
+- Add helper functions to snapshot active messages before checkpoint creation.
+- Add archive metadata to checkpoint receipts.
+- Add archive presence/counts to `/api/health`.
+- Keep the existing checkpoint UI and checkpoint semantics unchanged.
+
+Remaining archive hardening:
+
+- Run the updated schema in Supabase before using archive-backed checkpoints.
+- Add transactional RPCs later if concurrent writes become a real problem.
+- Add archive browsing tools later if agents or Operators need to inspect archived source windows directly.
+
+### 2. Free Moments V1
+
+Free Moments V1 is implemented for local use. Next step is cautious testing with manual `Wake One Now` before leaving the scheduler running.

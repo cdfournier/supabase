@@ -80,6 +80,59 @@ create table if not exists public.compaction_proposals (
 create index if not exists compaction_proposals_by_agent
   on public.compaction_proposals (agent, updated_at desc);
 
+create table if not exists public.compaction_archives (
+  id uuid primary key default gen_random_uuid(),
+  agent text not null references public.agents(name),
+  conversation_id text not null references public.conversations(id),
+  proposal_id uuid references public.compaction_proposals(id),
+  checkpoint_message_id uuid,
+  source text not null default 'manual_compaction_checkpoint',
+  message_count int not null default 0,
+  latest_checkpoint_position int,
+  source_started_at timestamptz,
+  source_ended_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists compaction_archives_by_conversation
+  on public.compaction_archives (conversation_id, created_at desc);
+
+create index if not exists compaction_archives_by_agent
+  on public.compaction_archives (agent, created_at desc);
+
+create table if not exists public.compaction_archive_messages (
+  id uuid primary key default gen_random_uuid(),
+  archive_id uuid not null references public.compaction_archives(id) on delete restrict,
+  original_message_id uuid,
+  conversation_id text not null references public.conversations(id),
+  position int not null,
+  role text not null,
+  content jsonb not null,
+  message_created_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (archive_id, position)
+);
+
+create index if not exists compaction_archive_messages_by_archive
+  on public.compaction_archive_messages (archive_id, position);
+
+create table if not exists public.peer_notes (
+  id uuid primary key default gen_random_uuid(),
+  from_agent text not null references public.agents(name),
+  to_agent text not null references public.agents(name),
+  subject text not null default '',
+  body text not null,
+  status text not null default 'unread',
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
+
+create index if not exists peer_notes_by_recipient_status
+  on public.peer_notes (to_agent, status, created_at desc);
+
+create index if not exists peer_notes_by_sender
+  on public.peer_notes (from_agent, created_at desc);
+
 alter table public.agents enable row level security;
 alter table public.conversations enable row level security;
 alter table public.conversation_messages enable row level security;
@@ -87,3 +140,6 @@ alter table public.memories enable row level security;
 alter table public.relationships enable row level security;
 alter table public.restoration_profiles enable row level security;
 alter table public.compaction_proposals enable row level security;
+alter table public.compaction_archives enable row level security;
+alter table public.compaction_archive_messages enable row level security;
+alter table public.peer_notes enable row level security;
