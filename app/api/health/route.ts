@@ -103,7 +103,9 @@ async function buildAgentHealth(
     relationshipResult,
     proposalResult,
     profileResult,
-    archiveResult
+    archiveResult,
+    journalResult,
+    toolEventResult
   ] = await Promise.all([
     supabase
       .from("conversations")
@@ -135,7 +137,15 @@ async function buildAgentHealth(
       )
       .eq("agent", agent)
       .order("created_at", { ascending: false })
-      .limit(1)
+      .limit(1),
+    supabase
+      .from("journal_entries")
+      .select("id", { count: "exact", head: false })
+      .eq("agent", agent),
+    supabase
+      .from("tool_events")
+      .select("id", { count: "exact", head: false })
+      .eq("agent", agent)
   ]);
 
   if (conversationResult.error) {
@@ -213,6 +223,14 @@ async function buildAgentHealth(
       active_rows: activeMemories.length,
       core_rows: coreMemories.length,
       relationships: relationshipResult.count ?? relationshipResult.data?.length ?? 0,
+      journal_entries: journalResult.error
+        ? 0
+        : journalResult.count ?? journalResult.data?.length ?? 0,
+      journal_entries_error: journalResult.error?.message ?? null,
+      tool_events: toolEventResult.error
+        ? 0
+        : toolEventResult.count ?? toolEventResult.data?.length ?? 0,
+      tool_events_error: toolEventResult.error?.message ?? null,
       compaction_proposals: proposalResult.error
         ? 0
         : proposalResult.count ?? proposalResult.data?.length ?? 0,

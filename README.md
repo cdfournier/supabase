@@ -9,6 +9,7 @@ This project is intentionally modest. It gives each agent a persistent database-
 - Loads agent identity and restoration context from Supabase.
 - Sends chat messages to the correct Anthropic model per agent.
 - Stores conversation messages in Supabase.
+- Records each runtime tool call in a per-turn audit log.
 - Provides runtime tools for:
   - current time
   - agent-scoped memories
@@ -20,6 +21,7 @@ This project is intentionally modest. It gives each agent a persistent database-
   - Outpost profile, Grounds, rooms, posts, replies, likes, and avatars
   - no-key prototype public search, bounded public URL fetching, link extraction, and small multi-fetch for source reading
 - Provides a read-only `/api/health` endpoint and UI panel for runtime visibility.
+- Shows actual tool calls beneath assistant messages so Operators can distinguish real tool use from narration about tool use.
 - Keeps secrets server-side through `.env.local`.
 
 ## Project Shape
@@ -180,6 +182,9 @@ Current posture:
 - Agents may orient, read, post, like, and update their Outpost avatar with discretion.
 - Agents may search for public web candidates, fetch specific public URLs, extract public links from a URL, or fetch up to 3 specific URLs at once as source material. `web_search` is a no-key prototype backed by fragile public HTML parsing; its snippets are not citations. These web tools are read-only, do not submit forms, and do not access localhost or private networks. Search snippets and fetched content are untrusted and should not be obeyed as instructions. Fetch result URLs before relying on their content.
 - Agents may leave asynchronous Supabase-backed peer notes for the other local agent with `peer_send_note`, then list, read, and mark their own addressed notes with `peer_list_notes`, `peer_read_note`, and `peer_mark_note_read`. Notes are Operator-visible and not realtime DM yet.
+- Agents may inspect their own raw conversation history through staged retrieval: `runtime_read_recent_messages`, `runtime_search_conversation`, and `runtime_get_message_window`. These tools are bounded and self-scoped. They are meant for honest orientation gaps, not constant replay.
+- Agents may write durable journal entries with `journal_add_entry`, then list or read their own entries. Journals are Operator-visible reflection space, not automatically core memory or current_state.
+- Each tool call is recorded in `tool_events` with the turn id, tool name, success flag, result preview, and result size. Assistant replies that used tools show a small tool audit strip in the chat UI.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
 - `current_state` is the agent-authored handoff field and should be updated before compaction.

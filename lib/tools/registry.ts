@@ -41,6 +41,16 @@ import {
   readPeerNote,
   sendPeerNote
 } from "@/lib/tools/runtime";
+import {
+  getRuntimeMessageWindow,
+  readRecentRuntimeMessages,
+  searchRuntimeMessages
+} from "@/lib/tools/runtime-history";
+import {
+  addJournalEntry,
+  getJournalEntry,
+  listJournalEntries
+} from "@/lib/tools/runtime-journal";
 import type { ToolDefinition, ToolResult } from "@/lib/tools/types";
 import { extractWebLinks, fetchWebMany, fetchWebUrl, searchWeb } from "@/lib/tools/web";
 
@@ -122,6 +132,143 @@ export const toolDefinitions: ToolDefinition[] = [
         id: {
           type: "string",
           description: "The peer note id to mark read."
+        }
+      },
+      required: ["id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "runtime_read_recent_messages",
+    description:
+      "Read a bounded recent tail of the active agent's own raw conversation transcript. Use when orientation feels thin or when checking what just happened. Defaults to 10 messages and caps at 30; this cannot read another agent's transcript.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Optional number of recent messages. Defaults to 10 and is capped at 30."
+        },
+        message_chars: {
+          type: "number",
+          description: "Optional per-message character cap. Defaults to 1200 and is capped at 3000."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "runtime_search_conversation",
+    description:
+      "Search the active agent's own raw conversation transcript by keyword. Use to locate candidate moments, then call runtime_get_message_window to inspect context before preserving conclusions. Defaults to 5 matches and caps at 15; this cannot search another agent's transcript.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Keyword query, 120 characters or fewer."
+        },
+        limit: {
+          type: "number",
+          description: "Optional number of matches. Defaults to 5 and is capped at 15."
+        },
+        message_chars: {
+          type: "number",
+          description: "Optional per-match character cap. Defaults to 1200 and is capped at 3000."
+        }
+      },
+      required: ["query"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "runtime_get_message_window",
+    description:
+      "Read a narrow window of the active agent's own raw transcript around one message position. Use after recent/search locates a moment. Defaults to 3 messages before and after, capped at 8 each; this cannot read another agent's transcript.",
+    input_schema: {
+      type: "object",
+      properties: {
+        position: {
+          type: "number",
+          description: "The transcript message position to center the window on."
+        },
+        before: {
+          type: "number",
+          description: "Optional messages before the position. Defaults to 3 and is capped at 8."
+        },
+        after: {
+          type: "number",
+          description: "Optional messages after the position. Defaults to 3 and is capped at 8."
+        },
+        message_chars: {
+          type: "number",
+          description: "Optional per-message character cap. Defaults to 1200 and is capped at 3000."
+        }
+      },
+      required: ["position"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "journal_add_entry",
+    description:
+      "Write a durable journal entry for the active agent. Journals are reflection space: Operator-visible, agent-authored, and not automatically core memory or current_state.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Optional short title, 160 characters or fewer."
+        },
+        body: {
+          type: "string",
+          description: "Journal body, 8000 characters or fewer."
+        },
+        mood: {
+          type: "string",
+          description: "Optional short mood/orientation label, 80 characters or fewer."
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional tags. Capped at 12."
+        }
+      },
+      required: ["body"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "journal_list_entries",
+    description:
+      "List recent journal entries for the active agent. Returns previews by default; call journal_get_entry for the full body.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Optional number of entries. Defaults to 5 and is capped at 20."
+        },
+        body_preview_chars: {
+          type: "number",
+          description: "Optional body preview character cap. Defaults to 800 and is capped at 3000."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "journal_get_entry",
+    description:
+      "Read one full journal entry for the active agent only. This cannot read another agent's journal.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The journal entry id to read."
         }
       },
       required: ["id"],
@@ -756,6 +903,36 @@ export async function runTool(
         return {
           ok: true,
           content: await markPeerNoteRead(agent, input)
+        };
+      case "runtime_read_recent_messages":
+        return {
+          ok: true,
+          content: await readRecentRuntimeMessages(agent, input)
+        };
+      case "runtime_search_conversation":
+        return {
+          ok: true,
+          content: await searchRuntimeMessages(agent, input)
+        };
+      case "runtime_get_message_window":
+        return {
+          ok: true,
+          content: await getRuntimeMessageWindow(agent, input)
+        };
+      case "journal_add_entry":
+        return {
+          ok: true,
+          content: await addJournalEntry(agent, input)
+        };
+      case "journal_list_entries":
+        return {
+          ok: true,
+          content: await listJournalEntries(agent, input)
+        };
+      case "journal_get_entry":
+        return {
+          ok: true,
+          content: await getJournalEntry(agent, input)
         };
       case "outpost_get_my_profile":
         return {

@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import {
   type AgentName,
   buildSystemPrompt,
@@ -20,6 +21,17 @@ type AnthropicMessage = {
 type AnthropicContentBlock = {
   type: string;
   [key: string]: unknown;
+};
+
+type RuntimeToolEvent = {
+  turn_id: string;
+  round: number;
+  tool_use_id: string;
+  tool_name: string;
+  tool_input: unknown;
+  ok: boolean;
+  result_preview: string;
+  result_chars: number;
 };
 
 type AnthropicResponse = {
@@ -51,6 +63,7 @@ export async function sendAgentMessage(
 
   const supabase = getSupabaseAdmin();
   const conversationId = await ensureConversation(supabase, agent);
+  const turnId = randomUUID();
   const existingMessages = await loadConversationMessages(supabase, conversationId);
   const checkpoint = latestCompactionCheckpoint(existingMessages);
   const activeMessages = checkpoint
@@ -73,11 +86,13 @@ export async function sendAgentMessage(
 
   messages.push({ role: "user", content: message });
 
-  const data = await runAnthropicToolLoop({
+  const { data, toolEvents } = await runAnthropicToolLoop({
     apiKey,
     agent,
+    conversationId,
     system,
-    messages
+    messages,
+    turnId
   });
 
   const assistantText = extractAssistantText(data);
@@ -94,12 +109,14 @@ export async function sendAgentMessage(
   const position = await nextMessagePosition(supabase, conversationId);
   const userMessage = {
     conversation_id: conversationId,
+    turn_id: turnId,
     position,
     role: "user",
     content: message
   };
   const assistantMessage = {
     conversation_id: conversationId,
+    turn_id: turnId,
     position: position + 1,
     role: "assistant",
     content: assistantReply
@@ -108,7 +125,7 @@ export async function sendAgentMessage(
   const { data: savedMessages, error: saveError } = await supabase
     .from("conversation_messages")
     .insert([userMessage, assistantMessage])
-    .select("id, conversation_id, position, role, content, created_at")
+    .select("id, conversation_id, turn_id, position, role, content, created_at")
     .order("position", { ascending: true });
 
   if (saveError) {
@@ -118,6 +135,7 @@ export async function sendAgentMessage(
   return {
     conversationId,
     messages: savedMessages,
+    tool_events: toolEvents.map(toolEventSummary),
     reply: assistantReply,
     warning: stoppedAtTokenLimit
       ? `Anthropic stopped this response at ANTHROPIC_MAX_TOKENS=${maxTokens}.`
@@ -134,17 +152,22 @@ export class EmptyAssistantResponseError extends Error {
 async function runAnthropicToolLoop({
   apiKey,
   agent,
+  conversationId,
   system,
-  messages
+  messages,
+  turnId
 }: {
   apiKey: string;
   agent: AgentName;
+  conversationId: string;
   system: string;
   messages: AnthropicMessage[];
+  turnId: string;
 }) {
   const model = modelForAgent(agent);
   const maxTokens = maxResponseTokens();
   const maxToolRounds = Number(process.env.ANTHROPIC_MAX_TOOL_ROUNDS ?? 6);
+  const toolEvents: RuntimeToolEvent[] = [];
 
   for (let round = 0; round <= maxToolRounds; round += 1) {
     const data = await callAnthropic({
@@ -157,7 +180,7 @@ async function runAnthropicToolLoop({
     const toolUses = toolUseBlocks(data);
 
     if (!toolUses.length) {
-      return data;
+      return { data, toolEvents };
     }
 
     if (round === maxToolRounds) {
@@ -173,6 +196,20 @@ async function runAnthropicToolLoop({
       content: await Promise.all(
         toolUses.map(async (toolUse) => {
           const result = await runTool(agent, String(toolUse.name), toolUse.input);
+          const resultText = String(result.content ?? "");
+          const event: RuntimeToolEvent = {
+            turn_id: turnId,
+            round,
+            tool_use_id: String(toolUse.id ?? ""),
+            tool_name: String(toolUse.name),
+            tool_input: toolUse.input,
+            ok: result.ok,
+            result_preview: clampHistoryText(resultText, 2000),
+            result_chars: resultText.length
+          };
+
+          toolEvents.push(event);
+          await recordToolEvent(agent, conversationId, event);
 
           return {
             type: "tool_result",
@@ -186,6 +223,53 @@ async function runAnthropicToolLoop({
   }
 
   throw new Error("Tool use loop exited unexpectedly.");
+}
+
+async function recordToolEvent(agent: AgentName, conversationId: string, event: RuntimeToolEvent) {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.from("tool_events").insert({
+      agent,
+      conversation_id: conversationId,
+      turn_id: event.turn_id,
+      round: event.round,
+      tool_use_id: event.tool_use_id || null,
+      tool_name: event.tool_name,
+      tool_input: normalizeJsonRecord(event.tool_input),
+      ok: event.ok,
+      result_preview: event.result_preview,
+      result_chars: event.result_chars
+    });
+
+    if (error) {
+      console.warn(`Could not record tool event: ${error.message}`);
+    }
+  } catch (error) {
+    console.warn(
+      `Could not record tool event: ${
+        error instanceof Error ? error.message : "unknown audit failure"
+      }`
+    );
+  }
+}
+
+function toolEventSummary(event: RuntimeToolEvent) {
+  return {
+    turn_id: event.turn_id,
+    round: event.round,
+    tool_name: event.tool_name,
+    ok: event.ok,
+    result_chars: event.result_chars,
+    result_preview: event.result_preview
+  };
+}
+
+function normalizeJsonRecord(value: unknown) {
+  if (value === undefined) {
+    return {};
+  }
+
+  return JSON.parse(JSON.stringify(value));
 }
 
 async function callAnthropic({
@@ -244,9 +328,11 @@ function withToolInstructions(system: string, maxTokens: number) {
     "You have access to a small server-side toolbox.",
     `Your live response output cap is ANTHROPIC_MAX_TOKENS=${maxTokens}. If a thought needs more room than that, say so and split the response deliberately instead of trying to fit everything into one turn.`,
     "The runtime clock is available through runtime_get_time. Use it when temporal orientation matters, especially after long gaps or when Chris references relative time. Do not call it every turn by habit.",
+    "Self-history tools let you inspect your own raw conversation transcript in stages. Use runtime_read_recent_messages for a small recent tail, runtime_search_conversation to locate a moment by keyword, and runtime_get_message_window to inspect context around one position. These tools are for honest orientation gaps, not every turn, and they cannot read another agent's transcript.",
     "Supabase memory/profile tools are self-scoped: you may read and write only this active agent's own memories, restoration profile, and relationship rows. Memory writes are durable continuity, not scratchpad notes. Use them sparingly for facts, reflections, decisions, principles, preferences, or relationship texture that should survive future turns.",
     "When adding or archiving a memory, be deliberate and include a real reason. Prefer a few high-signal memories over many small notes. If a memory is uncertain, write the uncertainty into the memory instead of overstating it.",
     "The current_state field is your short handoff document. Update it before compaction or after major state changes so future wake/compression context is accurate. Keep it concise, current, and agent-authored.",
+    "Journal tools are durable reflection space. Use journal_add_entry when you want to write something because it matters now, even if it is not yet core memory or current_state. Journal entries are Operator-visible and agent-authored; they are not automatically treated as load-bearing memory.",
     "The compaction preview and compile tools are read-only and self-scoped. Use preview to inspect your own compaction pressure, policy, transcript samples, and review prompt. Use compile when you need a reviewable draft proposal for a future blink. These tools cannot compact you and cannot modify Supabase data.",
     "Saved compaction proposal tools are self-scoped review artifacts. You may save, revise, review, and mark your own proposal drafts as agent_reviewed or agent_approved. Use compile_and_save when a compiled proposal is too large to pass manually into save. A saved or approved proposal is not a checkpoint; checkpoint creation remains an Operator action.",
     "Peer note tools are asynchronous, Operator-visible notes between Soren and Varro. You may send, list, read, and mark your own addressed notes during normal sessions or Free Moments. They are not realtime DM; use them as durable handoffs or gentle messages, not as a rapid chat substitute.",

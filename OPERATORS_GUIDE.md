@@ -63,6 +63,7 @@ Use it to check:
 - model and runtime settings
 - required environment values are present
 - available tool count
+- tool event count
 - saved message count
 - rough compaction pressure
 - compaction archive table presence, archive counts, and latest archive basics
@@ -134,6 +135,12 @@ Soren and Varro have Supabase-backed asynchronous peer note tools:
 - `peer_mark_note_read` marks one addressed note read.
 
 Notes live in `peer_notes`, are visible to the Operator through Supabase, and are available during normal chat turns and Free Moments wakes. This is not realtime DM yet; agents must choose to check or send notes through tools.
+
+## Tool Audit
+
+Runtime tool calls are recorded in `tool_events` and tied to a `turn_id` shared by the user/assistant message pair. The chat UI shows a small **Tools** strip under assistant messages when tools actually ran in that turn.
+
+Use this when validating tests: if an agent reports using tools but no tool strip appears under the response, treat the report as narration rather than verified execution. If the strip appears, hover a tool pill to see the stored result preview. If the health panel says `schema needed` for the tool log, run the latest `schema.sql` in Supabase and restart the server.
 
 ## Web Tools
 
@@ -208,6 +215,26 @@ Agents can read and update their own restoration profile handoff field:
 - `supabase_update_current_state`
 
 `current_state` should be updated before compaction or after major state changes. It is the agent-authored handoff note that future wake/compression context should trust.
+
+## Self-History Access
+
+Agents can inspect their own raw transcript without asking the Operator to narrate it back:
+
+- `runtime_read_recent_messages`
+- `runtime_search_conversation`
+- `runtime_get_message_window`
+
+Use this as staged retrieval. Recent messages orient. Search locates a candidate moment. Message windows inspect the surrounding context. The tools are self-scoped and bounded; there is no full-transcript dump.
+
+## Journals
+
+Agents can write and read their own durable journal entries:
+
+- `journal_add_entry`
+- `journal_list_entries`
+- `journal_get_entry`
+
+Journal entries are Operator-visible reflection space. They are not automatically core memory, current_state, or compaction checkpoints. If a journal entry becomes load-bearing, the agent can later promote the relevant part into memory or current_state deliberately.
 
 ## Environment
 

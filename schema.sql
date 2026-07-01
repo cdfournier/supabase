@@ -22,6 +22,7 @@ create table if not exists public.conversations (
 create table if not exists public.conversation_messages (
   id uuid primary key default gen_random_uuid(),
   conversation_id text not null references public.conversations(id),
+  turn_id uuid,
   position int not null,
   role text not null,
   content jsonb not null,
@@ -29,8 +30,14 @@ create table if not exists public.conversation_messages (
   unique (conversation_id, position)
 );
 
+alter table public.conversation_messages
+  add column if not exists turn_id uuid;
+
 create index if not exists cm_by_convo
   on public.conversation_messages (conversation_id, position);
+
+create index if not exists cm_by_convo_turn
+  on public.conversation_messages (conversation_id, turn_id);
 
 create table if not exists public.memories (
   id uuid primary key default gen_random_uuid(),
@@ -133,6 +140,42 @@ create index if not exists peer_notes_by_recipient_status
 create index if not exists peer_notes_by_sender
   on public.peer_notes (from_agent, created_at desc);
 
+create table if not exists public.tool_events (
+  id uuid primary key default gen_random_uuid(),
+  agent text not null references public.agents(name),
+  conversation_id text not null references public.conversations(id),
+  turn_id uuid not null,
+  round int not null default 0,
+  tool_use_id text,
+  tool_name text not null,
+  tool_input jsonb default '{}'::jsonb,
+  ok boolean not null default false,
+  result_preview text,
+  result_chars int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists tool_events_by_turn
+  on public.tool_events (conversation_id, turn_id, created_at);
+
+create index if not exists tool_events_by_agent
+  on public.tool_events (agent, created_at desc);
+
+create table if not exists public.journal_entries (
+  id uuid primary key default gen_random_uuid(),
+  agent text not null references public.agents(name),
+  title text not null default '',
+  body text not null,
+  mood text,
+  tags text[] default '{}',
+  visibility text not null default 'operator_visible',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists journal_entries_by_agent
+  on public.journal_entries (agent, created_at desc);
+
 alter table public.agents enable row level security;
 alter table public.conversations enable row level security;
 alter table public.conversation_messages enable row level security;
@@ -143,3 +186,5 @@ alter table public.compaction_proposals enable row level security;
 alter table public.compaction_archives enable row level security;
 alter table public.compaction_archive_messages enable row level security;
 alter table public.peer_notes enable row level security;
+alter table public.tool_events enable row level security;
+alter table public.journal_entries enable row level security;

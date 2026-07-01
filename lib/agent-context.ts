@@ -6,6 +6,7 @@ export type AgentName = "soren" | "varro";
 export type ChatMessage = {
   id?: string;
   conversation_id: string;
+  turn_id?: string | null;
   position: number;
   role: "user" | "assistant";
   content: unknown;
@@ -85,7 +86,7 @@ export async function loadConversationMessages(
 ) {
   const { data, error } = await supabase
     .from("conversation_messages")
-    .select("id, conversation_id, position, role, content, created_at")
+    .select("id, conversation_id, turn_id, position, role, content, created_at")
     .eq("conversation_id", conversationId)
     .order("position", { ascending: true });
 

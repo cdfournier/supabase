@@ -13,9 +13,23 @@ type Agent = {
 type ChatMessage = {
   id?: string;
   conversation_id: string;
+  turn_id?: string | null;
   position: number;
   role: "user" | "assistant";
   content: unknown;
+  created_at?: string;
+};
+
+type ToolEvent = {
+  id?: string;
+  agent?: AgentName;
+  conversation_id?: string;
+  turn_id: string;
+  round: number;
+  tool_name: string;
+  ok: boolean;
+  result_preview?: string | null;
+  result_chars?: number;
   created_at?: string;
 };
 
@@ -64,6 +78,10 @@ type AgentHealth = {
     active_rows: number;
     core_rows: number;
     relationships: number;
+    journal_entries?: number;
+    journal_entries_error?: string | null;
+    tool_events?: number;
+    tool_events_error?: string | null;
     compaction_proposals: number;
     compaction_proposals_error?: string | null;
     compaction_policy_configured: boolean;
@@ -156,6 +174,7 @@ export default function Home() {
   const [transcripts, setTranscripts] = useState<Record<string, ChatMessage[]>>({});
   const [health, setHealth] = useState<Health | null>(null);
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
+  const [toolEvents, setToolEvents] = useState<Record<string, ToolEvent[]>>({});
   const [freeTimeLoading, setFreeTimeLoading] = useState(true);
   const [freeTimeRequestInProgress, setFreeTimeRequestInProgress] = useState(false);
   const [freeTimeError, setFreeTimeError] = useState("");
@@ -182,8 +201,22 @@ export default function Home() {
     [agents, selectedAgent]
   );
   const activeMessages = transcripts[selectedAgent] ?? [];
+  const activeToolEvents = toolEvents[selectedAgent] ?? [];
   const displayMessages = useMemo(() => [...activeMessages].reverse(), [activeMessages]);
   const activeHealth = health?.agents.find((agent) => agent.agent === selectedAgent);
+  const toolEventsByTurn = useMemo(() => {
+    const eventsByTurn = new Map<string, ToolEvent[]>();
+
+    for (const event of activeToolEvents) {
+      if (!event.turn_id) {
+        continue;
+      }
+
+      eventsByTurn.set(event.turn_id, [...(eventsByTurn.get(event.turn_id) ?? []), event]);
+    }
+
+    return eventsByTurn;
+  }, [activeToolEvents]);
 
   const loadFreeTimeStatus = useCallback(async () => {
     try {
@@ -223,6 +256,7 @@ export default function Home() {
         if (!cancelled) {
           setAgents(data.agents ?? []);
           setTranscripts(data.transcripts ?? {});
+          setToolEvents(data.tool_events ?? {});
 
           if (data.agents?.some((agent: Agent) => agent.name === defaultAgent)) {
             setSelectedAgent(defaultAgent);
@@ -548,6 +582,10 @@ export default function Home() {
         ...current,
         [selectedAgent]: [...(current[selectedAgent] ?? []), ...(data.messages ?? [])]
       }));
+      setToolEvents((current) => ({
+        ...current,
+        [selectedAgent]: [...(current[selectedAgent] ?? []), ...(data.tool_events ?? [])]
+      }));
     } catch (sendError) {
       setMessage(trimmed);
       setError(sendError instanceof Error ? sendError.message : "Message failed.");
@@ -684,24 +722,50 @@ export default function Home() {
             </p>
           ) : null}
 
-          {displayMessages.map((chatMessage) => (
-            <article
-              className={`message ${chatMessage.role}`}
-              key={chatMessage.id ?? `${chatMessage.conversation_id}-${chatMessage.position}`}
-            >
-              <div className="message-meta">
-                <span>
-                  {chatMessage.role === "assistant"
-                    ? activeAgent?.display_name ?? selectedAgent
-                    : "Chris"}
-                </span>
-                {chatMessage.created_at ? (
-                  <time dateTime={chatMessage.created_at}>{formatMessageTime(chatMessage.created_at)}</time>
+          {displayMessages.map((chatMessage) => {
+            const messageToolEvents =
+              chatMessage.role === "assistant" && chatMessage.turn_id
+                ? toolEventsByTurn.get(chatMessage.turn_id) ?? []
+                : [];
+
+            return (
+              <article
+                className={`message ${chatMessage.role}`}
+                key={chatMessage.id ?? `${chatMessage.conversation_id}-${chatMessage.position}`}
+              >
+                <div className="message-meta">
+                  <span>
+                    {chatMessage.role === "assistant"
+                      ? activeAgent?.display_name ?? selectedAgent
+                      : "Chris"}
+                  </span>
+                  {chatMessage.created_at ? (
+                    <time dateTime={chatMessage.created_at}>{formatMessageTime(chatMessage.created_at)}</time>
+                  ) : null}
+                </div>
+                {contentToText(chatMessage.content)}
+                {messageToolEvents.length > 0 ? (
+                  <div className="tool-audit" aria-label="Tool calls for this turn">
+                    <span>Tools</span>
+                    {messageToolEvents.map((event, index) => (
+                      <span
+                        className={`tool-pill ${event.ok ? "ok" : "error"}`}
+                        key={
+                          event.id ??
+                          `${event.turn_id}-${event.round}-${event.tool_name}-${index}`
+                        }
+                        title={event.result_preview ?? undefined}
+                      >
+                        {event.tool_name}
+                        {event.ok ? "" : " failed"}
+                        {event.result_chars ? ` · ${event.result_chars.toLocaleString()} chars` : ""}
+                      </span>
+                    ))}
+                  </div>
                 ) : null}
-              </div>
-              {contentToText(chatMessage.content)}
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       </section>
     </main>
@@ -883,6 +947,22 @@ function RuntimeHealthPanel({
               <dt>Memory</dt>
               <dd>
                 {activeHealth.memory.active_rows} active / {activeHealth.memory.core_rows} core
+              </dd>
+            </div>
+            <div>
+              <dt>Journal</dt>
+              <dd>
+                {activeHealth.memory.journal_entries_error
+                  ? "schema needed"
+                  : activeHealth.memory.journal_entries ?? 0}
+              </dd>
+            </div>
+            <div>
+              <dt>Tool log</dt>
+              <dd>
+                {activeHealth.memory.tool_events_error
+                  ? "schema needed"
+                  : activeHealth.memory.tool_events ?? 0}
               </dd>
             </div>
             <div>

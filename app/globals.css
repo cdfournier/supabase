@@ -482,6 +482,46 @@ button {
   text-transform: none;
 }
 
+.tool-audit {
+  align-items: center;
+  border-top: 1px solid rgba(34, 87, 122, 0.16);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.tool-audit > span:first-child {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.tool-pill {
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  display: inline-flex;
+  font-size: 11px;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 4px 8px;
+}
+
+.tool-pill.ok {
+  border-color: rgba(47, 125, 79, 0.35);
+}
+
+.tool-pill.error {
+  border-color: rgba(159, 29, 29, 0.42);
+  color: var(--error);
+}
+
 .composer {
   border-bottom: 1px solid var(--line);
   background: var(--panel);
