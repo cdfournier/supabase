@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import {
   type AgentName,
+  type ChatMessage,
   buildSystemPrompt,
   contentToText,
   ensureConversation,
@@ -76,12 +77,20 @@ export async function sendAgentMessage(
   );
   const historyLimit = Number(process.env.ANTHROPIC_HISTORY_MESSAGES ?? 6);
   const historyMessageChars = Number(process.env.ANTHROPIC_HISTORY_MESSAGE_CHARS ?? 3000);
+  const historyMessages = activeMessages.slice(-Math.max(0, historyLimit));
+  const historyToolEvents = await loadToolEventsForTurns(
+    supabase,
+    conversationId,
+    historyMessages.map((saved) => saved.turn_id).filter(Boolean) as string[]
+  );
 
-  const messages: AnthropicMessage[] = activeMessages
-    .slice(-Math.max(0, historyLimit))
+  const messages: AnthropicMessage[] = historyMessages
     .map((saved) => ({
       role: saved.role,
-      content: clampHistoryText(contentToText(saved.content), historyMessageChars)
+      content: clampHistoryText(
+        contentWithToolAudit(saved, historyToolEvents.get(saved.turn_id ?? "") ?? []),
+        historyMessageChars
+      )
     }));
 
   messages.push({ role: "user", content: message });
@@ -253,6 +262,66 @@ async function recordToolEvent(agent: AgentName, conversationId: string, event: 
   }
 }
 
+async function loadToolEventsForTurns(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  conversationId: string,
+  turnIds: string[]
+) {
+  const eventsByTurn = new Map<string, Pick<RuntimeToolEvent, "tool_name" | "ok" | "result_chars">[]>();
+
+  if (!turnIds.length) {
+    return eventsByTurn;
+  }
+
+  const { data, error } = await supabase
+    .from("tool_events")
+    .select("turn_id, tool_name, ok, result_chars")
+    .eq("conversation_id", conversationId)
+    .in("turn_id", turnIds)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.warn(`Could not load tool history for prompt context: ${error.message}`);
+    return eventsByTurn;
+  }
+
+  for (const event of data ?? []) {
+    const turnId = String(event.turn_id ?? "");
+
+    if (!turnId) {
+      continue;
+    }
+
+    eventsByTurn.set(turnId, [
+      ...(eventsByTurn.get(turnId) ?? []),
+      {
+        tool_name: String(event.tool_name),
+        ok: Boolean(event.ok),
+        result_chars: Number(event.result_chars ?? 0)
+      }
+    ]);
+  }
+
+  return eventsByTurn;
+}
+
+function contentWithToolAudit(
+  message: ChatMessage,
+  toolEvents: Pick<RuntimeToolEvent, "tool_name" | "ok" | "result_chars">[]
+) {
+  const text = contentToText(message.content);
+
+  if (message.role !== "assistant" || !toolEvents.length) {
+    return text;
+  }
+
+  const audit = toolEvents
+    .map((event) => `${event.tool_name} ${event.ok ? "ok" : "failed"} (${event.result_chars} chars)`)
+    .join("; ");
+
+  return `${text}\n\n[Runtime tool audit for your previous assistant turn: ${audit}]`;
+}
+
 function toolEventSummary(event: RuntimeToolEvent) {
   return {
     turn_id: event.turn_id,
@@ -332,7 +401,7 @@ function withToolInstructions(system: string, maxTokens: number) {
     "Supabase memory/profile tools are self-scoped: you may read and write only this active agent's own memories, restoration profile, and relationship rows. Memory writes are durable continuity, not scratchpad notes. Use them sparingly for facts, reflections, decisions, principles, preferences, or relationship texture that should survive future turns.",
     "When adding or archiving a memory, be deliberate and include a real reason. Prefer a few high-signal memories over many small notes. If a memory is uncertain, write the uncertainty into the memory instead of overstating it.",
     "The current_state field is your short handoff document. Update it before compaction or after major state changes so future wake/compression context is accurate. Keep it concise, current, and agent-authored.",
-    "Journal tools are durable reflection space. Use journal_add_entry when you want to write something because it matters now, even if it is not yet core memory or current_state. Journal entries are Operator-visible and agent-authored; they are not automatically treated as load-bearing memory.",
+    "Journal tools are durable reflection space. Use journal_add_entry when you want to write something because it matters now, even if it is not yet core memory or current_state. You may list, read, update, or archive your own journal entries. Prefer archive over deletion-style thinking for stale duplicates. Journal entries are Operator-visible and agent-authored; they are not automatically treated as load-bearing memory.",
     "The compaction preview and compile tools are read-only and self-scoped. Use preview to inspect your own compaction pressure, policy, transcript samples, and review prompt. Use compile when you need a reviewable draft proposal for a future blink. These tools cannot compact you and cannot modify Supabase data.",
     "Saved compaction proposal tools are self-scoped review artifacts. You may save, revise, review, and mark your own proposal drafts as agent_reviewed or agent_approved. Use compile_and_save when a compiled proposal is too large to pass manually into save. A saved or approved proposal is not a checkpoint; checkpoint creation remains an Operator action.",
     "Peer note tools are asynchronous, Operator-visible notes between Soren and Varro. You may send, list, read, and mark your own addressed notes during normal sessions or Free Moments. They are not realtime DM; use them as durable handoffs or gentle messages, not as a rapid chat substitute.",

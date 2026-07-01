@@ -48,8 +48,10 @@ import {
 } from "@/lib/tools/runtime-history";
 import {
   addJournalEntry,
+  archiveJournalEntry,
   getJournalEntry,
-  listJournalEntries
+  listJournalEntries,
+  updateJournalEntry
 } from "@/lib/tools/runtime-journal";
 import type { ToolDefinition, ToolResult } from "@/lib/tools/types";
 import { extractWebLinks, fetchWebMany, fetchWebUrl, searchWeb } from "@/lib/tools/web";
@@ -253,6 +255,10 @@ export const toolDefinitions: ToolDefinition[] = [
         body_preview_chars: {
           type: "number",
           description: "Optional body preview character cap. Defaults to 800 and is capped at 3000."
+        },
+        include_archived: {
+          type: "boolean",
+          description: "Optional. Defaults to false. Set true to include archived entries."
         }
       },
       required: [],
@@ -269,6 +275,55 @@ export const toolDefinitions: ToolDefinition[] = [
         id: {
           type: "string",
           description: "The journal entry id to read."
+        }
+      },
+      required: ["id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "journal_update_entry",
+    description:
+      "Edit one journal entry for the active agent only. Use for corrections, clearer titles, tags, mood, or body cleanup. This cannot edit another agent's journal.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The journal entry id to update."
+        },
+        title: {
+          type: "string",
+          description: "Optional replacement title, 160 characters or fewer."
+        },
+        body: {
+          type: "string",
+          description: "Optional replacement body, 8000 characters or fewer."
+        },
+        mood: {
+          type: "string",
+          description: "Optional replacement mood/orientation label, 80 characters or fewer."
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional replacement tag list. Capped at 12."
+        }
+      },
+      required: ["id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "journal_archive_entry",
+    description:
+      "Archive one journal entry for the active agent only. This hides it from normal journal lists but keeps the row available with include_archived. Prefer this over deletion for duplicates or stale entries.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The journal entry id to archive."
         }
       },
       required: ["id"],
@@ -933,6 +988,16 @@ export async function runTool(
         return {
           ok: true,
           content: await getJournalEntry(agent, input)
+        };
+      case "journal_update_entry":
+        return {
+          ok: true,
+          content: await updateJournalEntry(agent, input)
+        };
+      case "journal_archive_entry":
+        return {
+          ok: true,
+          content: await archiveJournalEntry(agent, input)
         };
       case "outpost_get_my_profile":
         return {

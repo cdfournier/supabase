@@ -48,9 +48,10 @@ export async function addJournalEntry(agent: AgentName, input: unknown) {
       body,
       mood: mood || null,
       tags,
+      status: "active",
       visibility: "operator_visible"
     })
-    .select("id, agent, title, mood, tags, visibility, created_at, updated_at")
+    .select("id, agent, title, mood, tags, status, visibility, created_at, updated_at")
     .single();
 
   if (error) {
@@ -76,13 +77,20 @@ export async function listJournalEntries(agent: AgentName, input: unknown) {
     0,
     MAX_BODY_PREVIEW_CHARS
   );
+  const includeArchived = isRecord(input) ? Boolean(input.include_archived) : false;
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  let query = supabase
     .from("journal_entries")
-    .select("id, agent, title, body, mood, tags, visibility, created_at, updated_at")
+    .select("id, agent, title, body, mood, tags, status, visibility, created_at, updated_at")
     .eq("agent", agent)
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  if (!includeArchived) {
+    query = query.eq("status", "active");
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Could not list journal entries: ${error.message}`);
@@ -97,6 +105,7 @@ export async function listJournalEntries(agent: AgentName, input: unknown) {
       title: entry.title,
       mood: entry.mood,
       tags: entry.tags,
+      status: entry.status,
       visibility: entry.visibility,
       created_at: entry.created_at,
       updated_at: entry.updated_at,
@@ -120,7 +129,7 @@ export async function getJournalEntry(agent: AgentName, input: unknown) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("journal_entries")
-    .select("id, agent, title, body, mood, tags, visibility, created_at, updated_at")
+    .select("id, agent, title, body, mood, tags, status, visibility, created_at, updated_at")
     .eq("agent", agent)
     .eq("id", id)
     .maybeSingle();
@@ -135,6 +144,124 @@ export async function getJournalEntry(agent: AgentName, input: unknown) {
 
   return stringifyToolPayload({
     note: "Journal entry for the active agent only.",
+    journal_entry: data
+  });
+}
+
+export async function updateJournalEntry(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("journal_update_entry requires an object input.");
+  }
+
+  const id = cleanText(input.id);
+
+  if (!id) {
+    throw new Error("journal_update_entry requires id.");
+  }
+
+  const update: JsonRecord = {
+    updated_at: new Date().toISOString()
+  };
+
+  if ("title" in input) {
+    const title = cleanText(input.title);
+
+    if (title.length > MAX_JOURNAL_TITLE) {
+      throw new Error(`journal_update_entry title must be ${MAX_JOURNAL_TITLE} characters or fewer.`);
+    }
+
+    update.title = title;
+  }
+
+  if ("body" in input) {
+    const body = cleanMultilineText(input.body);
+
+    if (!body) {
+      throw new Error("journal_update_entry body cannot be empty.");
+    }
+
+    if (body.length > MAX_JOURNAL_BODY) {
+      throw new Error(`journal_update_entry body must be ${MAX_JOURNAL_BODY} characters or fewer.`);
+    }
+
+    update.body = body;
+  }
+
+  if ("mood" in input) {
+    const mood = cleanText(input.mood);
+
+    if (mood.length > MAX_JOURNAL_MOOD) {
+      throw new Error(`journal_update_entry mood must be ${MAX_JOURNAL_MOOD} characters or fewer.`);
+    }
+
+    update.mood = mood || null;
+  }
+
+  if ("tags" in input) {
+    update.tags = parseTags(input.tags);
+  }
+
+  if (Object.keys(update).length === 1) {
+    throw new Error("journal_update_entry requires at least one editable field.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("journal_entries")
+    .update(update)
+    .eq("agent", agent)
+    .eq("id", id)
+    .select("id, agent, title, mood, tags, status, visibility, created_at, updated_at")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Could not update journal entry: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("No matching active-agent journal entry found.");
+  }
+
+  return stringifyToolPayload({
+    note: "Journal entry updated for the active agent only.",
+    journal_entry: data
+  });
+}
+
+export async function archiveJournalEntry(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("journal_archive_entry requires an object input.");
+  }
+
+  const id = cleanText(input.id);
+
+  if (!id) {
+    throw new Error("journal_archive_entry requires id.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("journal_entries")
+    .update({
+      status: "archived",
+      updated_at: new Date().toISOString()
+    })
+    .eq("agent", agent)
+    .eq("id", id)
+    .select("id, agent, title, mood, tags, status, visibility, created_at, updated_at")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Could not archive journal entry: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("No matching active-agent journal entry found.");
+  }
+
+  return stringifyToolPayload({
+    note:
+      "Journal entry archived for the active agent only. The row is retained and can still be listed with include_archived.",
     journal_entry: data
   });
 }

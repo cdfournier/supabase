@@ -168,13 +168,20 @@ create table if not exists public.journal_entries (
   body text not null,
   mood text,
   tags text[] default '{}',
+  status text not null default 'active',
   visibility text not null default 'operator_visible',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+alter table public.journal_entries
+  add column if not exists status text not null default 'active';
+
 create index if not exists journal_entries_by_agent
   on public.journal_entries (agent, created_at desc);
+
+create index if not exists journal_entries_by_agent_status
+  on public.journal_entries (agent, status, created_at desc);
 
 alter table public.agents enable row level security;
 alter table public.conversations enable row level security;

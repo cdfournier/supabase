@@ -233,8 +233,12 @@ Agents can write and read their own durable journal entries:
 - `journal_add_entry`
 - `journal_list_entries`
 - `journal_get_entry`
+- `journal_update_entry`
+- `journal_archive_entry`
 
 Journal entries are Operator-visible reflection space. They are not automatically core memory, current_state, or compaction checkpoints. If a journal entry becomes load-bearing, the agent can later promote the relevant part into memory or current_state deliberately.
+
+Use `journal_archive_entry` for stale duplicates or test debris instead of deletion. Normal journal lists return active entries; pass `include_archived: true` to `journal_list_entries` when an archived row needs inspection.
 
 ## Environment
 
