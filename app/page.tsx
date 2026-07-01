@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type AgentName = "soren" | "varro";
+type OperatorSurface = "chat" | "agents" | "experiences" | "admin";
 
 type Agent = {
   name: AgentName;
@@ -167,10 +168,21 @@ type FreeTimeStatus = {
 
 const defaultAgent: AgentName = "soren";
 const freeTimePollMs = 30_000;
+const operatorSurfaces: Array<{
+  id: OperatorSurface;
+  label: string;
+  description: string;
+}> = [
+  { id: "chat", label: "Chat", description: "Conversation" },
+  { id: "agents", label: "Agents", description: "Health and state" },
+  { id: "experiences", label: "Experiences", description: "Free Moments and worlds" },
+  { id: "admin", label: "Admin", description: "Runtime and recovery" }
+];
 
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AgentName>(defaultAgent);
+  const [activeSurface, setActiveSurface] = useState<OperatorSurface>("chat");
   const [transcripts, setTranscripts] = useState<Record<string, ChatMessage[]>>({});
   const [health, setHealth] = useState<Health | null>(null);
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
@@ -595,8 +607,13 @@ export default function Home() {
   }
 
   return (
-    <main className="shell">
-      <aside className="sidebar">
+    <main className={`shell surface-${activeSurface}`}>
+      <section className="operator-panel" aria-label="Operator panels">
+        <div className="panel-kicker">
+          <span>Runtime Console</span>
+          <strong>{activeAgent?.display_name ?? selectedAgent}</strong>
+        </div>
+        <aside className="sidebar">
         <h1>Agents</h1>
         <div className="agent-list">
           {agents.map((agent) => (
@@ -638,11 +655,35 @@ export default function Home() {
           status={freeTime}
         />
       </aside>
+      </section>
 
       <section className="main">
+        <nav className="operator-nav" aria-label="Operator surfaces">
+          {operatorSurfaces.map((surface) => (
+            <button
+              aria-current={activeSurface === surface.id ? "page" : undefined}
+              className={activeSurface === surface.id ? "active" : ""}
+              key={surface.id}
+              onClick={() => setActiveSurface(surface.id)}
+              type="button"
+            >
+              <span>{surface.label}</span>
+              <small>{surface.description}</small>
+            </button>
+          ))}
+        </nav>
+
         <header className="header">
-          <h2>{activeAgent?.display_name ?? selectedAgent}</h2>
-          <p>{conversationLabel(selectedAgent)}</p>
+          <div>
+            <p className="eyebrow">Selected agent</p>
+            <h2>{activeAgent?.display_name ?? selectedAgent}</h2>
+            <p>{conversationLabel(selectedAgent)}</p>
+          </div>
+          <div className="header-status" aria-label="Selected agent runtime summary">
+            <span>{activeHealth?.compaction_pressure.level ?? "unknown"} pressure</span>
+            <strong>{activeHealth?.conversation.message_count ?? 0}</strong>
+            <span>active messages</span>
+          </div>
         </header>
 
         <form className="composer" onSubmit={sendMessage}>
@@ -768,6 +809,20 @@ export default function Home() {
           })}
         </div>
       </section>
+
+      <nav className="bottom-nav" aria-label="Operator surfaces">
+        {operatorSurfaces.map((surface) => (
+          <button
+            aria-current={activeSurface === surface.id ? "page" : undefined}
+            className={activeSurface === surface.id ? "active" : ""}
+            key={surface.id}
+            onClick={() => setActiveSurface(surface.id)}
+            type="button"
+          >
+            {surface.label}
+          </button>
+        ))}
+      </nav>
     </main>
   );
 }

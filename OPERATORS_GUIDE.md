@@ -73,6 +73,12 @@ The compaction pressure is approximate. It uses saved conversation character cou
 
 The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stops a response at that cap, the runtime appends a transcript-visible note so the agent and operator know the message may be incomplete. Raise this value in `.env.local` during long-form testing, then restart the server.
 
+## Stabilization and Rollback
+
+If an agent wakes with stale context, reports impossible tool behavior, writes bad durable state, or the runtime behaves unexpectedly, pause feature work and follow [ROLLBACK_SOP.md](/Users/chris/Sites/repositories/supabase/ROLLBACK_SOP.md).
+
+Short version: stop Free Moments, avoid compaction/checkpoints, record `/api/health`, inspect `git status`, repair/archive bad rows instead of deleting them, and use staged self-history retrieval before updating `current_state`.
+
 ## Free Moments
 
 Free Moments is a local, in-process scheduler. It does not auto-start when the app boots.

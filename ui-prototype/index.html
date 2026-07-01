@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Operator UI Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <p class="eyebrow">Operator Console</p>
+        <h1>Runtime</h1>
+      </header>
+
+      <section class="surface surface-chat" aria-label="Chat surface">
+        <div class="agent-summary">
+          <div>
+            <p class="eyebrow">Selected Agent</p>
+            <h2>Soren</h2>
+          </div>
+          <button class="icon-button" type="button" aria-label="Open agent drawer">State</button>
+        </div>
+
+        <form class="composer">
+          <textarea aria-label="Message" placeholder="Message Soren"></textarea>
+          <button class="primary-action" type="button">Send</button>
+        </form>
+
+        <div class="message-stack" aria-label="Messages">
+          <article class="message-card agent">
+            <div class="message-meta">
+              <strong>Soren</strong>
+              <time>9:12 AM</time>
+            </div>
+            <p>Prototype message. Tool evidence appears below when it exists.</p>
+            <div class="tool-strip">
+              <span>runtime_get_time</span>
+              <span>journal_add_entry</span>
+            </div>
+          </article>
+
+          <article class="message-card operator">
+            <div class="message-meta">
+              <strong>Chris</strong>
+              <time>9:10 AM</time>
+            </div>
+            <p>Prototype reply from the Operator.</p>
+          </article>
+        </div>
+      </section>
+
+      <nav class="bottom-nav" aria-label="Primary navigation">
+        <button class="active" type="button">Chat</button>
+        <button type="button">Agents</button>
+        <button type="button">Experiences</button>
+        <button type="button">Admin</button>
+      </nav>
+    </main>
+
+    <aside class="drawer" hidden aria-label="Agent detail drawer">
+      <div class="drawer-handle"></div>
+      <header class="drawer-header">
+        <div>
+          <p class="eyebrow">Agent Detail</p>
+          <h2>Soren</h2>
+        </div>
+        <button class="quiet-action" type="button">Close</button>
+      </header>
+
+      <section class="card-group">
+        <article class="status-card">
+          <p class="eyebrow">Pressure</p>
+          <strong>Medium</strong>
+          <p>198 active messages</p>
+        </article>
+        <article class="status-card">
+          <p class="eyebrow">Current State</p>
+          <strong>Fresh</strong>
+          <p>Updated this morning</p>
+        </article>
+      </section>
+    </aside>
+  </body>
+</html>
