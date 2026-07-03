@@ -1,6 +1,7 @@
 import "server-only";
 import type { AgentName } from "@/lib/agent-context";
 import { sendAgentMessage } from "@/lib/chat-runtime";
+import { readFreeMomentsEnabled, writeFreeMomentsEnabled } from "@/lib/runtime-settings";
 
 const AGENTS: AgentName[] = ["soren", "varro"];
 const EVENT_LIMIT = 20;
@@ -25,6 +26,7 @@ type FreeTimeEventType =
   | "stopped"
   | "scheduled"
   | "tick_skipped"
+  | "tick_blocked"
   | "turn_started"
   | "turn_completed"
   | "turn_failed";
@@ -76,31 +78,87 @@ export function status() {
   };
 }
 
-export function start(intervalMinutes?: number) {
+export async function statusWithSettings() {
+  try {
+    return {
+      ...status(),
+      durable_enabled: await readFreeMomentsEnabled(),
+      durable_error: null
+    };
+  } catch (error) {
+    return {
+      ...status(),
+      durable_enabled: null,
+      durable_error: error instanceof Error ? error.message : "Could not read durable Free Moments setting."
+    };
+  }
+}
+
+export async function start(intervalMinutes?: number) {
   state.intervalMinutes = normalizeIntervalMinutes(intervalMinutes);
+  await writeFreeMomentsEnabled(true);
   state.running = true;
   addEvent("started", `Free Moments started at ${state.intervalMinutes} minute cadence.`);
   scheduleNextTurn();
 
-  return status();
+  return {
+    ...status(),
+    durable_enabled: true,
+    durable_error: null
+  };
 }
 
-export function stop() {
+export async function stop() {
   clearScheduledTurn();
   state.running = false;
   state.nextTurnAt = null;
   addEvent("stopped", "Free Moments stopped.");
 
-  return status();
+  try {
+    await writeFreeMomentsEnabled(false);
+    state.lastError = null;
+    return {
+      ...status(),
+      durable_enabled: false,
+      durable_error: null
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not update durable Free Moments setting.";
+    state.lastError = message;
+    addEvent("turn_failed", message);
+    return {
+      ...status(),
+      durable_enabled: null,
+      durable_error: message
+    };
+  }
 }
 
-export async function tick(targetAgent?: AgentName) {
+export async function tick(targetAgent?: AgentName, options: { scheduled?: boolean } = {}) {
   if (state.turnInProgress) {
     addEvent("tick_skipped", "Free Moments tick skipped because a turn is already in progress.");
     return status();
   }
 
   clearScheduledTurn();
+
+  if (options.scheduled) {
+    try {
+      if (!(await readFreeMomentsEnabled())) {
+        state.running = false;
+        state.nextTurnAt = null;
+        addEvent("tick_blocked", "Scheduled Free Moment blocked because runtime setting is disabled.");
+        return status();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not verify durable Free Moments setting.";
+      state.running = false;
+      state.nextTurnAt = null;
+      state.lastError = message;
+      addEvent("tick_blocked", `Scheduled Free Moment blocked: ${message}`);
+      return status();
+    }
+  }
 
   const agent = targetAgent ?? AGENTS[state.nextAgentIndex];
 
@@ -149,7 +207,7 @@ function scheduleNextTurn() {
   state.timer = setTimeout(() => {
     state.timer = null;
     state.nextTurnAt = null;
-    void tick();
+    void tick(undefined, { scheduled: true });
   }, delayMs);
   addEvent("scheduled", `Next Free Moment scheduled for ${nextTurnAt}.`);
 }

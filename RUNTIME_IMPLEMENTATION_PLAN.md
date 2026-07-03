@@ -67,9 +67,10 @@ Goal: let agents inspect useful source material beyond plain URLs.
 
 Near-term work:
 
-- Support Operator-attached text, image, and PDF source material.
-- Resize image payloads before model submission.
-- Send PDFs as document blocks when supported.
+- Create a Supabase Storage-backed source library.
+- Store source metadata and per-agent access rows in Postgres.
+- Support text-like files first through bounded UTF-8 reads.
+- Keep image, PDF, and media files metadata-only until the Anthropic Files/delivery layer is designed.
 - Keep file size/type caps explicit.
 - Mark all imported file contents as untrusted source material.
 
@@ -81,6 +82,12 @@ Later work:
 ## Track 4: Free Moments V1
 
 Goal: give Varro and Soren unprompted time without creating noise or runaway cost.
+
+Next architecture step:
+
+- Move per-agent access, cadence, action bias, and approval posture into a
+  shared Agent Capability Profile. Free Moments should consume that profile
+  instead of becoming the permanent home for all autonomy and permission logic.
 
 Implemented V1 slices:
 

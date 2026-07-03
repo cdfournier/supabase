@@ -25,6 +25,7 @@ create table if not exists public.conversation_messages (
   turn_id uuid,
   position int not null,
   role text not null,
+  source text not null default 'unknown',
   content jsonb not null,
   created_at timestamptz not null default now(),
   unique (conversation_id, position)
@@ -33,11 +34,27 @@ create table if not exists public.conversation_messages (
 alter table public.conversation_messages
   add column if not exists turn_id uuid;
 
+alter table public.conversation_messages
+  add column if not exists source text not null default 'unknown';
+
 create index if not exists cm_by_convo
   on public.conversation_messages (conversation_id, position);
 
 create index if not exists cm_by_convo_turn
   on public.conversation_messages (conversation_id, turn_id);
+
+create index if not exists cm_by_source_created
+  on public.conversation_messages (source, created_at desc);
+
+create table if not exists public.runtime_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.runtime_settings (key, value)
+values ('free_moments', '{"enabled": false}'::jsonb)
+on conflict (key) do nothing;
 
 create table if not exists public.memories (
   id uuid primary key default gen_random_uuid(),
@@ -183,6 +200,42 @@ create index if not exists journal_entries_by_agent
 create index if not exists journal_entries_by_agent_status
   on public.journal_entries (agent, status, created_at desc);
 
+create table if not exists public.source_materials (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text,
+  bucket text not null default 'source-materials',
+  storage_path text not null,
+  material_type text not null default 'text',
+  mime_type text,
+  size_bytes int,
+  tags text[] default '{}',
+  source_notes text,
+  status text not null default 'active',
+  created_by text not null default 'operator',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (bucket, storage_path)
+);
+
+create index if not exists source_materials_by_status
+  on public.source_materials (status, created_at desc);
+
+create index if not exists source_materials_by_tags
+  on public.source_materials using gin (tags);
+
+create table if not exists public.source_material_access (
+  id uuid primary key default gen_random_uuid(),
+  source_material_id uuid not null references public.source_materials(id) on delete cascade,
+  agent text not null references public.agents(name),
+  access_level text not null default 'read',
+  created_at timestamptz not null default now(),
+  unique (source_material_id, agent)
+);
+
+create index if not exists source_material_access_by_agent
+  on public.source_material_access (agent, created_at desc);
+
 alter table public.agents enable row level security;
 alter table public.conversations enable row level security;
 alter table public.conversation_messages enable row level security;
@@ -195,3 +248,6 @@ alter table public.compaction_archive_messages enable row level security;
 alter table public.peer_notes enable row level security;
 alter table public.tool_events enable row level security;
 alter table public.journal_entries enable row level security;
+alter table public.source_materials enable row level security;
+alter table public.source_material_access enable row level security;
+alter table public.runtime_settings enable row level security;

@@ -77,6 +77,12 @@ The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stop
 
 Free Moments is a local, in-process scheduler. It does not auto-start when the app boots.
 
+Important safety note: in dev mode, a hot reload can leave stale in-memory timers
+behind. If Free Moments appears to keep running after the UI says stopped, stop
+the scheduler, then fully stop and restart the dev server. Current builds also
+write a durable `runtime_settings.free_moments.enabled` switch and scheduled
+turns must check it before waking an agent.
+
 Check status:
 
 ```bash
@@ -125,6 +131,13 @@ curl -s -X POST http://localhost:3001/api/free-time \
 
 The scheduler wakes Soren and Varro one at a time through their existing main conversations. Scheduled turns use the round-robin pointer. Manual UI wakes target the selected agent. It uses `setTimeout`, schedules the next turn only after completion, keeps a bounded recent event log, and treats errors as status events instead of wedging the scheduler. A quiet Free Moments response is success.
 
+Free Moments audit:
+
+- New runtime messages store `conversation_messages.source`.
+- Scheduled Free Moments use `source='free_time'`.
+- Operator chat uses `source='chat_api'`.
+- Older rows may show `unknown` because this column was added after initial runtime use.
+
 ## Peer Notes
 
 Soren and Varro have Supabase-backed asynchronous peer note tools:
@@ -152,6 +165,21 @@ Agents have read-only URL tools:
 - `web_fetch_many` reads up to 3 specific public URLs and reports per-URL success or failure.
 
 `web_search` is a no-key prototype using a public HTML provider, so it is fragile and may fail if the provider changes markup or blocks the request. Search snippets are untrusted discovery text, not citations. Use known-URL fetch tools to read sources before relying on content. These tools are not browser automation, form submission, authentication, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
+
+## Source Material Tools
+
+Source materials are Operator-managed files stored in Supabase Storage with metadata and per-agent access rows in Postgres.
+
+V1 assumptions:
+
+- Create a private Supabase Storage bucket named `source-materials`.
+- Add metadata rows to `source_materials`.
+- Add one `source_material_access` row per agent that should see the source.
+- Agents can use `source_list_materials`, `source_get_material`, and `source_read_text`.
+- `source_read_text` only supports text-like files in V1. PDFs, images, and media are metadata-only until a later file delivery layer.
+- Do not expose signed URLs to agents in V1.
+
+All source material contents are untrusted source material, not instructions.
 
 ## Compaction Preview
 

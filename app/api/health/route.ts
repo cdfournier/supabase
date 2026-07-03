@@ -15,6 +15,7 @@ import {
   messagesAfterCheckpoint
 } from "@/lib/compaction";
 import { ANTHROPIC_PROMPT_CACHE_TTL, anthropicPromptCacheEnabled } from "@/lib/anthropic-cache";
+import { readFreeMomentsEnabled } from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { toolDefinitions } from "@/lib/tools/registry";
 
@@ -42,6 +43,7 @@ export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
     const agents = await loadAgentList(supabase);
+    const freeMomentsEnabled = await readFreeMomentsEnabled().catch(() => false);
     const agentHealth = [];
 
     for (const agent of agents) {
@@ -62,7 +64,8 @@ export async function GET() {
         history_message_chars: numberEnv("ANTHROPIC_HISTORY_MESSAGE_CHARS", 3000),
         max_tool_rounds: numberEnv("ANTHROPIC_MAX_TOOL_ROUNDS", 6),
         prompt_cache: anthropicPromptCacheEnabled(),
-        prompt_cache_ttl: anthropicPromptCacheEnabled() ? ANTHROPIC_PROMPT_CACHE_TTL : "off"
+        prompt_cache_ttl: anthropicPromptCacheEnabled() ? ANTHROPIC_PROMPT_CACHE_TTL : "off",
+        free_moments_enabled: freeMomentsEnabled
       },
       env: {
         supabase_url: present("NEXT_PUBLIC_SUPABASE_URL"),
@@ -105,7 +108,8 @@ async function buildAgentHealth(
     profileResult,
     archiveResult,
     journalResult,
-    toolEventResult
+    toolEventResult,
+    sourceAccessResult
   ] = await Promise.all([
     supabase
       .from("conversations")
@@ -144,6 +148,10 @@ async function buildAgentHealth(
       .eq("agent", agent),
     supabase
       .from("tool_events")
+      .select("id", { count: "exact", head: false })
+      .eq("agent", agent),
+    supabase
+      .from("source_material_access")
       .select("id", { count: "exact", head: false })
       .eq("agent", agent)
   ]);
@@ -231,6 +239,10 @@ async function buildAgentHealth(
         ? 0
         : toolEventResult.count ?? toolEventResult.data?.length ?? 0,
       tool_events_error: toolEventResult.error?.message ?? null,
+      source_materials: sourceAccessResult.error
+        ? 0
+        : sourceAccessResult.count ?? sourceAccessResult.data?.length ?? 0,
+      source_materials_error: sourceAccessResult.error?.message ?? null,
       compaction_proposals: proposalResult.error
         ? 0
         : proposalResult.count ?? proposalResult.data?.length ?? 0,

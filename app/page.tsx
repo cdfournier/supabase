@@ -16,6 +16,7 @@ type ChatMessage = {
   turn_id?: string | null;
   position: number;
   role: "user" | "assistant";
+  source?: string | null;
   content: unknown;
   created_at?: string;
 };
@@ -155,6 +156,8 @@ type FreeTimeEvent = {
 
 type FreeTimeStatus = {
   running: boolean;
+  durable_enabled?: boolean | null;
+  durable_error?: string | null;
   turn_in_progress: boolean;
   interval_minutes: number;
   next_agent: AgentName;
@@ -803,6 +806,10 @@ function FreeTimePanel({
             <div>
               <dt>Status</dt>
               <dd>{status.running ? "running" : "stopped"}</dd>
+            </div>
+            <div>
+              <dt>DB switch</dt>
+              <dd>{status.durable_enabled === undefined ? "unknown" : status.durable_enabled ? "enabled" : "disabled"}</dd>
             </div>
             <div>
               <dt>Turn</dt>

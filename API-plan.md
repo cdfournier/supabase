@@ -50,6 +50,7 @@
 - Memory writes stay durable and sparse.
 - Add audit trails for major changes.
 - Preserve “not yet” as a live answer.
+- Add an Agent Capability Profile so access, write permissions, Free Moments posture, and future module controls are defined per agent instead of per feature.
 
 **8. WHEELS / EYES Integration**
 - Bring PiCar/WHEELS tools into the runtime.
