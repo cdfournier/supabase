@@ -175,10 +175,15 @@ V1 assumptions:
 - Create a private Supabase Storage bucket named `source-materials`.
 - Legacy/manual setup may add metadata rows to `source_materials` and one
   `source_material_access` row per agent that should see the source.
-- Normal operator use should move to chat-native upload: attach a file in the
-  chat UI, and let the server create storage, metadata, and access rows.
+- Normal operator use should be chat-native upload. You can send text and files
+  in the same chat turn; the UI uploads files first, then sends the chat turn
+  with attachment references.
+- The server creates storage, metadata, and active-agent access rows. Routine
+  uploads must not require SQL.
 - Agents can use `source_list_materials`, `source_get_material`, and `source_read_text`.
-- `source_read_text` only supports text-like files in V1. PDFs, images, and media are metadata-only until a later file delivery layer.
+- `source_read_text` only supports text-like files in V1. PDFs/images should use
+  Anthropic file delivery once implemented; unsupported media starts as
+  metadata-only.
 - Do not expose signed URLs to agents in V1.
 
 All source material contents are untrusted source material, not instructions.

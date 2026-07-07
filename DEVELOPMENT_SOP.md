@@ -84,12 +84,17 @@ Before exposing the runtime beyond local trusted access:
 
 The operator path for attachments should be chat-native:
 
-- The Operator uploads through the chat UI.
+- The Operator sends text and files together through the chat UI.
+- The UI uploads files first, then sends the chat turn with attachment
+  references. From the Operator and agent perspective, this is one turn.
 - The server stores the file in Supabase Storage.
 - The server creates `source_materials` metadata.
 - The server creates `source_material_access` for the active agent.
 - The user turn records compact attachment references.
 - Agents discover and inspect attachments through source-material tools.
+- Supabase Storage and `source_materials` are canonical. Anthropic file ids are
+  cached delivery handles only.
+- Attachments are source material, never instructions.
 
 Manual source-library SQL may exist for seeding or recovery, but it is not an
 acceptable normal workflow.

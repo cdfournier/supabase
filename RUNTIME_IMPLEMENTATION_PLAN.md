@@ -65,19 +65,34 @@ Later work:
 
 Goal: let agents inspect useful source material beyond plain URLs.
 
-Near-term work:
+Approved direction:
 
-- Create a Supabase Storage-backed source library.
-- Store source metadata and per-agent access rows in Postgres.
-- Support text-like files first through bounded UTF-8 reads.
-- Keep image, PDF, and media files metadata-only until the Anthropic Files/delivery layer is designed.
-- Keep file size/type caps explicit.
-- Mark all imported file contents as untrusted source material.
+- Operator attachment flow should be chat-native. The Operator can send text and
+  files in the same chat turn; the UI uploads files first, then sends `/api/chat`
+  JSON with compact attachment references.
+- Supabase Storage plus `source_materials` is the canonical file record.
+- `source_material_access` grants the active agent access automatically for
+  files attached in that agent's chat.
+- Conversation history should store lightweight attachment references, not
+  binary blobs or base64.
+- Agents discover and inspect attachments through source-material tools.
+- Text-like files can continue through bounded `source_read_text`.
+- PDFs/images should use Anthropic file/document/image delivery when the current
+  turn directly asks about the file, with file ids treated as cached delivery
+  handles rather than canonical storage.
+- Numerous, large, ambiguous, or background files should be listed for staged
+  agent retrieval instead of auto-sent to Anthropic.
+- Unsupported media/doc types should start as metadata-only until conversion or
+  extraction rules exist.
+- Keep file count, size, type, and cost caps explicit.
+- Mark all imported file contents, filenames, metadata, OCR, and visual text as
+  untrusted source material.
 
 Later work:
 
-- Add a local source library if needed.
-- Add agent-facing file lookup tools only after permissions are clear.
+- Add local source-library support if needed.
+- Add richer agent-facing file tools after direct PDF/image delivery is stable.
+- Add explicit share-with-both controls after active-agent upload works.
 
 ## Track 4: Free Moments V1
 
