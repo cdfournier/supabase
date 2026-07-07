@@ -98,6 +98,17 @@ Implemented first slice:
   source-material links.
 - Kept direct Anthropic PDF/image delivery out of this slice.
 
+Implemented second slice:
+
+- Added current-turn direct Anthropic delivery for small supported image and PDF
+  attachments from canonical Supabase Storage.
+- Emits Anthropic `image` blocks for JPEG, PNG, GIF, and WebP attachments.
+- Emits Anthropic `document` blocks for PDF attachments.
+- Keeps unsupported or over-limit files as metadata-only source material
+  references.
+- Keeps saved transcript content lightweight; direct bytes are not persisted in
+  `conversation_messages`.
+
 Verified 2026-07-07:
 
 - Soren and Varro both completed prompted Markdown attachment tests.
@@ -110,8 +121,8 @@ Verified 2026-07-07:
 Later work:
 
 - Add local source-library support if needed.
-- Add direct Anthropic file/image delivery for PDFs, images, and other
-  non-text attachments.
+- Add Anthropic Files API cache support if repeated image/PDF delivery becomes
+  common enough to justify file-id lifecycle tracking.
 - Add richer agent-facing file tools after direct PDF/image delivery is stable.
 - Add explicit share-with-both controls after active-agent upload works.
 

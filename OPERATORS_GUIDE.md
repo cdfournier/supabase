@@ -182,12 +182,17 @@ V1 assumptions:
 - The server creates storage, metadata, and active-agent access rows. Routine
   uploads must not require SQL.
 - Agents can use `source_list_materials`, `source_get_material`, and `source_read_text`.
-- `source_read_text` only supports text-like files in V1. PDFs/images should use
-  Anthropic file delivery once implemented; unsupported media starts as
-  metadata-only.
+- `source_read_text` only supports text-like files. Small supported PDFs/images
+  attached to the current chat turn are delivered directly to Anthropic as
+  document/image blocks. Larger or unsupported files remain metadata-only source
+  material references.
 - Do not expose signed URLs to agents in V1.
 - Upload caps are controlled by `SOURCE_UPLOAD_MAX_FILES`,
   `SOURCE_UPLOAD_MAX_FILE_BYTES`, and `SOURCE_UPLOAD_MAX_TOTAL_BYTES`.
+- Direct Anthropic attachment caps are controlled by
+  `ANTHROPIC_DIRECT_ATTACHMENT_MAX_FILES`,
+  `ANTHROPIC_DIRECT_ATTACHMENT_MAX_BYTES`, and
+  `ANTHROPIC_DIRECT_ATTACHMENT_MAX_TOTAL_BYTES`.
 
 Verified smoke coverage on 2026-07-07:
 
