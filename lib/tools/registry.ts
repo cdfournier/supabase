@@ -1,5 +1,6 @@
 import "server-only";
 
+import { assertToolAllowed } from "@/lib/capability-profile";
 import { buildCompactionPreview } from "@/lib/compaction";
 import type { AgentName } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -1002,6 +1003,8 @@ export async function runTool(
   input: unknown
 ): Promise<ToolResult> {
   try {
+    await assertToolAllowed(getSupabaseAdmin(), agent, name);
+
     switch (name) {
       case "runtime_get_time":
         return {

@@ -14,6 +14,7 @@ import {
   buildAttachmentDelivery,
   formatDeliverySummary
 } from "@/lib/anthropic-attachments";
+import { filterToolsForAgent } from "@/lib/capability-profile";
 import { latestCompactionCheckpoint, messagesAfterCheckpoint } from "@/lib/compaction";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
@@ -216,6 +217,7 @@ async function runAnthropicToolLoop({
   const maxTokens = maxResponseTokens();
   const maxToolRounds = Number(process.env.ANTHROPIC_MAX_TOOL_ROUNDS ?? 6);
   const toolEvents: RuntimeToolEvent[] = [];
+  const tools = await filterToolsForAgent(getSupabaseAdmin(), agent, toolDefinitions);
 
   for (let round = 0; round <= maxToolRounds; round += 1) {
     const data = await callAnthropic({
@@ -223,7 +225,8 @@ async function runAnthropicToolLoop({
       model,
       maxTokens,
       system,
-      messages
+      messages,
+      tools
     });
     const toolUses = toolUseBlocks(data);
 
@@ -385,13 +388,15 @@ async function callAnthropic({
   model,
   maxTokens,
   system,
-  messages
+  messages,
+  tools
 }: {
   apiKey: string;
   model: string;
   maxTokens: number;
   system: string;
   messages: AnthropicMessage[];
+  tools: typeof toolDefinitions;
 }) {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -406,7 +411,7 @@ async function callAnthropic({
       ...anthropicCacheControl(),
       system,
       messages,
-      tools: toolDefinitions
+      tools
     })
   });
 
@@ -434,6 +439,7 @@ function withToolInstructions(system: string, maxTokens: number) {
     system,
     "## Tools",
     "You have access to a small server-side toolbox.",
+    "Your Agent Capability Profile is the authoritative map for which surfaces are open, read-only, writable, draft-only, or blocked. If a tool is absent or blocked, follow the profile rather than older general tool guidance.",
     `Your live response output cap is ANTHROPIC_MAX_TOKENS=${maxTokens}. If a thought needs more room than that, say so and split the response deliberately instead of trying to fit everything into one turn.`,
     "The runtime clock is available through runtime_get_time. Use it when temporal orientation matters, especially after long gaps or when Chris references relative time. Do not call it every turn by habit.",
     "Self-history tools let you inspect your own raw conversation transcript in stages. Use runtime_read_recent_messages for a small recent tail, runtime_search_conversation to locate a moment by keyword, and runtime_get_message_window to inspect context around one position. These tools are for honest orientation gaps, not every turn, and they cannot read another agent's transcript.",

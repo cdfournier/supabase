@@ -15,6 +15,10 @@ import {
   messagesAfterCheckpoint
 } from "@/lib/compaction";
 import { ANTHROPIC_PROMPT_CACHE_TTL, anthropicPromptCacheEnabled } from "@/lib/anthropic-cache";
+import {
+  filterToolsForAgent,
+  loadAgentCapabilityProfile
+} from "@/lib/capability-profile";
 import { readFreeMomentsEnabled } from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { toolDefinitions } from "@/lib/tools/registry";
@@ -189,6 +193,8 @@ async function buildAgentHealth(
   const latestArchive = archiveResult.error
     ? null
     : ((archiveResult.data?.[0] ?? null) as ArchiveHealthRow | null);
+  const capabilityProfile = await loadAgentCapabilityProfile(supabase, agent);
+  const availableTools = await filterToolsForAgent(supabase, agent, toolDefinitions);
 
   return {
     agent,
@@ -225,6 +231,23 @@ async function buildAgentHealth(
           }
         : null,
       error: archiveResult.error?.message ?? null
+    },
+    capability_profile: {
+      source: capabilityProfile.source,
+      table_present: capabilityProfile.table_present,
+      error: capabilityProfile.error,
+      surfaces: capabilityProfile.capabilities.map((capability) => ({
+        surface: capability.surface,
+        access_level: capability.access_level,
+        default_bias: capability.default_bias,
+        requires_operator_approval: capability.requires_operator_approval,
+        notify_operator: capability.notify_operator,
+        max_actions_per_moment: capability.max_actions_per_moment,
+        quiet_mode: capability.quiet_mode,
+        notes: capability.notes
+      })),
+      available_tool_count: availableTools.length,
+      blocked_tool_count: toolDefinitions.length - availableTools.length
     },
     memory: {
       rows: memoryResult.count ?? memoryResult.data?.length ?? 0,

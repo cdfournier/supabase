@@ -51,6 +51,11 @@ The profile should become a shared source of truth for:
 
 ## V1 Shape
 
+V1 is implemented as `agent_capabilities`: one row per `agent + surface`.
+The runtime loads this map into the agent's system prompt and uses it to filter
+or block tools by surface/action. Free Moments also checks the profile before
+waking an agent.
+
 V1 does not need a complicated policy engine. A practical first version could be
 one table or config object per agent:
 
@@ -73,6 +78,31 @@ That is enough to let the runtime answer basic questions consistently:
 - Should web search be available during Free Moments?
 - Should WHEELS require explicit Operator presence?
 - Should post-checkpoint turns default to read-only or journal-first?
+
+Initial surfaces:
+
+- runtime
+- conversation_history
+- memory
+- compaction
+- journal
+- peer_notes
+- outpost
+- web
+- source_materials
+- free_moments
+- operator_notes
+- bridge
+- eyes
+- wheels
+
+Initial access levels:
+
+- `off`
+- `read_only`
+- `draft`
+- `write`
+- `operator_approval_required`
 
 ## Design Principle
 

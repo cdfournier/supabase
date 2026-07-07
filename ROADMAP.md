@@ -7,7 +7,7 @@ larger architectural tracks stay visible without becoming today's obligation.
 
 ## Current Priorities
 
-1. Agent Capability Profile V1
+1. Agent Capability Profile V1 rollout
 2. Operator Notes / Inbox V1
 3. Julian-to-runtime bridge messaging
 4. Web search provider decision
@@ -32,7 +32,7 @@ larger architectural tracks stay visible without becoming today's obligation.
 
 ### 1. Agent Capability Profile V1
 
-Status: planned next architecture layer.
+Status: first implementation slice in progress.
 
 Purpose: define what each agent can touch, how independently they can act, and
 what default posture should guide them.
@@ -51,6 +51,9 @@ Notes:
 - The profile should be a readable agreement, not a cage.
 - Free Moments should consume this profile instead of becoming the permanent
   permissions layer.
+- V1 stores one row per `agent + surface`, injects the map into the system
+  prompt, filters available tools, blocks direct tool calls by surface/action,
+  and checks Free Moments before waking an agent.
 
 ### 2. Operator Notes / Inbox V1
 
