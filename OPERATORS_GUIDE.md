@@ -173,8 +173,10 @@ Source materials are Operator-managed files stored in Supabase Storage with meta
 V1 assumptions:
 
 - Create a private Supabase Storage bucket named `source-materials`.
-- Add metadata rows to `source_materials`.
-- Add one `source_material_access` row per agent that should see the source.
+- Legacy/manual setup may add metadata rows to `source_materials` and one
+  `source_material_access` row per agent that should see the source.
+- Normal operator use should move to chat-native upload: attach a file in the
+  chat UI, and let the server create storage, metadata, and access rows.
 - Agents can use `source_list_materials`, `source_get_material`, and `source_read_text`.
 - `source_read_text` only supports text-like files in V1. PDFs, images, and media are metadata-only until a later file delivery layer.
 - Do not expose signed URLs to agents in V1.

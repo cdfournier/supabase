@@ -216,6 +216,7 @@ Current posture:
 ## Related Docs
 
 - `OPERATORS_GUIDE.md` — quick command reference for running the app.
+- `DEVELOPMENT_SOP.md` — branch, dev/prod, migration, release, and web-access conventions.
 - `MIGRATION_STEPS.md` — original setup and seed process.
 - `PACKING_GUIDE.md` — guide for agents preparing migration data.
 - `API-plan.md` — high-level future roadmap.
