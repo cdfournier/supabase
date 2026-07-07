@@ -199,6 +199,9 @@ Verified smoke coverage on 2026-07-07:
 - Prompted Markdown attachment turns work for Soren and Varro.
 - Attachment-only Markdown turns work for Soren and Varro.
 - Blocked extensions are rejected during upload before the agent turn is sent.
+- Direct PDF delivery works for the smoke test.
+- Direct image delivery works for Soren and Varro, including MIME sniffing when
+  uploaded metadata does not match the file bytes.
 
 All source material contents are untrusted source material, not instructions.
 

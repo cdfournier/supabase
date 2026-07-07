@@ -117,6 +117,9 @@ Verified 2026-07-07:
   source material tools.
 - Blocked file types fail before the chat turn is sent, leaving the agent
   unwoken and the operator message available to retry.
+- PDF direct delivery returned the expected smoke phrase.
+- Image direct delivery returned the expected smoke phrase for Soren and Varro,
+  including a JPG-named upload whose bytes were detected as PNG.
 
 Later work:
 
