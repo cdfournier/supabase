@@ -241,7 +241,7 @@ curl -s -X POST http://localhost:3001/api/compaction/compile \
 
 The proposal is a review artifact. It is not saved automatically, and it does not archive, delete, or replace messages. v0 uses a bounded transcript source so the runtime does not trip rate limits by trying to send an unlimited conversation in one request.
 
-If compiled proposals are truncated before sections 6 or 7, increase `COMPACTION_COMPILE_MAX_TOKENS` in `.env.local` and restart the server. This is separate from the normal chat `ANTHROPIC_MAX_TOKENS` setting.
+If compiled proposals are truncated before sections 6 or 7, increase `COMPACTION_COMPILE_MAX_TOKENS` in `.env.local` and restart the server. This is separate from the normal chat `ANTHROPIC_MAX_TOKENS` setting. The compiler now rejects proposals that hit the output token cap or omit required sections 6 and 7 instead of letting a clipped proposal look complete.
 
 ## Compaction Checkpoint
 
@@ -266,7 +266,7 @@ Agents can read and update their own restoration profile handoff field:
 - `supabase_get_restoration_profile`
 - `supabase_update_current_state`
 
-`current_state` should be updated before compaction or after major state changes. It is the agent-authored handoff note that future wake/compression context should trust.
+`current_state` should be updated before compaction or after major state changes. It is the agent-authored handoff note for future wake/compression context, but it should avoid fresh calendar orientation. The runtime injects a live temporal anchor into every system prompt; that clock is authoritative for today/now. Dates in `current_state` are historical claims and may be stale.
 
 ## Self-History Access
 

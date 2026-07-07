@@ -150,6 +150,24 @@ Implemented V1 slices:
 - Records a bounded recent event log and keeps errors visible without wedging the scheduler.
 - Added cadence environment variables with a default of 120 minutes and a floor of 5 minutes.
 - Added a small Operator panel for status, Start, Stop, and Wake One Now controls.
+- Updated the Free Moments prompt to make each wake an unprompted moment of
+  agency rather than a task, while still requiring tools before describing
+  external or stored content.
+
+Implemented temporal orientation guard:
+
+- Injects a live runtime temporal anchor into every agent system prompt.
+- Treats dates in `current_state`, memories, journals, peer notes, source
+  material, and transcript history as historical claims that may be stale.
+- Keeps `runtime_get_time` available for explicit confirmation when temporal
+  orientation matters.
+
+Implemented compaction completeness guard:
+
+- Compaction proposal generation now fails loudly if Anthropic stops at the
+  output token cap.
+- Proposal generation also requires sections 6 and 7 so candidate memories and
+  compression recommendations cannot disappear silently at the tail.
 
 Original minimal shape:
 

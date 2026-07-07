@@ -18,6 +18,7 @@ type AnthropicResponse = {
     text?: string;
     type?: string;
   }>;
+  stop_reason?: string;
   error?: {
     message?: string;
   };
@@ -162,7 +163,10 @@ async function compileWithAnthropic({
     throw new Error(errorMessage);
   }
 
-  return extractText(data);
+  const proposal = extractText(data);
+  validateProposalComplete(proposal, data.stop_reason, maxTokens);
+
+  return proposal;
 }
 
 function extractText(data: AnthropicResponse) {
@@ -170,6 +174,25 @@ function extractText(data: AnthropicResponse) {
     .map((block) => (block.type === "text" && typeof block.text === "string" ? block.text : ""))
     .filter(Boolean)
     .join("\n\n");
+}
+
+function validateProposalComplete(proposal: string, stopReason: string | undefined, maxTokens: number) {
+  if (stopReason === "max_tokens") {
+    throw new Error(
+      `Compaction proposal hit COMPACTION_COMPILE_MAX_TOKENS=${maxTokens} before finishing. Increase COMPACTION_COMPILE_MAX_TOKENS or reduce COMPACTION_COMPILE_TRANSCRIPT_CHARS, then compile again.`
+    );
+  }
+
+  const requiredTailSections = [
+    /(^|\n)\s*6\.\s+Candidate durable memories/i,
+    /(^|\n)\s*7\.\s+What can be safely compressed away/i
+  ];
+
+  if (requiredTailSections.some((pattern) => !pattern.test(proposal))) {
+    throw new Error(
+      "Compaction proposal did not include required sections 6 and 7. Compile again with more output tokens or less transcript source."
+    );
+  }
 }
 
 function modelForAgent(agent: AgentName) {

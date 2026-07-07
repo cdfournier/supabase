@@ -834,13 +834,13 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_update_current_state",
     description:
-      "Update the active agent's own restoration_profiles.current_state handoff field. Use before compaction or after major state changes so the next wake/compression sees accurate current context. Requires current_state and reason. This cannot modify another agent's profile.",
+      "Update the active agent's own restoration_profiles.current_state handoff field. Use before compaction or after major state changes so the next wake/compression sees accurate current context. Avoid calendar dates and relative-time claims unless they are explicitly historical; the live runtime clock is authoritative for today/now. Requires current_state and reason. This cannot modify another agent's profile.",
     input_schema: {
       type: "object",
       properties: {
         current_state: {
           type: "string",
-          description: "The full replacement current_state handoff text for the active agent."
+          description: "The full replacement current_state handoff text for the active agent. Prefer durable state over dates like today, yesterday, Friday, or tomorrow."
         },
         reason: {
           type: "string",

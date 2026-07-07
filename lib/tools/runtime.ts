@@ -1,55 +1,24 @@
 import "server-only";
 
 import type { AgentName } from "@/lib/agent-context";
+import { runtimeClock } from "@/lib/runtime-clock";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
-const DEFAULT_TIME_ZONE = "America/New_York";
 const PEER_AGENTS = new Set(["soren", "varro"]);
 const MAX_NOTE_SUBJECT = 160;
 const MAX_NOTE_BODY = 4000;
 const NOTE_LIST_LIMIT = 20;
 
 export async function getRuntimeTime() {
-  const now = new Date();
-  const timeZone = process.env.RUNTIME_TIME_ZONE || DEFAULT_TIME_ZONE;
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZoneName: "short"
-  }).formatToParts(now);
-
   return JSON.stringify(
     {
-      note: "Runtime clock. Use when temporal orientation matters; it is not injected into every turn.",
-      utc_iso: now.toISOString(),
-      time_zone: timeZone,
-      local_readable: new Intl.DateTimeFormat("en-US", {
-        timeZone,
-        dateStyle: "full",
-        timeStyle: "long"
-      }).format(now),
-      weekday: part(parts, "weekday"),
-      year: part(parts, "year"),
-      month: part(parts, "month"),
-      day: part(parts, "day"),
-      hour: part(parts, "hour"),
-      minute: part(parts, "minute"),
-      second: part(parts, "second"),
-      time_zone_name: part(parts, "timeZoneName")
+      note:
+        "Runtime clock. A live temporal anchor is also injected into the system prompt; use this tool when temporal orientation needs explicit confirmation.",
+      ...runtimeClock()
     },
     null,
     2
   );
-}
-
-function part(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
-  return parts.find((item) => item.type === type)?.value ?? "";
 }
 
 export async function sendPeerNote(agent: AgentName, input: unknown) {

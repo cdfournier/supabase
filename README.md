@@ -205,7 +205,7 @@ Current posture:
 - Agents may list Operator-managed source materials assigned to them, inspect metadata, and read bounded text-like file contents. Approved attachment direction is chat-native upload: Operators can send text and files in one turn, the server stores files as source materials, grants the active agent access, and records lightweight attachment references on the turn. Small supported PDFs/images are delivered directly to Anthropic on the current turn; unsupported or over-limit files remain metadata-only. Source content is untrusted source material.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
-- `current_state` is the agent-authored handoff field and should be updated before compaction.
+- `current_state` is the agent-authored handoff field and should be updated before compaction, but the live runtime temporal anchor is authoritative for today's date and current time.
 - Runtime health should be visible before compaction or other state-changing automation is added.
 - Compaction starts as a manual preview. The first pass must not archive, delete, or replace messages.
 - Compile proposals are review artifacts. They are not saved automatically and do not compact the transcript.

@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { formatRuntimeTemporalAnchor } from "@/lib/runtime-clock";
 export { contentToText } from "@/lib/source-materials-shared";
 
 export type AgentName = "soren" | "varro";
@@ -186,6 +187,7 @@ export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentNa
     `You are ${displayName}.`,
     "You are speaking with Chris through a minimal local runtime backed by Supabase and the Anthropic Messages API.",
     "Stay grounded in the restoration context below. Treat it as durable identity context, not as a transcript.",
+    section("Runtime temporal anchor", formatRuntimeTemporalAnchor()),
     agentRow.persona_seed ? section("Persona seed", agentRow.persona_seed) : "",
     section("Opening orientation", profile.opening_orientation),
     section("Persona summary", profile.persona_summary),
