@@ -274,7 +274,8 @@ export async function compileRuntimeCompactionProposal(agent: AgentName, input: 
   const proposal = await compileCompactionProposal({
     agent,
     dryRun: isRecord(input) && input.dry_run === true,
-    maxChars: isRecord(input) ? input.max_chars : undefined
+    maxChars: isRecord(input) ? input.max_chars : undefined,
+    maxTokens: isRecord(input) ? input.max_tokens : undefined
   });
 
   return stringifyToolPayload({
@@ -292,7 +293,8 @@ export async function compileAndSaveRuntimeCompactionProposal(agent: AgentName, 
   const compiled = await compileCompactionProposal({
     agent,
     dryRun: false,
-    maxChars: isRecord(input) ? input.max_chars : undefined
+    maxChars: isRecord(input) ? input.max_chars : undefined,
+    maxTokens: isRecord(input) ? input.max_tokens : undefined
   });
 
   const proposal = "proposal" in compiled ? cleanMultilineText(compiled.proposal) : "";

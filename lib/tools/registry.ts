@@ -876,6 +876,10 @@ export const toolDefinitions: ToolDefinition[] = [
         max_chars: {
           type: "number",
           description: "Optional selected transcript budget in characters. Defaults to COMPACTION_COMPILE_TRANSCRIPT_CHARS and is bounded by the compiler."
+        },
+        max_tokens: {
+          type: "number",
+          description: "Optional output token cap for this compile attempt. Use with a smaller max_chars budget if the previous compile hit max_tokens."
         }
       },
       required: [],
@@ -892,6 +896,10 @@ export const toolDefinitions: ToolDefinition[] = [
         max_chars: {
           type: "number",
           description: "Optional selected transcript budget in characters. Defaults to COMPACTION_COMPILE_TRANSCRIPT_CHARS and is bounded by the compiler."
+        },
+        max_tokens: {
+          type: "number",
+          description: "Optional output token cap for this compile attempt. Use with a smaller max_chars budget if the previous compile hit max_tokens."
         },
         agent_notes: {
           type: "string",

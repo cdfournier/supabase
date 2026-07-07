@@ -25,7 +25,7 @@ type AnthropicResponse = {
   message?: string;
 };
 
-const DEFAULT_COMPILE_MAX_TOKENS = 5200;
+const DEFAULT_COMPILE_MAX_TOKENS = 9000;
 const DEFAULT_COMPILE_TRANSCRIPT_CHARS = 50_000;
 const PROPOSAL_OUTPUT_CONTRACT = [
   "Write an authored compaction proposal, not a transcript excerpt packet.",
@@ -47,11 +47,13 @@ const PROPOSAL_OUTPUT_CONTRACT = [
 export async function compileCompactionProposal({
   agent,
   dryRun = false,
-  maxChars
+  maxChars,
+  maxTokens
 }: {
   agent: AgentName;
   dryRun?: boolean;
   maxChars?: unknown;
+  maxTokens?: unknown;
 }) {
   const supabase = getSupabaseAdmin();
   const preview = await buildCompactionPreview(supabase, agent);
@@ -89,7 +91,10 @@ export async function compileCompactionProposal({
   const proposal = await compileWithAnthropic({
     agent,
     apiKey,
-    maxTokens: numberEnv("COMPACTION_COMPILE_MAX_TOKENS", DEFAULT_COMPILE_MAX_TOKENS),
+    maxTokens: numberInput(
+      maxTokens,
+      numberEnv("COMPACTION_COMPILE_MAX_TOKENS", DEFAULT_COMPILE_MAX_TOKENS)
+    ),
     preview,
     source
   });
@@ -179,7 +184,7 @@ function extractText(data: AnthropicResponse) {
 function validateProposalComplete(proposal: string, stopReason: string | undefined, maxTokens: number) {
   if (stopReason === "max_tokens") {
     throw new Error(
-      `Compaction proposal hit COMPACTION_COMPILE_MAX_TOKENS=${maxTokens} before finishing. Increase COMPACTION_COMPILE_MAX_TOKENS or reduce COMPACTION_COMPILE_TRANSCRIPT_CHARS, then compile again.`
+      `Compaction proposal hit max_tokens=${maxTokens} before finishing. Retry with a smaller max_chars transcript budget, or pass a larger max_tokens value if the runtime allows it.`
     );
   }
 
@@ -190,7 +195,7 @@ function validateProposalComplete(proposal: string, stopReason: string | undefin
 
   if (requiredTailSections.some((pattern) => !pattern.test(proposal))) {
     throw new Error(
-      "Compaction proposal did not include required sections 6 and 7. Compile again with more output tokens or less transcript source."
+      "Compaction proposal did not include required sections 6 and 7. Retry with a smaller max_chars transcript budget or a larger max_tokens value."
     );
   }
 }
