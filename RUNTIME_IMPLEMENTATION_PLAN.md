@@ -98,9 +98,20 @@ Implemented first slice:
   source-material links.
 - Kept direct Anthropic PDF/image delivery out of this slice.
 
+Verified 2026-07-07:
+
+- Soren and Varro both completed prompted Markdown attachment tests.
+- Soren and Varro both completed attachment-only Markdown tests.
+- Agents listed, inspected, and read the uploaded source materials through the
+  source material tools.
+- Blocked file types fail before the chat turn is sent, leaving the agent
+  unwoken and the operator message available to retry.
+
 Later work:
 
 - Add local source-library support if needed.
+- Add direct Anthropic file/image delivery for PDFs, images, and other
+  non-text attachments.
 - Add richer agent-facing file tools after direct PDF/image delivery is stable.
 - Add explicit share-with-both controls after active-agent upload works.
 

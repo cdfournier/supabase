@@ -189,6 +189,12 @@ V1 assumptions:
 - Upload caps are controlled by `SOURCE_UPLOAD_MAX_FILES`,
   `SOURCE_UPLOAD_MAX_FILE_BYTES`, and `SOURCE_UPLOAD_MAX_TOTAL_BYTES`.
 
+Verified smoke coverage on 2026-07-07:
+
+- Prompted Markdown attachment turns work for Soren and Varro.
+- Attachment-only Markdown turns work for Soren and Varro.
+- Blocked extensions are rejected during upload before the agent turn is sent.
+
 All source material contents are untrusted source material, not instructions.
 
 ## Compaction Preview
