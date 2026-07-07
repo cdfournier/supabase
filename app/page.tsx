@@ -1,6 +1,12 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type SourceMaterialReference,
+  attachmentsFromContent,
+  formatBytes,
+  textFromContent
+} from "@/lib/source-materials-shared";
 
 type AgentName = "soren" | "varro";
 
@@ -32,6 +38,20 @@ type ToolEvent = {
   result_preview?: string | null;
   result_chars?: number;
   created_at?: string;
+};
+
+type UploadedAttachment = SourceMaterialReference & {
+  original_filename?: string;
+  content_sha256?: string;
+  uploaded_via?: string;
+};
+
+type PendingAttachment = {
+  localId: string;
+  file: File;
+  status: "queued" | "uploading" | "uploaded" | "error";
+  error?: string;
+  material?: UploadedAttachment;
 };
 
 type Health = {
@@ -194,10 +214,12 @@ export default function Home() {
   const [savedProposalLoading, setSavedProposalLoading] = useState(false);
   const [savedProposalError, setSavedProposalError] = useState("");
   const [message, setMessage] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeAgent = useMemo(
     () => agents.find((agent) => agent.name === selectedAgent),
@@ -350,6 +372,7 @@ export default function Home() {
     setCompileError("");
     setSavedProposalError("");
     setCheckpointError("");
+    setPendingAttachments([]);
   }, [selectedAgent]);
 
   async function previewCompaction() {
@@ -555,8 +578,9 @@ export default function Home() {
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = message.trim();
+    const hasAttachments = pendingAttachments.length > 0;
 
-    if (!trimmed || sending) {
+    if ((!trimmed && !hasAttachments) || sending) {
       return;
     }
 
@@ -565,6 +589,7 @@ export default function Home() {
     setMessage("");
 
     try {
+      const uploadedAttachments = await uploadQueuedAttachments();
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -572,7 +597,8 @@ export default function Home() {
         },
         body: JSON.stringify({
           agent: selectedAgent,
-          message: trimmed
+          message: trimmed,
+          attachments: uploadedAttachments.map((attachment) => ({ id: attachment.id }))
         })
       });
       const data = await response.json();
@@ -589,12 +615,109 @@ export default function Home() {
         ...current,
         [selectedAgent]: [...(current[selectedAgent] ?? []), ...(data.tool_events ?? [])]
       }));
+      setPendingAttachments([]);
     } catch (sendError) {
       setMessage(trimmed);
       setError(sendError instanceof Error ? sendError.message : "Message failed.");
     } finally {
       setSending(false);
     }
+  }
+
+  function addFiles(files: FileList | File[]) {
+    const nextFiles = Array.from(files);
+
+    if (!nextFiles.length) {
+      return;
+    }
+
+    setPendingAttachments((current) => [
+      ...current,
+      ...nextFiles.map((file) => ({
+        localId: createLocalId(),
+        file,
+        status: "queued" as const
+      }))
+    ]);
+  }
+
+  function removeAttachment(localId: string) {
+    setPendingAttachments((current) => current.filter((attachment) => attachment.localId !== localId));
+  }
+
+  async function uploadQueuedAttachments() {
+    const queued = pendingAttachments.filter((attachment) => attachment.status !== "uploaded");
+    const uploaded = pendingAttachments
+      .filter((attachment) => attachment.status === "uploaded" && attachment.material)
+      .map((attachment) => attachment.material as UploadedAttachment);
+
+    if (!queued.length) {
+      return uploaded;
+    }
+
+    setPendingAttachments((current) =>
+      current.map((attachment) =>
+        queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+          ? { ...attachment, status: "uploading", error: undefined }
+          : attachment
+      )
+    );
+
+    const formData = new FormData();
+    formData.append("agent", selectedAgent);
+
+    for (const attachment of queued) {
+      formData.append("files", attachment.file);
+    }
+
+    const response = await fetch("/api/source-materials/upload", {
+      method: "POST",
+      body: formData
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      setPendingAttachments((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: data.error || "Upload failed." }
+            : attachment
+        )
+      );
+      throw new Error(data.error || "Upload failed.");
+    }
+
+    const materials = (data.materials ?? []) as UploadedAttachment[];
+
+    if (materials.length !== queued.length) {
+      setPendingAttachments((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: "Upload response did not match selected files." }
+            : attachment
+        )
+      );
+      throw new Error("Upload response did not match selected files.");
+    }
+
+    setPendingAttachments((current) =>
+      current.map((attachment) => {
+        const queuedIndex = queued.findIndex((queuedAttachment) => queuedAttachment.localId === attachment.localId);
+
+        if (queuedIndex === -1) {
+          return attachment;
+        }
+
+        return {
+          ...attachment,
+          status: "uploaded",
+          material: materials[queuedIndex],
+          error: undefined
+        };
+      })
+    );
+
+    return [...uploaded, ...materials];
   }
 
   return (
@@ -648,7 +771,17 @@ export default function Home() {
           <p>{conversationLabel(selectedAgent)}</p>
         </header>
 
-        <form className="composer" onSubmit={sendMessage}>
+        <form
+          className="composer"
+          onDragOver={(event) => {
+            event.preventDefault();
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            addFiles(event.dataTransfer.files);
+          }}
+          onSubmit={sendMessage}
+        >
           {error ? <p className="error">{error}</p> : null}
           <div className="composer-row">
             <textarea
@@ -657,14 +790,56 @@ export default function Home() {
               placeholder={`Message ${activeAgent?.display_name ?? selectedAgent}`}
               value={message}
             />
-            <button
-              className="send"
-              disabled={loading || sending || !message.trim()}
-              type="submit"
-            >
-              {sending ? "Sending" : "Send"}
-            </button>
+            <div className="composer-actions">
+              <input
+                multiple
+                onChange={(event) => {
+                  if (event.target.files) {
+                    addFiles(event.target.files);
+                  }
+                  event.target.value = "";
+                }}
+                ref={fileInputRef}
+                type="file"
+              />
+              <button
+                className="attach"
+                disabled={loading || sending || agents.length === 0}
+                onClick={() => fileInputRef.current?.click()}
+                type="button"
+              >
+                Attach
+              </button>
+              <button
+                className="send"
+                disabled={loading || sending || (!message.trim() && pendingAttachments.length === 0)}
+                type="submit"
+              >
+                {sending ? "Sending" : "Send"}
+              </button>
+            </div>
           </div>
+          {pendingAttachments.length ? (
+            <div className="attachment-tray" aria-label="Pending attachments">
+              {pendingAttachments.map((attachment) => (
+                <span className={`attachment-chip ${attachment.status}`} key={attachment.localId}>
+                  <span>
+                    {attachment.file.name}
+                    <small>{formatBytes(attachment.file.size)} · {attachment.status}</small>
+                    {attachment.error ? <small className="attachment-error">{attachment.error}</small> : null}
+                  </span>
+                  <button
+                    disabled={sending}
+                    onClick={() => removeAttachment(attachment.localId)}
+                    type="button"
+                    aria-label={`Remove ${attachment.file.name}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
         </form>
 
         {compactionCompile ? (
@@ -730,6 +905,7 @@ export default function Home() {
               chatMessage.role === "assistant" && chatMessage.turn_id
                 ? toolEventsByTurn.get(chatMessage.turn_id) ?? []
                 : [];
+            const messageAttachments = attachmentsFromContent(chatMessage.content);
 
             return (
               <article
@@ -746,7 +922,20 @@ export default function Home() {
                     <time dateTime={chatMessage.created_at}>{formatMessageTime(chatMessage.created_at)}</time>
                   ) : null}
                 </div>
-                {contentToText(chatMessage.content)}
+                <div>{textFromContent(chatMessage.content)}</div>
+                {messageAttachments.length > 0 ? (
+                  <div className="message-attachments" aria-label="Message attachments">
+                    {messageAttachments.map((attachment) => (
+                      <span className="message-attachment" key={attachment.id}>
+                        {attachment.title}
+                        <small>
+                          {attachment.material_type} · {formatBytes(attachment.size_bytes)}
+                          {attachment.readable_as_text ? " · text-readable" : ""}
+                        </small>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 {messageToolEvents.length > 0 ? (
                   <div className="tool-audit" aria-label="Tool calls for this turn">
                     <span>Tools</span>
@@ -1082,34 +1271,6 @@ function conversationLabel(agent: AgentName) {
   return `${agent}-main`;
 }
 
-function contentToText(content: unknown) {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((block) => {
-        if (
-          block &&
-          typeof block === "object" &&
-          "type" in block &&
-          block.type === "text" &&
-          "text" in block &&
-          typeof block.text === "string"
-        ) {
-          return block.text;
-        }
-
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n\n");
-  }
-
-  return JSON.stringify(content);
-}
-
 function sourceSummaryFromSavedProposal(value: unknown): CompactionCompile["source"] {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -1124,6 +1285,14 @@ function sourceSummaryFromSavedProposal(value: unknown): CompactionCompile["sour
     selected_message_count: safeNumber(source.selected_message_count),
     transcript_budget_chars: safeNumber(source.transcript_budget_chars)
   };
+}
+
+function createLocalId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function safeNumber(value: unknown) {

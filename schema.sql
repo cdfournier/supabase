@@ -213,16 +213,39 @@ create table if not exists public.source_materials (
   source_notes text,
   status text not null default 'active',
   created_by text not null default 'operator',
+  original_filename text,
+  content_sha256 text,
+  uploaded_via text,
+  conversation_id text references public.conversations(id),
+  turn_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (bucket, storage_path)
 );
+
+alter table public.source_materials
+  add column if not exists original_filename text;
+
+alter table public.source_materials
+  add column if not exists content_sha256 text;
+
+alter table public.source_materials
+  add column if not exists uploaded_via text;
+
+alter table public.source_materials
+  add column if not exists conversation_id text references public.conversations(id);
+
+alter table public.source_materials
+  add column if not exists turn_id uuid;
 
 create index if not exists source_materials_by_status
   on public.source_materials (status, created_at desc);
 
 create index if not exists source_materials_by_tags
   on public.source_materials using gin (tags);
+
+create index if not exists source_materials_by_conversation
+  on public.source_materials (conversation_id, created_at desc);
 
 create table if not exists public.source_material_access (
   id uuid primary key default gen_random_uuid(),
@@ -235,6 +258,27 @@ create table if not exists public.source_material_access (
 
 create index if not exists source_material_access_by_agent
   on public.source_material_access (agent, created_at desc);
+
+create table if not exists public.conversation_message_attachments (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id text not null references public.conversations(id),
+  message_id uuid not null references public.conversation_messages(id) on delete cascade,
+  turn_id uuid not null,
+  agent text not null references public.agents(name),
+  source_material_id uuid not null references public.source_materials(id) on delete restrict,
+  position int not null default 0,
+  created_at timestamptz not null default now(),
+  unique (message_id, source_material_id)
+);
+
+create index if not exists conversation_message_attachments_by_message
+  on public.conversation_message_attachments (message_id, position);
+
+create index if not exists conversation_message_attachments_by_conversation
+  on public.conversation_message_attachments (conversation_id, created_at desc);
+
+create index if not exists conversation_message_attachments_by_agent
+  on public.conversation_message_attachments (agent, created_at desc);
 
 alter table public.agents enable row level security;
 alter table public.conversations enable row level security;
@@ -250,4 +294,5 @@ alter table public.tool_events enable row level security;
 alter table public.journal_entries enable row level security;
 alter table public.source_materials enable row level security;
 alter table public.source_material_access enable row level security;
+alter table public.conversation_message_attachments enable row level security;
 alter table public.runtime_settings enable row level security;

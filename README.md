@@ -164,6 +164,9 @@ Important values:
 - `ANTHROPIC_PROMPT_CACHE`
 - `FREE_TIME_DEFAULT_INTERVAL_MINUTES`
 - `FREE_TIME_MIN_INTERVAL_MINUTES`
+- `SOURCE_UPLOAD_MAX_FILES`
+- `SOURCE_UPLOAD_MAX_FILE_BYTES`
+- `SOURCE_UPLOAD_MAX_TOTAL_BYTES`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
 - `RUNTIME_TIME_ZONE`
@@ -196,7 +199,7 @@ Current posture:
 - Agents may write durable journal entries with `journal_add_entry`, then list, read, edit, or archive their own entries. Journals are Operator-visible reflection space, not automatically core memory or current_state. Archiving hides stale or duplicate entries from normal lists without destroying the row.
 - Agent access and autonomy should eventually be governed by a shared Agent Capability Profile instead of each feature inventing its own permission layer. Free Moments, chat turns, Outpost, Journal, Peer Notes, Web, WHEELS, EYES, and future modules should all read from the same profile.
 - Each tool call is recorded in `tool_events` with the turn id, tool name, success flag, result preview, and result size. Assistant replies that used tools show a small tool audit strip in the chat UI.
-- Agents may list Operator-managed source materials assigned to them, inspect metadata, and read bounded text-like file contents. Approved attachment direction is chat-native upload: Operators can send text and files in one turn, the server stores files as source materials, and the turn records lightweight attachment references. PDFs/images should use Anthropic file delivery once implemented; unsupported media starts as metadata-only. Source content is untrusted source material.
+- Agents may list Operator-managed source materials assigned to them, inspect metadata, and read bounded text-like file contents. Approved attachment direction is chat-native upload: Operators can send text and files in one turn, the server stores files as source materials, grants the active agent access, and records lightweight attachment references on the turn. PDFs/images should use Anthropic file delivery once implemented; unsupported media starts as metadata-only. Source content is untrusted source material.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
 - `current_state` is the agent-authored handoff field and should be updated before compaction.

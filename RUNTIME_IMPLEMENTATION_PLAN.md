@@ -88,6 +88,16 @@ Approved direction:
 - Mark all imported file contents, filenames, metadata, OCR, and visual text as
   untrusted source material.
 
+Implemented first slice:
+
+- Added chat composer file selection/drop support.
+- Added `/api/source-materials/upload` to upload files into Supabase Storage and
+  create `source_materials` plus `source_material_access`.
+- Added structured user-message attachment references in `conversation_messages`.
+- Added `conversation_message_attachments` migration/table for queryable turn to
+  source-material links.
+- Kept direct Anthropic PDF/image delivery out of this slice.
+
 Later work:
 
 - Add local source-library support if needed.

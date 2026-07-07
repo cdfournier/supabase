@@ -2,6 +2,7 @@ import "server-only";
 
 import type { AgentName } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { isReadableTextMaterial } from "@/lib/source-materials-shared";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -18,6 +19,11 @@ type SourceMaterialRow = {
   source_notes: string | null;
   status: string;
   created_by: string;
+  original_filename?: string | null;
+  content_sha256?: string | null;
+  uploaded_via?: string | null;
+  conversation_id?: string | null;
+  turn_id?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -32,14 +38,6 @@ const MAX_SOURCE_LIMIT = 30;
 const DEFAULT_SOURCE_READ_CHARS = 8000;
 const MAX_SOURCE_READ_CHARS = 20000;
 const MAX_TEXT_SOURCE_BYTES = 900_000;
-const READABLE_TEXT_TYPES = new Set([
-  "text",
-  "markdown",
-  "csv",
-  "json",
-  "html"
-]);
-
 export async function listSourceMaterials(agent: AgentName, input: unknown) {
   if (input !== undefined && !isRecord(input)) {
     throw new Error("source_list_materials requires an object input.");
@@ -63,7 +61,7 @@ export async function listSourceMaterials(agent: AgentName, input: unknown) {
   let query = supabase
     .from("source_materials")
     .select(
-      "id, title, description, bucket, storage_path, material_type, mime_type, size_bytes, tags, source_notes, status, created_by, created_at, updated_at"
+      "id, title, description, bucket, storage_path, material_type, mime_type, size_bytes, tags, source_notes, status, created_by, original_filename, content_sha256, uploaded_via, conversation_id, turn_id, created_at, updated_at"
     )
     .in("id", materialIds)
     .eq("status", "active")
@@ -219,7 +217,7 @@ async function getPermittedSourceMaterial(agent: AgentName, id: string) {
   const { data: material, error: materialError } = await supabase
     .from("source_materials")
     .select(
-      "id, title, description, bucket, storage_path, material_type, mime_type, size_bytes, tags, source_notes, status, created_by, created_at, updated_at"
+      "id, title, description, bucket, storage_path, material_type, mime_type, size_bytes, tags, source_notes, status, created_by, original_filename, content_sha256, uploaded_via, conversation_id, turn_id, created_at, updated_at"
     )
     .eq("id", id)
     .eq("status", "active")
@@ -240,17 +238,7 @@ async function getPermittedSourceMaterial(agent: AgentName, id: string) {
 }
 
 function isReadableTextSource(material: SourceMaterialRow) {
-  const materialType = cleanText(material.material_type).toLowerCase();
-  const mimeType = cleanText(material.mime_type).toLowerCase();
-
-  return (
-    READABLE_TEXT_TYPES.has(materialType) ||
-    mimeType.startsWith("text/") ||
-    mimeType.includes("json") ||
-    mimeType.includes("xml") ||
-    mimeType.includes("csv") ||
-    mimeType.includes("markdown")
-  );
+  return isReadableTextMaterial(material.material_type, material.mime_type);
 }
 
 function cleanText(value: unknown) {

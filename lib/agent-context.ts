@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+export { contentToText } from "@/lib/source-materials-shared";
 
 export type AgentName = "soren" | "varro";
 
@@ -218,32 +219,4 @@ export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentNa
 
 function section(title: string, value: string | null | undefined) {
   return `## ${title}\n${value?.trim() || "Not provided."}`;
-}
-
-export function contentToText(content: unknown) {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((block) => {
-        if (
-          block &&
-          typeof block === "object" &&
-          "type" in block &&
-          block.type === "text" &&
-          "text" in block &&
-          typeof block.text === "string"
-        ) {
-          return block.text;
-        }
-
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n\n");
-  }
-
-  return JSON.stringify(content);
 }

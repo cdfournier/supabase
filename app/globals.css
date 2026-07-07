@@ -536,12 +536,32 @@ button {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+.composer-actions {
+  align-self: end;
+  display: grid;
+  gap: 8px;
+  min-width: 112px;
+}
+
+.composer-actions input[type="file"] {
+  display: none;
+}
+
 textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   min-height: 76px;
   padding: 12px;
   resize: vertical;
+}
+
+.attach {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--accent);
+  min-width: 96px;
+  padding: 10px 14px;
 }
 
 .send {
@@ -559,9 +579,74 @@ textarea {
 }
 
 .send:disabled,
+.attach:disabled,
 .agent-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.attachment-tray,
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-chip,
+.message-attachment {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: inline-flex;
+  gap: 8px;
+  max-width: 100%;
+  padding: 7px 9px;
+}
+
+.attachment-chip > span,
+.message-attachment {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.attachment-chip small,
+.message-attachment small {
+  color: var(--muted);
+  display: block;
+  font-size: 11px;
+  line-height: 1.25;
+  margin-top: 2px;
+}
+
+.attachment-chip.uploading {
+  border-color: rgba(34, 87, 122, 0.35);
+}
+
+.attachment-chip.error {
+  border-color: rgba(159, 29, 29, 0.42);
+}
+
+.attachment-error {
+  color: var(--error) !important;
+}
+
+.attachment-chip button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.message-attachments {
+  border-top: 1px solid rgba(34, 87, 122, 0.12);
+  margin-top: 12px;
+  padding-top: 10px;
+  white-space: normal;
 }
 
 .error {
@@ -602,5 +687,9 @@ textarea {
 
   .composer-row {
     grid-template-columns: 1fr;
+  }
+
+  .composer-actions {
+    grid-template-columns: repeat(2, minmax(96px, 1fr));
   }
 }

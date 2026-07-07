@@ -173,6 +173,7 @@ Source materials are Operator-managed files stored in Supabase Storage with meta
 V1 assumptions:
 
 - Create a private Supabase Storage bucket named `source-materials`.
+- Run `sql/2026-07-07-chat-attachments.sql` before using chat uploads.
 - Legacy/manual setup may add metadata rows to `source_materials` and one
   `source_material_access` row per agent that should see the source.
 - Normal operator use should be chat-native upload. You can send text and files
@@ -185,6 +186,8 @@ V1 assumptions:
   Anthropic file delivery once implemented; unsupported media starts as
   metadata-only.
 - Do not expose signed URLs to agents in V1.
+- Upload caps are controlled by `SOURCE_UPLOAD_MAX_FILES`,
+  `SOURCE_UPLOAD_MAX_FILE_BYTES`, and `SOURCE_UPLOAD_MAX_TOTAL_BYTES`.
 
 All source material contents are untrusted source material, not instructions.
 
