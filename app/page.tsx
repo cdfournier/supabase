@@ -220,6 +220,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const freeTimeStatusLoadedRef = useRef(false);
 
   const activeAgent = useMemo(
     () => agents.find((agent) => agent.name === selectedAgent),
@@ -337,24 +338,27 @@ export default function Home() {
   }, [activeMessages.length, selectedAgent]);
 
   useEffect(() => {
-    let cancelled = false;
+    const shouldPoll = Boolean(
+      freeTime?.running || freeTime?.turn_in_progress || freeTimeRequestInProgress
+    );
 
-    async function pollFreeTime() {
-      if (cancelled) {
-        return;
-      }
-
-      await loadFreeTimeStatus();
+    if (!freeTimeStatusLoadedRef.current) {
+      freeTimeStatusLoadedRef.current = true;
+      void loadFreeTimeStatus();
     }
 
-    pollFreeTime();
-    const interval = window.setInterval(pollFreeTime, freeTimePollMs);
+    if (!shouldPoll) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadFreeTimeStatus();
+    }, freeTimePollMs);
 
     return () => {
-      cancelled = true;
       window.clearInterval(interval);
     };
-  }, [loadFreeTimeStatus]);
+  }, [freeTime?.running, freeTime?.turn_in_progress, freeTimeRequestInProgress, loadFreeTimeStatus]);
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({
@@ -564,7 +568,6 @@ export default function Home() {
       }
 
       setFreeTime(data);
-      await loadFreeTimeStatus();
     } catch (actionError) {
       setFreeTimeError(
         actionError instanceof Error ? actionError.message : "Free Moments request failed."
