@@ -222,6 +222,7 @@ Current posture:
 
 ## Related Docs
 
+- `ROADMAP.md` — current priorities, active roadmap, parking lot, and release notes.
 - `OPERATORS_GUIDE.md` — quick command reference for running the app.
 - `DEVELOPMENT_SOP.md` — branch, dev/prod, migration, release, and web-access conventions.
 - `MIGRATION_STEPS.md` — original setup and seed process.
