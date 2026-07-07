@@ -241,7 +241,7 @@ curl -s -X POST http://localhost:3001/api/compaction/compile \
 
 The proposal is a review artifact. It is not saved automatically, and it does not archive, delete, or replace messages. v0 uses a bounded transcript source so the runtime does not trip rate limits by trying to send an unlimited conversation in one request.
 
-If compiled proposals are truncated before sections 6 or 7, increase `COMPACTION_COMPILE_MAX_TOKENS` in `.env.local` and restart the server, or have the agent retry `supabase_compile_and_save_compaction_proposal` with a smaller `max_chars` transcript budget and/or a larger per-call `max_tokens`. This is separate from the normal chat `ANTHROPIC_MAX_TOKENS` setting. The compiler now rejects proposals that hit the output token cap or omit required sections 6 and 7 instead of letting a clipped proposal look complete.
+If compiled proposals are truncated before sections 6 or 7, increase `COMPACTION_COMPILE_MAX_TOKENS` in `.env.local` and restart the server, or have the agent retry `supabase_compile_and_save_compaction_proposal` with a smaller `max_chars` transcript budget and/or a larger per-call `max_tokens`. This is separate from the normal chat `ANTHROPIC_MAX_TOKENS` setting. The compiler rejects proposals that hit the output token cap or omit required sections 6 and 7 instead of letting a clipped proposal look complete. The output contract deliberately caps sections 1-5 so the required memory/compression sections have room to complete.
 
 ## Compaction Checkpoint
 

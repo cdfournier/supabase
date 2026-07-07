@@ -168,6 +168,9 @@ Implemented compaction completeness guard:
   output token cap.
 - Proposal generation also requires sections 6 and 7 so candidate memories and
   compression recommendations cannot disappear silently at the tail.
+- Proposal output now uses a concise seven-section skeleton with bullet caps so
+  sections 1-5 cannot consume the whole response before memory/compression
+  review.
 
 Original minimal shape:
 

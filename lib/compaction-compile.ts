@@ -30,16 +30,19 @@ const DEFAULT_COMPILE_TRANSCRIPT_CHARS = 50_000;
 const PROPOSAL_OUTPUT_CONTRACT = [
   "Write an authored compaction proposal, not a transcript excerpt packet.",
   "Do not dump raw transcript messages. Use brief quotes only when the exact wording carries texture.",
-  "Return exactly these sections:",
-  "1. Continuity summary",
-  "2. Texture worth preserving",
-  "3. Decisions and changed beliefs",
-  "4. Relationship updates",
-  "5. Open loops",
-  "6. Candidate durable memories",
-  "7. What can be safely compressed away",
-  "In section 6, format candidate memories as reviewable bullets with suggested memory_type, weight, core/supporting judgment, and tags when the source supports them.",
-  "Sections 6 and 7 are mandatory. If output space is tight, shorten sections 1-5 before omitting candidate memories or compression recommendations.",
+  "Return exactly this Markdown skeleton with all seven headings:",
+  "## 1. Continuity summary",
+  "## 2. Texture worth preserving",
+  "## 3. Decisions and changed beliefs",
+  "## 4. Relationship updates",
+  "## 5. Open loops",
+  "## 6. Candidate durable memories",
+  "## 7. What can be safely compressed away",
+  "Write every heading before you finish. Do not stop after section 5.",
+  "Keep sections 1-5 concise: at most 5 bullets per section and at most 35 words per bullet.",
+  "In section 6, provide at most 10 reviewable bullets with suggested memory_type, weight, core/supporting judgment, and tags when the source supports them.",
+  "In section 7, provide at most 8 bullets.",
+  "Sections 6 and 7 are mandatory. If output space is tight, make sections 1-5 shorter; never omit candidate memories or compression recommendations.",
   "Mark uncertainty plainly when the bounded source does not prove something.",
   "The output should be useful for agent/operator review before a future checkpoint."
 ].join("\n");
@@ -189,8 +192,8 @@ function validateProposalComplete(proposal: string, stopReason: string | undefin
   }
 
   const requiredTailSections = [
-    /(^|\n)\s*6\.\s+Candidate durable memories/i,
-    /(^|\n)\s*7\.\s+What can be safely compressed away/i
+    /(^|\n)\s*(?:#{1,6}\s*)?6\.\s+(?:Candidate durable memories|Durable memory candidates|Candidate memories)/i,
+    /(^|\n)\s*(?:#{1,6}\s*)?7\.\s+(?:What can be safely compressed away|Safely compressed away|Compression recommendations)/i
   ];
 
   if (requiredTailSections.some((pattern) => !pattern.test(proposal))) {
