@@ -1,5 +1,9 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  formatCapabilityProfileForPrompt,
+  loadAgentCapabilityProfile
+} from "@/lib/capability-profile";
 import { formatRuntimeTemporalAnchor } from "@/lib/runtime-clock";
 export { contentToText } from "@/lib/source-materials-shared";
 
@@ -134,7 +138,7 @@ export async function loadAgentList(supabase: SupabaseClient) {
 }
 
 export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentName) {
-  const [agentResult, profileResult, memoriesResult, relationshipsResult] =
+  const [agentResult, profileResult, memoriesResult, relationshipsResult, capabilityProfile] =
     await Promise.all([
       supabase
         .from("agents")
@@ -158,7 +162,8 @@ export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentNa
         .from("relationships")
         .select("about, summary")
         .eq("agent", agent)
-        .order("about", { ascending: true })
+        .order("about", { ascending: true }),
+      loadAgentCapabilityProfile(supabase, agent)
     ]);
 
   if (agentResult.error) {
@@ -193,6 +198,7 @@ export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentNa
     section("Persona summary", profile.persona_summary),
     section("Current state", profile.current_state),
     section("Compaction memory policy", profile.compaction_memory_policy),
+    section("Agent capability profile", formatCapabilityProfileForPrompt(capabilityProfile)),
     section(
       "Active memories",
       memories.length

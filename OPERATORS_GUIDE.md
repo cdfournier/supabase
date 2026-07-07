@@ -149,6 +149,42 @@ Soren and Varro have Supabase-backed asynchronous peer note tools:
 
 Notes live in `peer_notes`, are visible to the Operator through Supabase, and are available during normal chat turns and Free Moments wakes. This is not realtime DM yet; agents must choose to check or send notes through tools.
 
+## Agent Capability Profile
+
+Run `sql/2026-07-07-agent-capabilities.sql` before relying on database-backed
+capability settings. Until the migration is applied, the runtime uses a fallback
+profile that preserves the current Soren/Varro tool posture.
+
+Capability rows live in `agent_capabilities`, one row per `agent + surface`.
+They are loaded into each agent's system prompt and used by the runtime to
+filter or block tools by surface/action. Free Moments also checks the profile
+before waking an agent.
+
+Current surfaces:
+
+- `runtime`
+- `conversation_history`
+- `memory`
+- `compaction`
+- `journal`
+- `peer_notes`
+- `outpost`
+- `web`
+- `source_materials`
+- `free_moments`
+- `operator_notes`
+- `bridge`
+- `eyes`
+- `wheels`
+
+Current access levels:
+
+- `off`
+- `read_only`
+- `draft`
+- `write`
+- `operator_approval_required`
+
 ## Tool Audit
 
 Runtime tool calls are recorded in `tool_events` and tied to a `turn_id` shared by the user/assistant message pair. The chat UI shows a small **Tools** strip under assistant messages when tools actually ran in that turn.

@@ -1,7 +1,12 @@
 import "server-only";
 import type { AgentName } from "@/lib/agent-context";
+import {
+  isSurfaceAllowed,
+  loadAgentCapabilityProfile
+} from "@/lib/capability-profile";
 import { sendAgentMessage } from "@/lib/chat-runtime";
 import { readFreeMomentsEnabled, writeFreeMomentsEnabled } from "@/lib/runtime-settings";
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 const AGENTS: AgentName[] = ["soren", "varro"];
 const EVENT_LIMIT = 20;
@@ -162,6 +167,22 @@ export async function tick(targetAgent?: AgentName, options: { scheduled?: boole
 
   if (!AGENTS.includes(agent)) {
     throw new Error("Free Moments target agent must be soren or varro.");
+  }
+
+  const capabilityProfile = await loadAgentCapabilityProfile(getSupabaseAdmin(), agent);
+
+  if (!isSurfaceAllowed(capabilityProfile, "free_moments", "write")) {
+    addEvent("tick_blocked", `Free Moment blocked for ${agent} by Agent Capability Profile.`, agent);
+
+    if (!targetAgent) {
+      state.nextAgentIndex = (state.nextAgentIndex + 1) % AGENTS.length;
+    }
+
+    if (state.running) {
+      scheduleNextTurn();
+    }
+
+    return status();
   }
 
   if (!targetAgent) {

@@ -56,6 +56,28 @@ insert into public.runtime_settings (key, value)
 values ('free_moments', '{"enabled": false}'::jsonb)
 on conflict (key) do nothing;
 
+create table if not exists public.agent_capabilities (
+  id uuid primary key default gen_random_uuid(),
+  agent text not null references public.agents(name),
+  surface text not null,
+  access_level text not null default 'off',
+  default_bias text,
+  requires_operator_approval boolean not null default false,
+  notify_operator text not null default 'audit_only',
+  max_actions_per_moment int,
+  quiet_mode boolean not null default false,
+  notes text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (agent, surface),
+  constraint agent_capabilities_access_level_check
+    check (access_level in ('off', 'read_only', 'draft', 'write', 'operator_approval_required'))
+);
+
+create index if not exists agent_capabilities_by_agent
+  on public.agent_capabilities (agent, surface);
+
 create table if not exists public.memories (
   id uuid primary key default gen_random_uuid(),
   agent text not null references public.agents(name),
@@ -296,3 +318,4 @@ alter table public.source_materials enable row level security;
 alter table public.source_material_access enable row level security;
 alter table public.conversation_message_attachments enable row level security;
 alter table public.runtime_settings enable row level security;
+alter table public.agent_capabilities enable row level security;
