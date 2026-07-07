@@ -104,6 +104,7 @@ export async function buildAttachmentDelivery(attachments: SourceMaterialReferen
     }
 
     const buffer = await downloadAttachment(attachment);
+    const detectedCandidate = detectDeliveryCandidate(buffer);
 
     if (buffer.byteLength > limits.maxBytes) {
       summaries.push({
@@ -127,9 +128,20 @@ export async function buildAttachmentDelivery(attachments: SourceMaterialReferen
       continue;
     }
 
+    if (!detectedCandidate || detectedCandidate.kind !== candidate.kind) {
+      summaries.push({
+        id: attachment.id,
+        title: attachment.title,
+        status: "metadata_only",
+        kind: candidate.kind,
+        reason: `downloaded bytes are not a supported ${candidate.kind === "pdf" ? "PDF" : "image"}`
+      });
+      continue;
+    }
+
     const label = `Attachment ${index + 1}: ${attachment.title} [source_material_id=${attachment.id}]`;
     blocks.push({ type: "text", text: label });
-    blocks.push(contentBlockForAttachment(attachment, candidate, buffer));
+    blocks.push(contentBlockForAttachment(attachment, detectedCandidate, buffer));
     includedCount += 1;
     totalBytes += buffer.byteLength;
     summaries.push({
@@ -175,11 +187,35 @@ function directAttachmentLimits() {
 function directDeliveryCandidate(attachment: SourceMaterialReference) {
   const mimeType = normalizedMimeType(attachment);
 
-  if (SUPPORTED_IMAGE_MIME_TYPES.has(mimeType)) {
+  if (SUPPORTED_IMAGE_MIME_TYPES.has(mimeType) || attachment.material_type.toLowerCase() === "image") {
     return { kind: "image" as const, mediaType: mimeType };
   }
 
   if (mimeType === PDF_MIME_TYPE || attachment.material_type.toLowerCase() === "pdf") {
+    return { kind: "pdf" as const, mediaType: PDF_MIME_TYPE };
+  }
+
+  return null;
+}
+
+function detectDeliveryCandidate(buffer: Buffer) {
+  if (isPng(buffer)) {
+    return { kind: "image" as const, mediaType: "image/png" };
+  }
+
+  if (isJpeg(buffer)) {
+    return { kind: "image" as const, mediaType: "image/jpeg" };
+  }
+
+  if (isGif(buffer)) {
+    return { kind: "image" as const, mediaType: "image/gif" };
+  }
+
+  if (isWebp(buffer)) {
+    return { kind: "image" as const, mediaType: "image/webp" };
+  }
+
+  if (isPdf(buffer)) {
     return { kind: "pdf" as const, mediaType: PDF_MIME_TYPE };
   }
 
@@ -206,9 +242,43 @@ async function downloadAttachment(attachment: SourceMaterialReference) {
   return Buffer.from(await data.arrayBuffer());
 }
 
+function isPng(buffer: Buffer) {
+  return (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  );
+}
+
+function isJpeg(buffer: Buffer) {
+  return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+}
+
+function isGif(buffer: Buffer) {
+  return buffer.length >= 6 && ["GIF87a", "GIF89a"].includes(buffer.subarray(0, 6).toString("ascii"));
+}
+
+function isWebp(buffer: Buffer) {
+  return (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  );
+}
+
+function isPdf(buffer: Buffer) {
+  return buffer.length >= 5 && buffer.subarray(0, 5).toString("ascii") === "%PDF-";
+}
+
 function contentBlockForAttachment(
   attachment: SourceMaterialReference,
-  candidate: NonNullable<ReturnType<typeof directDeliveryCandidate>>,
+  candidate: NonNullable<ReturnType<typeof detectDeliveryCandidate>>,
   buffer: Buffer
 ): AnthropicContentBlock {
   if (candidate.kind === "image") {
