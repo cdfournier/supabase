@@ -48,6 +48,7 @@ type RelationshipRow = {
 };
 
 const allowedAgents = new Set(["soren", "varro"]);
+const MESSAGE_PAGE_SIZE = 1000;
 
 export function isAgentName(value: string): value is AgentName {
   return allowedAgents.has(value);
@@ -91,17 +92,30 @@ export async function loadConversationMessages(
   supabase: SupabaseClient,
   conversationId: string
 ) {
-  const { data, error } = await supabase
-    .from("conversation_messages")
-    .select("id, conversation_id, turn_id, position, role, source, content, created_at")
-    .eq("conversation_id", conversationId)
-    .order("position", { ascending: true });
+  const messages: ChatMessage[] = [];
 
-  if (error) {
-    throw new Error(`Could not load messages: ${error.message}`);
+  for (let from = 0; ; from += MESSAGE_PAGE_SIZE) {
+    const to = from + MESSAGE_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from("conversation_messages")
+      .select("id, conversation_id, turn_id, position, role, source, content, created_at")
+      .eq("conversation_id", conversationId)
+      .order("position", { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      throw new Error(`Could not load messages: ${error.message}`);
+    }
+
+    const page = (data ?? []) as ChatMessage[];
+    messages.push(...page);
+
+    if (page.length < MESSAGE_PAGE_SIZE) {
+      break;
+    }
   }
 
-  return (data ?? []) as ChatMessage[];
+  return messages;
 }
 
 export async function nextMessagePosition(

@@ -7,6 +7,8 @@ import {
 } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
+const TOOL_EVENT_PAGE_SIZE = 1000;
+
 export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
@@ -21,14 +23,7 @@ export async function GET() {
 
       const conversationId = await ensureConversation(supabase, agent.name);
       transcripts[agent.name] = await loadConversationMessages(supabase, conversationId);
-      const { data: events, error: eventsError } = await supabase
-        .from("tool_events")
-        .select("id, agent, conversation_id, turn_id, round, tool_name, ok, result_preview, result_chars, created_at")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true })
-        .limit(500);
-
-      tool_events[agent.name] = eventsError ? [] : events ?? [];
+      tool_events[agent.name] = await loadToolEvents(supabase, conversationId);
     }
 
     return NextResponse.json({ agents, transcripts, tool_events });
@@ -38,4 +33,35 @@ export async function GET() {
       { status: 500 }
     );
   }
+}
+
+async function loadToolEvents(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  conversationId: string
+) {
+  const events = [];
+
+  for (let from = 0; ; from += TOOL_EVENT_PAGE_SIZE) {
+    const to = from + TOOL_EVENT_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from("tool_events")
+      .select("id, agent, conversation_id, turn_id, round, tool_name, ok, result_preview, result_chars, created_at")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      console.warn(`Could not load tool events for ${conversationId}: ${error.message}`);
+      return [];
+    }
+
+    const page = data ?? [];
+    events.push(...page);
+
+    if (page.length < TOOL_EVENT_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return events;
 }
