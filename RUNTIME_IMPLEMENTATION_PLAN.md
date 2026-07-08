@@ -14,6 +14,8 @@ The plan is not to copy Kim's system wholesale. The plan is to borrow the patter
 - Keep raw source material before writing summaries.
 - Treat "or nothing at all" as a valid agent action.
 - Keep providers swappable where possible.
+- Prefer the open, provider-neutral shape first. Use the current Anthropic
+  Soren/Varro runtime as the test bed, not the permanent boundary.
 - Expose enough runtime state for Chris to understand what happened without micromanaging every turn.
 - Do not restart or change the live runtime while Chris is actively testing with Varro or Soren.
 - Let Julian own architecture, review, and integration; let worker agents take bounded implementation slices.
@@ -49,15 +51,25 @@ Near-term work:
 - Document and surface the distinction between stored transcript, active prompt
   context, and billable tokens. A 1,000-message stored conversation should not
   imply a 1,000-message prompt on every turn.
-- Persist Anthropic usage fields per turn:
+- Persist provider-neutral usage records per model/API call, with Anthropic as
+  the first adapter:
+  - provider
+  - model
+  - agent
+  - conversation id
+  - turn id
+  - source
   - input tokens
   - output tokens
   - cache read tokens
   - cache creation tokens
+- Store provider-specific raw usage details separately enough that future
+  OpenAI, local, or other model adapters can coexist without inventing false
+  equivalence.
 - Add conversation-level totals.
 - Surface cache and token totals in `/api/health`.
 - Clarify the current prompt-cache TTL behavior and document the 5-minute vs. 1-hour tradeoff.
-- Estimate dollar cost only after usage logging is reliable.
+- Estimate dollar cost through pricing adapters only after usage logging is reliable.
 
 Later work:
 

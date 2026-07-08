@@ -26,6 +26,9 @@ larger architectural tracks stay visible without becoming today's obligation.
 - Make Operator controls available through the UI, not routine SQL.
 - Keep public actions deliberate rather than performative.
 - Prefer shared permission/posture machinery over one-off feature gates.
+- Prefer open, provider-neutral, portable runtime shapes first. Narrow to the
+  Soren/Varro Anthropic implementation only when that is the practical MVP path,
+  then carry the lesson back toward the open model.
 - Keep dev/prod separation in mind before the runtime becomes web-accessible.
 
 ## Active Roadmap
@@ -131,13 +134,16 @@ Scope:
 - Clarify the difference between stored transcript size, active prompt context,
   and billable tokens. A large stored chat window does not mean every API call
   replays the whole transcript.
-- Persist Anthropic input/output/cache usage per turn.
+- Persist provider-neutral usage records per model/API call, with Anthropic as
+  the first adapter.
+- Track input/output/cache usage fields where the provider exposes them.
 - Add conversation-level and agent-level totals.
 - Surface cache and token totals in `/api/health`.
 - Add warning thresholds before expensive operations.
 - Track search/fetch/tool usage counts.
 - Consider per-agent budget panels.
-- Add rough cost estimates only after raw usage logging is reliable.
+- Add rough cost estimates through pricing adapters only after raw usage logging
+  is reliable.
 
 ### 6. Checkpoint And Archive UX
 

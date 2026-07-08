@@ -32,6 +32,21 @@ Environment rules:
 - Never point local exploratory work at prod data unless the task is explicitly
   prod operations.
 
+## Portability Bias
+
+Design the runtime toward an open, provider-neutral shape wherever practical.
+Soren and Varro's Anthropic-backed runtime is the proving ground, not the final
+boundary.
+
+- Name abstractions after runtime concepts, not provider brands, when the
+  concept can travel.
+- Keep provider-specific behavior behind adapters or clearly marked fields.
+- Store raw provider details when useful, but do not make downstream features
+  depend on one provider's exact vocabulary unless the slice explicitly requires
+  it.
+- If an MVP must narrow to Anthropic or to Soren/Varro, document the narrowing
+  and the intended portable shape.
+
 ## Database Changes
 
 Schema changes should be repeatable, reviewable, and environment-aware.
