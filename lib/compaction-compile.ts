@@ -11,14 +11,18 @@ import {
   type CompactionSource
 } from "@/lib/compaction";
 import { anthropicCacheControl } from "@/lib/anthropic-cache";
+import { recordModelUsage } from "@/lib/model-usage";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 type AnthropicResponse = {
+  id?: string;
+  model?: string;
   content?: Array<{
     text?: string;
     type?: string;
   }>;
   stop_reason?: string;
+  usage?: unknown;
   error?: {
     message?: string;
   };
@@ -51,12 +55,14 @@ export async function compileCompactionProposal({
   agent,
   dryRun = false,
   maxChars,
-  maxTokens
+  maxTokens,
+  requestSource = "compaction_compile"
 }: {
   agent: AgentName;
   dryRun?: boolean;
   maxChars?: unknown;
   maxTokens?: unknown;
+  requestSource?: string;
 }) {
   const supabase = getSupabaseAdmin();
   const preview = await buildCompactionPreview(supabase, agent);
@@ -94,6 +100,8 @@ export async function compileCompactionProposal({
   const proposal = await compileWithAnthropic({
     agent,
     apiKey,
+    conversationId,
+    requestSource,
     maxTokens: numberInput(
       maxTokens,
       numberEnv("COMPACTION_COMPILE_MAX_TOKENS", DEFAULT_COMPILE_MAX_TOKENS)
@@ -115,16 +123,21 @@ export async function compileCompactionProposal({
 async function compileWithAnthropic({
   agent,
   apiKey,
+  conversationId,
+  requestSource,
   maxTokens,
   preview,
   source
 }: {
   agent: AgentName;
   apiKey: string;
+  conversationId: string;
+  requestSource: string;
   maxTokens: number;
   preview: Awaited<ReturnType<typeof buildCompactionPreview>>;
   source: CompactionSource;
 }) {
+  const model = modelForAgent(agent);
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -133,7 +146,7 @@ async function compileWithAnthropic({
       "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
-      model: modelForAgent(agent),
+      model,
       max_tokens: maxTokens,
       ...anthropicCacheControl(),
       system: [
@@ -170,6 +183,25 @@ async function compileWithAnthropic({
       data?.error?.message || data?.message || `Anthropic request failed: ${response.status}`;
     throw new Error(errorMessage);
   }
+
+  await recordModelUsage(getSupabaseAdmin(), {
+    provider: "anthropic",
+    model: data.model || model,
+    agent,
+    conversationId,
+    turnId: null,
+    source: requestSource,
+    operation: "compaction_compile",
+    round: 0,
+    providerRequestId: data.id ?? null,
+    stopReason: data.stop_reason ?? null,
+    usage: data.usage,
+    request: {
+      maxTokens,
+      messageCount: 1,
+      toolCount: 0
+    }
+  });
 
   const proposal = extractText(data);
   validateProposalComplete(proposal, data.stop_reason, maxTokens);

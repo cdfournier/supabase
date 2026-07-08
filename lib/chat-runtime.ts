@@ -16,6 +16,7 @@ import {
 } from "@/lib/anthropic-attachments";
 import { filterToolsForAgent } from "@/lib/capability-profile";
 import { latestCompactionCheckpoint, messagesAfterCheckpoint } from "@/lib/compaction";
+import { recordModelUsage } from "@/lib/model-usage";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
   type AttachmentInput,
@@ -50,8 +51,11 @@ type RuntimeToolEvent = {
 };
 
 type AnthropicResponse = {
+  id?: string;
+  model?: string;
   content?: AnthropicContentBlock[];
   stop_reason?: string;
+  usage?: unknown;
   error?: {
     message?: string;
   };
@@ -127,7 +131,8 @@ export async function sendAgentMessage(
     conversationId,
     system,
     messages,
-    turnId
+    turnId,
+    source
   });
 
   const assistantText = extractAssistantText(data);
@@ -204,7 +209,8 @@ async function runAnthropicToolLoop({
   conversationId,
   system,
   messages,
-  turnId
+  turnId,
+  source
 }: {
   apiKey: string;
   agent: AgentName;
@@ -212,6 +218,7 @@ async function runAnthropicToolLoop({
   system: string;
   messages: AnthropicMessage[];
   turnId: string;
+  source: string;
 }) {
   const model = modelForAgent(agent);
   const maxTokens = maxResponseTokens();
@@ -220,6 +227,7 @@ async function runAnthropicToolLoop({
   const tools = await filterToolsForAgent(getSupabaseAdmin(), agent, toolDefinitions);
 
   for (let round = 0; round <= maxToolRounds; round += 1) {
+    const messageCount = messages.length;
     const data = await callAnthropic({
       apiKey,
       model,
@@ -227,6 +235,24 @@ async function runAnthropicToolLoop({
       system,
       messages,
       tools
+    });
+    await recordModelUsage(getSupabaseAdmin(), {
+      provider: "anthropic",
+      model: data.model || model,
+      agent,
+      conversationId,
+      turnId,
+      source,
+      operation: "chat_tool_loop",
+      round,
+      providerRequestId: data.id ?? null,
+      stopReason: data.stop_reason ?? null,
+      usage: data.usage,
+      request: {
+        maxTokens,
+        messageCount,
+        toolCount: tools.length
+      }
     });
     const toolUses = toolUseBlocks(data);
 

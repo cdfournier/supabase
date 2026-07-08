@@ -275,7 +275,8 @@ export async function compileRuntimeCompactionProposal(agent: AgentName, input: 
     agent,
     dryRun: isRecord(input) && input.dry_run === true,
     maxChars: isRecord(input) ? input.max_chars : undefined,
-    maxTokens: isRecord(input) ? input.max_tokens : undefined
+    maxTokens: isRecord(input) ? input.max_tokens : undefined,
+    requestSource: "agent_tool_compaction_compile"
   });
 
   return stringifyToolPayload({
@@ -294,7 +295,8 @@ export async function compileAndSaveRuntimeCompactionProposal(agent: AgentName, 
     agent,
     dryRun: false,
     maxChars: isRecord(input) ? input.max_chars : undefined,
-    maxTokens: isRecord(input) ? input.max_tokens : undefined
+    maxTokens: isRecord(input) ? input.max_tokens : undefined,
+    requestSource: "agent_tool_compaction_compile"
   });
 
   const proposal = "proposal" in compiled ? cleanMultilineText(compiled.proposal) : "";

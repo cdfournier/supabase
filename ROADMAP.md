@@ -11,7 +11,7 @@ larger architectural tracks stay visible without becoming today's obligation.
 2. Operator Notes / Inbox V1
 3. Julian-to-runtime bridge messaging
 4. Web search provider decision
-5. Usage, cost, and cache accounting
+5. Usage, cost, and cache accounting V1 follow-up
 6. Checkpoint archive browsing and collapsed-history UI
 7. EYES still-frame MVP
 8. WHEELS supervised-control planning
@@ -125,7 +125,7 @@ Requirements:
 
 ### 5. Usage, Cost, And Cache Accounting
 
-Status: planned.
+Status: first implementation slice landed; budget UX still planned.
 
 Purpose: make runtime cost and pressure visible before autonomous activity grows.
 
@@ -135,9 +135,11 @@ Scope:
   and billable tokens. A large stored chat window does not mean every API call
   replays the whole transcript.
 - Persist provider-neutral usage records per model/API call, with Anthropic as
-  the first adapter.
+  the first adapter. Implemented first for chat/tool-loop and compaction-compile
+  calls.
 - Track input/output/cache usage fields where the provider exposes them.
-- Add conversation-level and agent-level totals.
+- Add conversation-level and agent-level totals. Agent and global totals are in
+  `/api/health`; richer conversation panels remain future work.
 - Surface cache and token totals in `/api/health`.
 - Add warning thresholds before expensive operations.
 - Track search/fetch/tool usage counts.
@@ -254,6 +256,19 @@ Required before external access:
 - Decision on whether destructive transcript replacement is ever needed.
 
 ## Release Notes
+
+### 2026-07-08
+
+Runtime visibility:
+
+- Fixed runtime transcript loading past Supabase/PostgREST's default 1,000-row
+  page, restoring Soren's full active window in the UI.
+- Added provider-neutral `model_usage_events` storage for model/API usage.
+- Logged Anthropic chat/tool-loop calls per round instead of once per user turn.
+- Logged compaction compiler usage separately from normal chat turns.
+- Surfaced global and per-agent model usage totals in `/api/health`.
+- Added a runtime health-panel row for model usage totals, with `schema needed`
+  shown before the migration is applied.
 
 ### 2026-07-07
 

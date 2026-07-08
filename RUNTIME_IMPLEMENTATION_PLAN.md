@@ -71,6 +71,18 @@ Near-term work:
 - Clarify the current prompt-cache TTL behavior and document the 5-minute vs. 1-hour tradeoff.
 - Estimate dollar cost through pricing adapters only after usage logging is reliable.
 
+Implemented first slice:
+
+- Added repeatable `model_usage_events` schema and migration.
+- Added provider-neutral usage logging helpers with Anthropic usage
+  normalization.
+- Logged each Anthropic chat/tool-loop round with source, turn, model, stop
+  reason, normalized token fields, raw provider usage, and request summary.
+- Logged compaction compiler calls as separate `compaction_compile` operations.
+- Added global and per-agent usage totals to `/api/health`.
+- Added runtime health-panel model usage totals, with a schema-needed fallback
+  before the migration is applied.
+
 Later work:
 
 - Add per-agent budget panels.

@@ -19,6 +19,7 @@ import {
   filterToolsForAgent,
   loadAgentCapabilityProfile
 } from "@/lib/capability-profile";
+import { loadUsageTotals } from "@/lib/model-usage";
 import { readFreeMomentsEnabled } from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { toolDefinitions } from "@/lib/tools/registry";
@@ -48,6 +49,7 @@ export async function GET() {
     const supabase = getSupabaseAdmin();
     const agents = await loadAgentList(supabase);
     const freeMomentsEnabled = await readFreeMomentsEnabled().catch(() => false);
+    const usage = await loadUsageTotals(supabase);
     const agentHealth = [];
 
     for (const agent of agents) {
@@ -88,6 +90,7 @@ export async function GET() {
         policy: "loaded from restoration_profiles.compaction_memory_policy",
         pressure_basis: "approximate saved conversation character count; not tokenizer-accurate"
       },
+      usage,
       agents: agentHealth
     });
   } catch (error) {
@@ -195,6 +198,7 @@ async function buildAgentHealth(
     : ((archiveResult.data?.[0] ?? null) as ArchiveHealthRow | null);
   const capabilityProfile = await loadAgentCapabilityProfile(supabase, agent);
   const availableTools = await filterToolsForAgent(supabase, agent, toolDefinitions);
+  const usage = await loadUsageTotals(supabase, agent);
 
   return {
     agent,
@@ -249,6 +253,7 @@ async function buildAgentHealth(
       available_tool_count: availableTools.length,
       blocked_tool_count: toolDefinitions.length - availableTools.length
     },
+    usage,
     memory: {
       rows: memoryResult.count ?? memoryResult.data?.length ?? 0,
       active_rows: activeMemories.length,

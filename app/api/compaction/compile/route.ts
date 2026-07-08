@@ -15,7 +15,8 @@ export async function POST(request: Request) {
       await compileCompactionProposal({
         agent,
         dryRun: body.dry_run === true,
-        maxChars: body.max_chars
+        maxChars: body.max_chars,
+        requestSource: "operator_compaction_compile"
       })
     );
   } catch (error) {

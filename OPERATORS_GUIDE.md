@@ -64,6 +64,7 @@ Use it to check:
 - required environment values are present
 - available tool count
 - tool event count
+- model usage call/token totals when `model_usage_events` is present
 - saved message count
 - rough compaction pressure
 - compaction archive table presence, archive counts, and latest archive basics
@@ -96,9 +97,15 @@ This means a 1,000-message stored transcript does not mean every turn sends
 tool loops, compaction compilation, direct media delivery, Free Moments, web
 fetches, and large source-material reads.
 
-The runtime already has gates, but not a full meter. Token and cache accounting
-should log per-call Anthropic usage, roll it up per turn, surface totals in
-`/api/health`, and add budget warnings before attaching dollar estimates.
+The first usage meter logs Anthropic chat/tool-loop and compaction-compile calls
+into `model_usage_events`, then rolls up call and token totals in `/api/health`
+and the runtime health panel. Run `sql/2026-07-08-model-usage-events.sql`
+before relying on the meter; until then the health panel reports `schema needed`
+and the runtime keeps working.
+
+V1 records raw provider usage plus normalized input, output, cache-read, and
+cache-creation token fields. It does not estimate dollars yet. Add budget
+warnings and pricing adapters only after raw usage logging has stayed reliable.
 
 ## Free Moments
 

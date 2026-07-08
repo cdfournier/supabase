@@ -76,7 +76,19 @@ type Health = {
     policy: string;
     pressure_basis: string;
   };
+  usage?: UsageTotals;
   agents: AgentHealth[];
+};
+
+type UsageTotals = {
+  table_present: boolean;
+  error: string | null;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  total_tokens: number;
 };
 
 type AgentHealth = {
@@ -112,6 +124,7 @@ type AgentHealth = {
     percent: number;
     note: string;
   };
+  usage?: UsageTotals;
 };
 
 type CompactionPreview = {
@@ -1162,6 +1175,16 @@ function RuntimeHealthPanel({
                 {activeHealth.memory.tool_events_error
                   ? "schema needed"
                   : activeHealth.memory.tool_events ?? 0}
+              </dd>
+            </div>
+            <div>
+              <dt>Model usage</dt>
+              <dd>
+                {activeHealth.usage?.error
+                  ? "schema needed"
+                  : `${activeHealth.usage?.calls ?? 0} calls / ${(
+                      activeHealth.usage?.total_tokens ?? 0
+                    ).toLocaleString()} tokens`}
               </dd>
             </div>
             <div>
