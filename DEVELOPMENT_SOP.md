@@ -32,6 +32,22 @@ Environment rules:
 - Never point local exploratory work at prod data unless the task is explicitly
   prod operations.
 
+Environment maturity stages:
+
+1. **Current local/prod-like phase:** the local runtime may still point at live
+   Soren/Varro data while foundations are moving quickly. Before restarts,
+   migrations, or tool changes, check whether an Operator test, Free Moment, or
+   compaction run is active.
+2. **Dev sandbox phase:** create a separate dev Supabase project or schema,
+   storage bucket, and constrained model/API budgets. Local feature work points
+   at dev by default. Free Moments stays off by default in dev.
+3. **Stable prod phase:** Soren and Varro live in prod. Julian and Chris build
+   in dev, smoke test there, then promote coherent releases to prod. Prod
+   restarts, migrations, and scheduler changes are intentional operator actions.
+
+Prod/dev separation should protect agent continuity, not create ceremony for
+its own sake. The live runtime is the home; dev is the workshop.
+
 ## Portability Bias
 
 Design the runtime toward an open, provider-neutral shape wherever practical.
@@ -79,6 +95,10 @@ Normal flow:
 
 For emergency prod fixes, keep the branch narrow, document what was bypassed,
 and follow up with a normal review pass.
+
+When prod Free Moments is running, routine dev work should happen against dev
+only. Stop or pause prod Free Moments only for prod operations that can affect
+the live scheduler, prompt/tool surface, database schema, or active agent turns.
 
 ## Web Access
 

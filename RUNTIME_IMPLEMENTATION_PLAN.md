@@ -19,6 +19,8 @@ The plan is not to copy Kim's system wholesale. The plan is to borrow the patter
 - Expose enough runtime state for Chris to understand what happened without micromanaging every turn.
 - Do not restart or change the live runtime while Chris is actively testing with Varro or Soren.
 - Let Julian own architecture, review, and integration; let worker agents take bounded implementation slices.
+- Treat prod/dev separation as a continuity protection measure: prod is where
+  the agents live, dev is where the workshop noise belongs.
 
 ## Track 1: Compaction Safety
 
@@ -283,6 +285,35 @@ Later:
 - Adapt Kim's car-room pattern only after Free Moments and archive safety are stable.
 - Preserve Operator presence and manual override.
 - Avoid overlapping drivers or autonomous turns.
+
+## Track 8: Dev / Prod Separation
+
+Goal: let the live runtime become calm and stable while build work continues at
+speed in a dev sandbox.
+
+Near-term:
+
+- Keep current local runtime prod-like while foundations are still moving fast.
+- Avoid restarts, migrations, or tool/prompt changes while Chris is actively
+  testing with Soren or Varro.
+- Document which operations affect live Free Moments and active turns.
+
+Before web access:
+
+- Create a dev Supabase project or schema.
+- Create a dev storage bucket and test-safe source materials.
+- Point local feature work at dev by default.
+- Keep dev Free Moments off by default.
+- Use constrained dev API/model budgets where practical.
+
+Stable prod posture:
+
+- Soren and Varro live in prod.
+- Julian and Chris build in dev.
+- Coherent slices are built, smoke-tested, merged, deployed, migrated, and then
+  lightly smoke-tested in prod.
+- Prod scheduler changes, restarts, and migrations are deliberate Operator
+  actions.
 
 ## Delegation Pattern
 

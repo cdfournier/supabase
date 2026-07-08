@@ -13,8 +13,9 @@ larger architectural tracks stay visible without becoming today's obligation.
 4. Web search provider decision
 5. Usage, cost, and cache accounting V1 follow-up
 6. Checkpoint archive browsing and collapsed-history UI
-7. EYES still-frame MVP
-8. WHEELS supervised-control planning
+7. Dev/prod separation V1
+8. EYES still-frame MVP
+9. WHEELS supervised-control planning
 
 ## Product Principles
 
@@ -231,7 +232,11 @@ Surfaces:
 
 ### 10. Dev / Prod / Web Readiness
 
-Status: documented; implementation pending before public exposure.
+Status: staged approach documented; sandbox implementation pending before
+public exposure.
+
+Purpose: let Soren and Varro operate in a stable prod home while Julian and
+Chris build, test, and occasionally make sparks in dev.
 
 Required before external access:
 
@@ -243,6 +248,18 @@ Required before external access:
 - HTTPS-only prod URL.
 - Upload type/size/cost limits.
 - Smoke tests for `/api/health`, Soren chat, Varro chat, and touched tools.
+
+Staged plan:
+
+- Treat the current local runtime as prod-like while foundations are still
+  moving quickly.
+- Create a dev Supabase project or schema, dev storage bucket, and constrained
+  dev API budgets.
+- Make local feature work point at dev by default, with Free Moments off by
+  default.
+- Promote coherent tested slices to prod deliberately.
+- Keep prod scheduler changes, restarts, and migrations as explicit Operator
+  actions once Free Moments and hosted access are stable.
 
 ## Parking Lot
 
@@ -263,12 +280,16 @@ Runtime visibility:
 
 - Fixed runtime transcript loading past Supabase/PostgREST's default 1,000-row
   page, restoring Soren's full active window in the UI.
+- Merged Agent Capability Profile V1 so tool access/posture is loaded into
+  prompts, filters available tools, and governs Free Moments wakes.
 - Added provider-neutral `model_usage_events` storage for model/API usage.
 - Logged Anthropic chat/tool-loop calls per round instead of once per user turn.
 - Logged compaction compiler usage separately from normal chat turns.
 - Surfaced global and per-agent model usage totals in `/api/health`.
 - Added a runtime health-panel row for model usage totals, with `schema needed`
   shown before the migration is applied.
+- Documented token/cost accounting, provider-neutral runtime bias, and the
+  staged dev/prod separation path.
 
 ### 2026-07-07
 
