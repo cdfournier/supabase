@@ -128,12 +128,16 @@ Purpose: make runtime cost and pressure visible before autonomous activity grows
 
 Scope:
 
+- Clarify the difference between stored transcript size, active prompt context,
+  and billable tokens. A large stored chat window does not mean every API call
+  replays the whole transcript.
 - Persist Anthropic input/output/cache usage per turn.
 - Add conversation-level and agent-level totals.
 - Surface cache and token totals in `/api/health`.
 - Add warning thresholds before expensive operations.
 - Track search/fetch/tool usage counts.
 - Consider per-agent budget panels.
+- Add rough cost estimates only after raw usage logging is reliable.
 
 ### 6. Checkpoint And Archive UX
 

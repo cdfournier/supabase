@@ -73,6 +73,33 @@ The compaction pressure is approximate. It uses saved conversation character cou
 
 The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stops a response at that cap, the runtime appends a transcript-visible note so the agent and operator know the message may be incomplete. Raise this value in `.env.local` during long-form testing, then restart the server.
 
+## Stored Messages, Prompt Context, And Cost
+
+The chat window and Supabase transcript can be much larger than the prompt sent
+to Anthropic on a normal turn. Stored messages are the archive; active prompt
+context is the bounded packet assembled for the current API call.
+
+Normal chat turns currently send:
+
+- the system prompt, including identity, memories, current state, and capability
+  profile,
+- the latest approved compaction checkpoint, when present,
+- only the most recent active messages allowed by `ANTHROPIC_HISTORY_MESSAGES`,
+- each recent message clipped by `ANTHROPIC_HISTORY_MESSAGE_CHARS`,
+- the current Operator message,
+- tool results if the model uses tools,
+- direct PDF/image attachment blocks only when an attachment passes the current
+  delivery caps.
+
+This means a 1,000-message stored transcript does not mean every turn sends
+1,000 messages to Anthropic. Cost can still rise through large system context,
+tool loops, compaction compilation, direct media delivery, Free Moments, web
+fetches, and large source-material reads.
+
+The runtime already has gates, but not a full meter. Token and cache accounting
+should log per-call Anthropic usage, roll it up per turn, surface totals in
+`/api/health`, and add budget warnings before attaching dollar estimates.
+
 ## Free Moments
 
 Free Moments is a local, in-process scheduler. It does not auto-start when the app boots.

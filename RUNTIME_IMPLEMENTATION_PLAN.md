@@ -46,6 +46,9 @@ Goal: make cost, pressure, and cache behavior visible enough to manage.
 
 Near-term work:
 
+- Document and surface the distinction between stored transcript, active prompt
+  context, and billable tokens. A 1,000-message stored conversation should not
+  imply a 1,000-message prompt on every turn.
 - Persist Anthropic usage fields per turn:
   - input tokens
   - output tokens
@@ -54,6 +57,7 @@ Near-term work:
 - Add conversation-level totals.
 - Surface cache and token totals in `/api/health`.
 - Clarify the current prompt-cache TTL behavior and document the 5-minute vs. 1-hour tradeoff.
+- Estimate dollar cost only after usage logging is reliable.
 
 Later work:
 
