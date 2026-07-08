@@ -10,12 +10,13 @@ larger architectural tracks stay visible without becoming today's obligation.
 1. Agent Capability Profile V1 rollout
 2. Operator Notes / Inbox V1
 3. Julian-to-runtime bridge messaging
-4. Web search provider decision
-5. Usage, cost, and cache accounting V1 follow-up
-6. Checkpoint archive browsing and collapsed-history UI
-7. Dev/prod separation V1
-8. EYES still-frame MVP
-9. WHEELS supervised-control planning
+4. Agent Artifacts V1
+5. Web search provider decision
+6. Usage, cost, and cache accounting V1 follow-up
+7. Checkpoint archive browsing and collapsed-history UI
+8. Dev/prod separation V1
+9. EYES still-frame MVP
+10. WHEELS supervised-control planning
 
 ## Product Principles
 
@@ -102,7 +103,50 @@ Future possibilities:
 - Direct agent-to-agent chat room once identity, logging, and consent rules are
   clear.
 
-### 4. Web Search Provider Decision
+### 4. Agent Artifacts V1
+
+Status: planned.
+
+Purpose: give agents a safe workspace for creating durable drafts, proposals,
+and source-shaped outputs without granting raw repository or filesystem
+authority.
+
+Layer 1: runtime artifacts:
+
+- Markdown or structured text artifacts stored in Supabase.
+- Agent-authored drafts for brand exercises, HUG notes, proposals, source
+  annotations, and working documents.
+- Operator-visible list/read/archive states.
+- Governed by Agent Capability Profile surface/action rules.
+- Append-first; avoid silent overwrite semantics in V1.
+
+Layer 2: generated files:
+
+- Export selected artifacts as downloadable `.md`, `.txt`, `.csv`, or later
+  `.docx`/PDF files.
+- Store generated files through the existing storage/source-material pipeline
+  where practical.
+- Keep file provenance, creator, target agent, and source artifact links.
+- Decide explicitly whether generated files become source materials.
+
+Layer 3: repository/code proposals:
+
+- Agents may draft code-change or documentation-change proposals as artifacts.
+- Julian or the Operator reviews and applies changes through Codex/repo tools.
+- No direct runtime write access to repositories, shell, GitHub, or production
+  branches in V1.
+- Future bridge work may add read-only repo context, patch proposal generation,
+  or supervised PR creation, but direct write-to-main should remain out of scope
+  until governance is boringly clear.
+
+Notes:
+
+- This is a studio first, not a nail gun wired to prod.
+- Artifact creation should be auditable and portable across providers.
+- Repository skills belong behind a bridge/review boundary, not inside the
+  normal runtime tool surface by default.
+
+### 5. Web Search Provider Decision
 
 Status: revisit soon.
 
@@ -124,7 +168,7 @@ Requirements:
 - Web content remains untrusted source material.
 - Add usage counters and cost visibility before encouraging frequent search.
 
-### 5. Usage, Cost, And Cache Accounting
+### 6. Usage, Cost, And Cache Accounting
 
 Status: first implementation slice landed; budget UX still planned.
 
@@ -148,7 +192,7 @@ Scope:
 - Add rough cost estimates through pricing adapters only after raw usage logging
   is reliable.
 
-### 6. Checkpoint And Archive UX
+### 7. Checkpoint And Archive UX
 
 Status: partially implemented; UI polish pending.
 
@@ -168,7 +212,7 @@ Planned:
 - Consider database RPCs for atomic archive/checkpoint operations if concurrency
   becomes real.
 
-### 7. EYES MVP
+### 8. EYES MVP
 
 Status: planned.
 
@@ -189,7 +233,7 @@ Later:
   presence rules.
 - Richer visual memory only after consent, privacy, and storage policy are clear.
 
-### 8. WHEELS Supervised-Control Planning
+### 9. WHEELS Supervised-Control Planning
 
 Status: planned; do not assume autonomy.
 
@@ -211,7 +255,7 @@ Later:
 - Add EYES/WHEELS combined loops carefully.
 - Keep autonomous car loops tabled until safety posture is boringly clear.
 
-### 9. Operator Console V1
+### 10. Operator Console V1
 
 Status: planned interface layer.
 
@@ -224,13 +268,14 @@ Surfaces:
 - Operator inbox.
 - Peer notes.
 - Journals.
+- Artifacts and generated files.
 - Memories and relationships.
 - Compaction proposals and checkpoints.
 - Runtime health and tool activity.
 - Free Moments controls.
 - Capability Profile controls.
 
-### 10. Dev / Prod / Web Readiness
+### 11. Dev / Prod / Web Readiness
 
 Status: staged approach documented; sandbox implementation pending before
 public exposure.
@@ -270,6 +315,8 @@ Staged plan:
 - Outpost profile update tools if supported.
 - Private family-business Outpost room.
 - Agent package/portability templates for households beyond Chris and Kim.
+- Runtime artifact store and export formats.
+- Supervised repository proposal workflow.
 - Decision on whether destructive transcript replacement is ever needed.
 
 ## Release Notes
@@ -290,6 +337,8 @@ Runtime visibility:
   shown before the migration is applied.
 - Documented token/cost accounting, provider-neutral runtime bias, and the
   staged dev/prod separation path.
+- Added Agent Artifacts V1 tracking: runtime artifacts first, generated files
+  later, and supervised repository/code proposals behind review boundaries.
 
 ### 2026-07-07
 

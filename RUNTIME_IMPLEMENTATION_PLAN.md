@@ -271,7 +271,50 @@ Implemented peer-note slice:
 - Added active-agent-scoped tools to send to the other peer, list addressed notes, read one addressed note, and mark an addressed note read.
 - Kept V1 non-realtime and Operator-visible; reads do not mark notes read automatically.
 
-## Track 7: WHEELS/EYES And Car Loops
+## Track 7: Agent Artifacts
+
+Goal: give agents a durable creative/work surface before giving them any
+repository or filesystem authority.
+
+Layer 1: runtime artifacts:
+
+- Add an `artifacts` table for agent-authored work products.
+- Start with Markdown/plain-text and structured JSON metadata.
+- Include agent, title, body, artifact type, status, visibility, source links,
+  created_at, updated_at, and archived state.
+- Add read/list/create/update/archive tools scoped to the active agent and
+  governed by Agent Capability Profile.
+- Add Operator UI list/read/archive controls.
+- Treat artifacts as drafts unless explicitly promoted.
+
+Layer 2: generated files:
+
+- Export artifacts into downloadable files after the artifact model is stable.
+- Start with `.md`, `.txt`, and `.csv`; consider `.docx`/PDF only when layout
+  and rendering rules are clear.
+- Store exports through Supabase Storage with provenance back to the artifact.
+- Decide whether an exported file should automatically become source material
+  or remain only an output.
+
+Layer 3: repository/code proposals:
+
+- Let agents draft repository or documentation changes as artifacts first.
+- Julian or the Operator applies reviewed changes through Codex, local repo
+  tools, and normal commit/push flow.
+- Keep direct shell, filesystem, GitHub, and production-branch authority outside
+  the runtime agent surface in V1.
+- Future bridge work can add read-only repo context, patch proposal artifacts,
+  or supervised PR creation after dev/prod and Operator review boundaries are
+  stable.
+
+Safety posture:
+
+- Append-first; avoid destructive overwrites in V1.
+- Keep provenance and authorship visible.
+- Make artifact permissions portable and provider-neutral.
+- Repository skills are bridge/review capabilities, not default runtime tools.
+
+## Track 8: WHEELS/EYES And Car Loops
 
 Goal: return to embodied experiences after runtime foundations are stronger.
 
@@ -286,7 +329,7 @@ Later:
 - Preserve Operator presence and manual override.
 - Avoid overlapping drivers or autonomous turns.
 
-## Track 8: Dev / Prod Separation
+## Track 9: Dev / Prod Separation
 
 Goal: let the live runtime become calm and stable while build work continues at
 speed in a dev sandbox.
