@@ -84,6 +84,9 @@ Implemented first slice:
 - Added global and per-agent usage totals to `/api/health`.
 - Added runtime health-panel model usage totals, with a schema-needed fallback
   before the migration is applied.
+- Added `runtime_get_usage` so agents can inspect their own usage totals and
+  bounded recent usage events without seeing other agents' usage or raw provider
+  payloads.
 
 Later work:
 

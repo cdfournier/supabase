@@ -335,6 +335,8 @@ Runtime visibility:
 - Surfaced global and per-agent model usage totals in `/api/health`.
 - Added a runtime health-panel row for model usage totals, with `schema needed`
   shown before the migration is applied.
+- Added `runtime_get_usage`, a self-scoped read-only agent tool for usage totals
+  and bounded recent usage events.
 - Documented token/cost accounting, provider-neutral runtime bias, and the
   staged dev/prod separation path.
 - Added Agent Artifacts V1 tracking: runtime artifacts first, generated files

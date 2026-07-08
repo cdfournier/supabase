@@ -36,6 +36,7 @@ import {
   upsertRuntimeRelationship
 } from "@/lib/tools/runtime-memory";
 import {
+  getRuntimeUsage,
   getRuntimeTime,
   listPeerNotes,
   markPeerNoteRead,
@@ -70,6 +71,26 @@ export const toolDefinitions: ToolDefinition[] = [
     input_schema: {
       type: "object",
       properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "runtime_get_usage",
+    description:
+      "Read the active agent's own runtime usage meter: model/API call totals, normalized token totals, and optionally recent usage events. This is self-scoped and does not expose other agents or raw provider payloads.",
+    input_schema: {
+      type: "object",
+      properties: {
+        include_recent: {
+          type: "boolean",
+          description: "Whether to include recent usage events. Defaults to true."
+        },
+        limit: {
+          type: "number",
+          description: "Recent usage event limit. Defaults to 5 and caps at 20."
+        }
+      },
       required: [],
       additionalProperties: false
     }
@@ -1010,6 +1031,11 @@ export async function runTool(
         return {
           ok: true,
           content: await getRuntimeTime()
+        };
+      case "runtime_get_usage":
+        return {
+          ok: true,
+          content: await getRuntimeUsage(agent, input)
         };
       case "peer_send_note":
         return {

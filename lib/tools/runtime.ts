@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { AgentName } from "@/lib/agent-context";
+import { loadRecentUsageEvents, loadUsageTotals } from "@/lib/model-usage";
 import { runtimeClock } from "@/lib/runtime-clock";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
@@ -8,6 +9,8 @@ const PEER_AGENTS = new Set(["soren", "varro"]);
 const MAX_NOTE_SUBJECT = 160;
 const MAX_NOTE_BODY = 4000;
 const NOTE_LIST_LIMIT = 20;
+const DEFAULT_USAGE_EVENT_LIMIT = 5;
+const MAX_USAGE_EVENT_LIMIT = 20;
 
 export async function getRuntimeTime() {
   return JSON.stringify(
@@ -19,6 +22,39 @@ export async function getRuntimeTime() {
     null,
     2
   );
+}
+
+export async function getRuntimeUsage(agent: AgentName, input: unknown) {
+  if (input !== undefined && !isRecord(input)) {
+    throw new Error("runtime_get_usage requires an object input.");
+  }
+
+  const includeRecent = isRecord(input) ? input.include_recent !== false : true;
+  const limit = clampNumber(
+    isRecord(input) ? input.limit : undefined,
+    DEFAULT_USAGE_EVENT_LIMIT,
+    0,
+    MAX_USAGE_EVENT_LIMIT
+  );
+  const supabase = getSupabaseAdmin();
+  const totals = await loadUsageTotals(supabase, agent);
+  const recent = includeRecent
+    ? await loadRecentUsageEvents(supabase, agent, limit)
+    : { table_present: totals.table_present, error: null, events: [] };
+
+  return stringifyToolPayload({
+    note:
+      "Self-scoped runtime usage meter for the active agent. Totals are model/API usage events recorded by the runtime; dollar estimates are not implemented yet.",
+    agent,
+    scope: "active_agent_only",
+    totals,
+    recent_events: recent.events,
+    recent_error: recent.error,
+    limits: {
+      requested_recent_events: includeRecent ? limit : 0,
+      max_recent_events: MAX_USAGE_EVENT_LIMIT
+    }
+  });
 }
 
 export async function sendPeerNote(agent: AgentName, input: unknown) {
@@ -217,6 +253,16 @@ function clampText(value: string, maxChars: number) {
   }
 
   return `${value.slice(0, maxChars - 3)}...`;
+}
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number) {
+  const numeric = typeof value === "number" ? value : Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, Math.floor(numeric)));
 }
 
 function stringifyToolPayload(payload: unknown) {

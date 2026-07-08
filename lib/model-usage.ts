@@ -34,6 +34,23 @@ export type UsageTotals = {
   total_tokens: number;
 };
 
+export type UsageEventSummary = {
+  id: string;
+  provider: string;
+  model: string;
+  source: string;
+  operation: string;
+  round: number | null;
+  turn_id: string | null;
+  stop_reason: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  total_tokens: number;
+  created_at: string;
+};
+
 type AnthropicUsage = {
   input_tokens?: unknown;
   output_tokens?: unknown;
@@ -46,6 +63,18 @@ type UsageRow = {
   output_tokens: number | null;
   cache_read_tokens: number | null;
   cache_creation_tokens: number | null;
+};
+
+type UsageEventRow = UsageRow & {
+  id: string;
+  provider: string;
+  model: string;
+  source: string;
+  operation: string;
+  round: number | null;
+  turn_id: string | null;
+  stop_reason: string | null;
+  created_at: string;
 };
 
 const USAGE_PAGE_SIZE = 1000;
@@ -144,6 +173,39 @@ export async function loadUsageTotals(
   };
 }
 
+export async function loadRecentUsageEvents(
+  supabase: SupabaseClient,
+  agent: AgentName,
+  limit: number
+): Promise<{
+  table_present: boolean;
+  error: string | null;
+  events: UsageEventSummary[];
+}> {
+  const { data, error } = await supabase
+    .from("model_usage_events")
+    .select(
+      "id, provider, model, source, operation, round, turn_id, stop_reason, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, created_at"
+    )
+    .eq("agent", agent)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    return {
+      table_present: !isMissingTableError(error),
+      error: error.message,
+      events: []
+    };
+  }
+
+  return {
+    table_present: true,
+    error: null,
+    events: ((data ?? []) as UsageEventRow[]).map(summarizeUsageEvent)
+  };
+}
+
 function addUsageRow(totals: UsageTotals, row: UsageRow): UsageTotals {
   const inputTokens = totals.input_tokens + numberValue(row.input_tokens);
   const outputTokens = totals.output_tokens + numberValue(row.output_tokens);
@@ -157,6 +219,30 @@ function addUsageRow(totals: UsageTotals, row: UsageRow): UsageTotals {
     cache_read_tokens: cacheReadTokens,
     cache_creation_tokens: cacheCreationTokens,
     total_tokens: inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens
+  };
+}
+
+function summarizeUsageEvent(row: UsageEventRow): UsageEventSummary {
+  const inputTokens = numberValue(row.input_tokens);
+  const outputTokens = numberValue(row.output_tokens);
+  const cacheReadTokens = numberValue(row.cache_read_tokens);
+  const cacheCreationTokens = numberValue(row.cache_creation_tokens);
+
+  return {
+    id: row.id,
+    provider: row.provider,
+    model: row.model,
+    source: row.source,
+    operation: row.operation,
+    round: row.round,
+    turn_id: row.turn_id,
+    stop_reason: row.stop_reason,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    cache_read_tokens: cacheReadTokens,
+    cache_creation_tokens: cacheCreationTokens,
+    total_tokens: inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens,
+    created_at: row.created_at
   };
 }
 
