@@ -337,6 +337,9 @@ Runtime visibility:
   shown before the migration is applied.
 - Added `runtime_get_usage`, a self-scoped read-only agent tool for usage totals
   and bounded recent usage events.
+- Added `runtime_get_self_status`, a self-scoped cockpit tool for live clock,
+  message depth, compaction pressure, checkpoint/proposal basics, capability
+  gates, resource counts, and usage totals.
 - Documented token/cost accounting, provider-neutral runtime bias, and the
   staged dev/prod separation path.
 - Added Agent Artifacts V1 tracking: runtime artifacts first, generated files

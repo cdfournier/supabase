@@ -222,6 +222,7 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
 const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   runtime_get_time: { surface: "runtime", action: "read" },
   runtime_get_usage: { surface: "runtime", action: "read" },
+  runtime_get_self_status: { surface: "runtime", action: "read" },
   runtime_read_recent_messages: { surface: "conversation_history", action: "read" },
   runtime_search_conversation: { surface: "conversation_history", action: "read" },
   runtime_get_message_window: { surface: "conversation_history", action: "read" },

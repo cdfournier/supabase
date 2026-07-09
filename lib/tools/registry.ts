@@ -36,6 +36,7 @@ import {
   upsertRuntimeRelationship
 } from "@/lib/tools/runtime-memory";
 import {
+  getRuntimeSelfStatus,
   getRuntimeUsage,
   getRuntimeTime,
   listPeerNotes,
@@ -89,6 +90,22 @@ export const toolDefinitions: ToolDefinition[] = [
         limit: {
           type: "number",
           description: "Recent usage event limit. Defaults to 5 and caps at 20."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "runtime_get_self_status",
+    description:
+      "Read the active agent's own runtime cockpit status: clock, message depth, compaction pressure, latest checkpoint/archive/proposal basics, capability gates, resource counts, and usage totals. This is self-scoped and does not expose other agents or raw provider payloads.",
+    input_schema: {
+      type: "object",
+      properties: {
+        include_surfaces: {
+          type: "boolean",
+          description: "Whether to include the full compact capability surface list. Defaults to true."
         }
       },
       required: [],
@@ -1036,6 +1053,11 @@ export async function runTool(
         return {
           ok: true,
           content: await getRuntimeUsage(agent, input)
+        };
+      case "runtime_get_self_status":
+        return {
+          ok: true,
+          content: await getRuntimeSelfStatus(agent, input, toolDefinitions)
         };
       case "peer_send_note":
         return {

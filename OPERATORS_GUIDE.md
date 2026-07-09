@@ -108,6 +108,13 @@ self-scoped, governed by the Agent Capability Profile `runtime` surface, and
 returns normalized totals plus bounded recent event summaries. It does not expose
 other agents' usage or raw provider payloads.
 
+Agents can read a broader self-status cockpit with `runtime_get_self_status`.
+That tool is also self-scoped and returns the live clock, active/total message
+depth, approximate compaction pressure, latest checkpoint/archive/proposal
+basics, capability gates, resource counts, and usage totals. Use it when an
+agent needs a quick "how much headroom do I have?" check; use `/api/health` for
+the Operator-wide dashboard.
+
 V1 records raw provider usage plus normalized input, output, cache-read, and
 cache-creation token fields. It does not estimate dollars yet. Add budget
 warnings and pricing adapters only after raw usage logging has stayed reliable.

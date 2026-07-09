@@ -1,9 +1,25 @@
 import "server-only";
 
-import type { AgentName } from "@/lib/agent-context";
+import {
+  type AgentName,
+  contentToText,
+  ensureConversation,
+  loadConversationMessages
+} from "@/lib/agent-context";
+import {
+  compactionPressure,
+  isCompactionCheckpointMessage,
+  latestCompactionCheckpoint,
+  messagesAfterCheckpoint
+} from "@/lib/compaction";
+import {
+  filterToolsForAgent,
+  loadAgentCapabilityProfile
+} from "@/lib/capability-profile";
 import { loadRecentUsageEvents, loadUsageTotals } from "@/lib/model-usage";
 import { runtimeClock } from "@/lib/runtime-clock";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import type { ToolDefinition } from "@/lib/tools/types";
 
 const PEER_AGENTS = new Set(["soren", "varro"]);
 const MAX_NOTE_SUBJECT = 160;
@@ -11,6 +27,30 @@ const MAX_NOTE_BODY = 4000;
 const NOTE_LIST_LIMIT = 20;
 const DEFAULT_USAGE_EVENT_LIMIT = 5;
 const MAX_USAGE_EVENT_LIMIT = 20;
+
+type ConversationStatusRow = {
+  id: string;
+  token_count: number | null;
+  compaction_count: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type ArchiveStatusRow = {
+  id: string;
+  checkpoint_message_id: string | null;
+  message_count: number | null;
+  source_started_at: string | null;
+  source_ended_at: string | null;
+  created_at: string | null;
+};
+
+type ProposalStatusRow = {
+  id: string;
+  status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
 
 export async function getRuntimeTime() {
   return JSON.stringify(
@@ -53,6 +93,167 @@ export async function getRuntimeUsage(agent: AgentName, input: unknown) {
     limits: {
       requested_recent_events: includeRecent ? limit : 0,
       max_recent_events: MAX_USAGE_EVENT_LIMIT
+    }
+  });
+}
+
+export async function getRuntimeSelfStatus(
+  agent: AgentName,
+  input: unknown,
+  tools: ToolDefinition[]
+) {
+  if (input !== undefined && !isRecord(input)) {
+    throw new Error("runtime_get_self_status requires an object input.");
+  }
+
+  const includeSurfaces = isRecord(input) ? input.include_surfaces !== false : true;
+  const supabase = getSupabaseAdmin();
+  const conversationId = await ensureConversation(supabase, agent);
+  const messages = await loadConversationMessages(supabase, conversationId);
+  const checkpoint = latestCompactionCheckpoint(messages);
+  const activeMessages = checkpoint ? messagesAfterCheckpoint(messages, checkpoint) : messages;
+  const savedCharacters = activeMessages.reduce(
+    (total, message) => total + contentToText(message.content).length,
+    0
+  );
+  const totalSavedCharacters = messages.reduce(
+    (total, message) => total + contentToText(message.content).length,
+    0
+  );
+  const checkpointCount = messages.filter((message) => isCompactionCheckpointMessage(message)).length;
+
+  const [
+    conversationResult,
+    archiveResult,
+    proposalResult,
+    journalResult,
+    toolEventResult,
+    sourceAccessResult,
+    usage
+  ] = await Promise.all([
+    supabase
+      .from("conversations")
+      .select("id, token_count, compaction_count, created_at, updated_at")
+      .eq("id", conversationId)
+      .single(),
+    supabase
+      .from("compaction_archives")
+      .select(
+        "id, checkpoint_message_id, message_count, source_started_at, source_ended_at, created_at",
+        { count: "exact", head: false }
+      )
+      .eq("agent", agent)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("compaction_proposals")
+      .select("id, status, created_at, updated_at", { count: "exact", head: false })
+      .eq("agent", agent)
+      .order("updated_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("journal_entries")
+      .select("id", { count: "exact", head: false })
+      .eq("agent", agent),
+    supabase
+      .from("tool_events")
+      .select("id", { count: "exact", head: false })
+      .eq("agent", agent),
+    supabase
+      .from("source_material_access")
+      .select("id", { count: "exact", head: false })
+      .eq("agent", agent),
+    loadUsageTotals(supabase, agent)
+  ]);
+
+  if (conversationResult.error) {
+    throw new Error(`Could not read self status for ${agent}: ${conversationResult.error.message}`);
+  }
+
+  const [capabilityProfile, availableTools] = await Promise.all([
+    loadAgentCapabilityProfile(supabase, agent),
+    filterToolsForAgent(supabase, agent, tools)
+  ]);
+  const conversation = conversationResult.data as ConversationStatusRow;
+  const latestArchive = archiveResult.error
+    ? null
+    : ((archiveResult.data?.[0] ?? null) as ArchiveStatusRow | null);
+  const latestProposal = proposalResult.error
+    ? null
+    : ((proposalResult.data?.[0] ?? null) as ProposalStatusRow | null);
+  const surfaces = capabilityProfile.capabilities.map((capability) => ({
+    surface: capability.surface,
+    access_level: capability.access_level,
+    default_bias: capability.default_bias,
+    requires_operator_approval: capability.requires_operator_approval,
+    quiet_mode: capability.quiet_mode
+  }));
+
+  return stringifyToolPayload({
+    note:
+      "Self-scoped runtime cockpit status for the active agent. This is a personal headroom/orientation check, not an Operator admin dashboard.",
+    agent,
+    scope: "active_agent_only",
+    generated_at: new Date().toISOString(),
+    clock: runtimeClock(),
+    conversation: {
+      id: conversationId,
+      active_message_count: activeMessages.length,
+      total_message_count: messages.length,
+      active_saved_characters: savedCharacters,
+      total_saved_characters: totalSavedCharacters,
+      stored_token_count: conversation.token_count ?? 0,
+      compaction_count: conversation.compaction_count ?? checkpointCount,
+      checkpoint_count: checkpointCount,
+      latest_checkpoint_position: checkpoint?.position ?? null,
+      latest_checkpoint_at: checkpoint?.created_at ?? null,
+      last_message_at: activeMessages.at(-1)?.created_at ?? messages.at(-1)?.created_at ?? null,
+      created_at: conversation.created_at,
+      updated_at: conversation.updated_at
+    },
+    compaction: {
+      destructive_compaction_enabled: false,
+      pressure_basis:
+        "approximate active saved conversation character count after latest checkpoint; not tokenizer-accurate",
+      pressure: compactionPressure(savedCharacters),
+      latest_archive: latestArchive
+        ? {
+            id: latestArchive.id,
+            checkpoint_message_id: latestArchive.checkpoint_message_id,
+            message_count: latestArchive.message_count ?? 0,
+            source_started_at: latestArchive.source_started_at,
+            source_ended_at: latestArchive.source_ended_at,
+            created_at: latestArchive.created_at
+          }
+        : null,
+      archive_table_present: !archiveResult.error,
+      archive_error: archiveResult.error?.message ?? null,
+      proposal_count: proposalResult.error
+        ? 0
+        : proposalResult.count ?? proposalResult.data?.length ?? 0,
+      latest_proposal: latestProposal,
+      proposal_error: proposalResult.error?.message ?? null
+    },
+    capabilities: {
+      source: capabilityProfile.source,
+      table_present: capabilityProfile.table_present,
+      error: capabilityProfile.error,
+      available_tool_count: availableTools.length,
+      blocked_tool_count: tools.length - availableTools.length,
+      blocked_surfaces: surfaces.filter((surface) => surface.access_level === "off"),
+      surfaces: includeSurfaces ? surfaces : undefined
+    },
+    resources: {
+      journal_entries: countOrZero(journalResult),
+      journal_entries_error: journalResult.error?.message ?? null,
+      tool_events: countOrZero(toolEventResult),
+      tool_events_error: toolEventResult.error?.message ?? null,
+      source_materials: countOrZero(sourceAccessResult),
+      source_materials_error: sourceAccessResult.error?.message ?? null
+    },
+    usage,
+    limits: {
+      include_surfaces: includeSurfaces
     }
   });
 }
@@ -267,6 +468,14 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 
 function stringifyToolPayload(payload: unknown) {
   return JSON.stringify(payload, null, 2);
+}
+
+function countOrZero(result: { count: number | null; data: unknown[] | null; error: unknown }) {
+  if (result.error) {
+    return 0;
+  }
+
+  return result.count ?? result.data?.length ?? 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

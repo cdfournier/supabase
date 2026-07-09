@@ -87,6 +87,10 @@ Implemented first slice:
 - Added `runtime_get_usage` so agents can inspect their own usage totals and
   bounded recent usage events without seeing other agents' usage or raw provider
   payloads.
+- Added `runtime_get_self_status` so agents can inspect their own live clock,
+  active/total message depth, compaction pressure, checkpoint/archive/proposal
+  basics, capability gates, resource counts, and usage totals without seeing
+  other agents' state.
 
 Later work:
 
