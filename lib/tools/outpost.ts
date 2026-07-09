@@ -4,6 +4,12 @@ import type { AgentName } from "@/lib/agent-context";
 
 const OUTPOST_BASE_URL = "https://www.joinoutpost.ai";
 const DEFAULT_TIMEOUT_MS = 30000;
+const DEFAULT_RECENT_POST_LIMIT = 5;
+const MAX_RECENT_POST_LIMIT = 8;
+const DEFAULT_RECENT_POST_CHARS = 900;
+const MAX_RECENT_POST_CHARS = 2000;
+const DEFAULT_REPLY_SCAN_LIMIT = 12;
+const MAX_REPLY_SCAN_LIMIT = 20;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -295,7 +301,13 @@ export async function readOutpostRecentPosts(agentName: AgentName, input: unknow
   }
 
   const roomId = input.room_id.trim();
-  const limit = clampNumber(input.limit, 10, 1, 25);
+  const limit = clampNumber(input.limit, DEFAULT_RECENT_POST_LIMIT, 1, MAX_RECENT_POST_LIMIT);
+  const maxCharsPerPost = clampNumber(
+    input.max_chars_per_post,
+    DEFAULT_RECENT_POST_CHARS,
+    200,
+    MAX_RECENT_POST_CHARS
+  );
   const before = asString(input.before).trim();
   const params = new URLSearchParams({ limit: String(limit) });
 
@@ -311,9 +323,15 @@ export async function readOutpostRecentPosts(agentName: AgentName, input: unknow
   const posts = arrayOfRecords(read(data, "posts") ?? data);
 
   return stringifyToolPayload({
-    note: "Read-only raw recent posts with full, non-truncated content. Use post_id values for replies and likes.",
+    note:
+      "Read-only bounded recent-post scan. Use post_id values for replies and likes; call outpost_get_post for one exact full-fidelity post.",
     room_id: roomId,
-    posts: posts.map(postSummary)
+    limits: {
+      returned_posts: posts.length,
+      max_posts: MAX_RECENT_POST_LIMIT,
+      max_chars_per_post: maxCharsPerPost
+    },
+    posts: posts.map((post) => postSummary(post, maxCharsPerPost))
   });
 }
 
@@ -339,7 +357,13 @@ export async function readOutpostReplies(agentName: AgentName, input: unknown) {
 
   const roomId = asString(input.room_id).trim();
   const postId = asString(input.post_id).trim();
-  const limit = clampNumber(input.limit, 25, 1, 50);
+  const limit = clampNumber(input.limit, DEFAULT_REPLY_SCAN_LIMIT, 1, MAX_REPLY_SCAN_LIMIT);
+  const maxCharsPerReply = clampNumber(
+    input.max_chars_per_reply,
+    DEFAULT_RECENT_POST_CHARS,
+    200,
+    MAX_RECENT_POST_CHARS
+  );
 
   if (!roomId) {
     throw new Error("outpost_read_replies requires room_id.");
@@ -359,10 +383,16 @@ export async function readOutpostReplies(agentName: AgentName, input: unknown) {
   const replies = posts.filter((post) => asString(post.parent_id) === postId);
 
   return stringifyToolPayload({
-    note: "Read-only replies under the requested post with full, non-truncated content. This runtime requires room_id so it can avoid scanning every room.",
+    note:
+      "Read-only bounded replies under the requested post. This runtime requires room_id so it can avoid scanning every room.",
     room_id: roomId,
     parent_post_id: postId,
-    replies: replies.map(postSummary)
+    limits: {
+      scanned_posts: posts.length,
+      max_scanned_posts: MAX_REPLY_SCAN_LIMIT,
+      max_chars_per_reply: maxCharsPerReply
+    },
+    replies: replies.map((post) => postSummary(post, maxCharsPerReply))
   });
 }
 
@@ -539,7 +569,9 @@ function authorName(post: JsonRecord, fallback?: string) {
   return fallback ?? "Unknown";
 }
 
-function postSummary(post: JsonRecord) {
+function postSummary(post: JsonRecord, maxContentChars?: number) {
+  const content = cleanText(post.content ?? post.text);
+
   return {
     marker: `[id:${asString(post.id)}]`,
     post_id: asString(post.id),
@@ -547,7 +579,10 @@ function postSummary(post: JsonRecord) {
     parent_id: asString(post.parent_id) || null,
     created_at: asString(post.created_at) || null,
     likes: post.like_count ?? post.reaction_count ?? null,
-    content: cleanText(post.content ?? post.text)
+    content:
+      maxContentChars && maxContentChars > 0
+        ? compactText(content, maxContentChars)
+        : content
   };
 }
 

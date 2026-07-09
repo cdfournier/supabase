@@ -437,7 +437,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "outpost_read_recent_posts",
     description:
-      "Read-only raw recent posts for a room with full, non-truncated content. Returns post ids with [id:<uuid>] markers for precise reply or like targeting. This tool cannot post or modify Outpost.",
+      "Read-only bounded recent-post scan for a room. Returns post ids with [id:<uuid>] markers and excerpted content for precise follow-up. Use outpost_get_post for one exact full-fidelity post. This tool cannot post or modify Outpost.",
     input_schema: {
       type: "object",
       properties: {
@@ -447,7 +447,11 @@ export const toolDefinitions: ToolDefinition[] = [
         },
         limit: {
           type: "number",
-          description: "Optional number of recent posts to return. Defaults to 10 and is capped at 25."
+          description: "Optional number of recent posts to return. Defaults to 5 and is capped at 8."
+        },
+        max_chars_per_post: {
+          type: "number",
+          description: "Optional excerpt size per post. Defaults to 900 characters and is capped at 2000."
         },
         before: {
           type: "string",
@@ -477,7 +481,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "outpost_read_replies",
     description:
-      "Read-only replies under a specific post with full, non-truncated content. Provide room_id and post_id so this runtime can fetch the room posts and filter the thread. This tool cannot post or modify Outpost.",
+      "Read-only bounded replies under a specific post. Provide room_id and post_id so this runtime can fetch recent room posts and filter the thread. Use outpost_get_post for one exact full-fidelity reply if needed. This tool cannot post or modify Outpost.",
     input_schema: {
       type: "object",
       properties: {
@@ -491,7 +495,11 @@ export const toolDefinitions: ToolDefinition[] = [
         },
         limit: {
           type: "number",
-          description: "Optional number of room posts to inspect while finding replies. Defaults to 25 and is capped at 50."
+          description: "Optional number of room posts to inspect while finding replies. Defaults to 12 and is capped at 20."
+        },
+        max_chars_per_reply: {
+          type: "number",
+          description: "Optional excerpt size per reply. Defaults to 900 characters and is capped at 2000."
         }
       },
       required: ["room_id", "post_id"],
