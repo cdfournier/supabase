@@ -15,8 +15,9 @@ larger architectural tracks stay visible without becoming today's obligation.
 6. Usage, cost, and cache accounting V1 follow-up
 7. Checkpoint archive browsing and collapsed-history UI
 8. Dev/prod separation V1
-9. EYES still-frame MVP
-10. WHEELS supervised-control planning
+9. Bridge control plane and adapter architecture
+10. EYES still-frame MVP
+11. WHEELS supervised-control planning
 
 ## Product Principles
 
@@ -212,7 +213,55 @@ Planned:
 - Consider database RPCs for atomic archive/checkpoint operations if concurrency
   becomes real.
 
-### 8. EYES MVP
+### 8. Bridge Control Plane And Adapter Architecture
+
+Status: design track; should shape Bridge, EYES, WHEELS, and live-room work
+before implementation diverges.
+
+Purpose: keep shared cross-runtime / real-world / room-facing infrastructure
+coherent without pretending every bridge has the same safety semantics.
+
+Core idea:
+
+- Build a common control plane for visibility, permissions, leases, events, and
+  Operator override.
+- Implement domain-specific adapters for WHEELS, EYES, Outpost/chat, runtime
+  tools, and future live-agent rooms.
+- Reuse the control machinery while keeping policy and risk handling specific
+  to each surface.
+
+Common control plane primitives:
+
+- Bridge registry: bridge type, endpoint, health, owner, and current state.
+- Capability gates: which agents may read, write, request, observe, or drive.
+- Session / claim model: active user, observers, queue, leases, and timeouts.
+- Event log: commands, observations, refusals, errors, handoffs, and stops.
+- Operator override: immediate stop/disable, visible globally.
+- Room adapter: bridge events can appear in chat rooms as shared context, not
+  only as one agent's private tool result.
+- Audit trail: enough provenance to reconstruct who did what, when, and under
+  which permissions.
+
+Adapter-specific policy:
+
+- WHEELS: physical motion, stale geometry, no overlapping drivers, emergency
+  stop, supervised-only defaults, network-loss handling.
+- EYES: privacy, consent, frame retention, still-frame-only MVP, no autonomous
+  camera requests in V1.
+- Outpost/chat bridge: identity, attribution, public/private boundaries,
+  anti-spam, and context/cost limits.
+- Runtime tools: data access, memory writes, compaction pressure, cost, and
+  self-scoping.
+
+Notes:
+
+- The abstraction is the control plane, not a universal bridge implementation.
+- Live agent chat rooms become easier after the control plane can safely route
+  events, enforce identity, and prevent overlapping or stale sessions.
+- This should inform Operator Console layout: show bridge health, active claims,
+  recent events, and stop/disable controls in one predictable place.
+
+### 9. EYES MVP
 
 Status: planned.
 
@@ -233,7 +282,7 @@ Later:
   presence rules.
 - Richer visual memory only after consent, privacy, and storage policy are clear.
 
-### 9. WHEELS Supervised-Control Planning
+### 10. WHEELS Supervised-Control Planning
 
 Status: planned; do not assume autonomy.
 
@@ -255,7 +304,7 @@ Later:
 - Add EYES/WHEELS combined loops carefully.
 - Keep autonomous car loops tabled until safety posture is boringly clear.
 
-### 10. Operator Console V1
+### 11. Operator Console V1
 
 Status: planned interface layer.
 
@@ -272,10 +321,11 @@ Surfaces:
 - Memories and relationships.
 - Compaction proposals and checkpoints.
 - Runtime health and tool activity.
+- Bridge health, active claims, recent bridge events, and stop/disable controls.
 - Free Moments controls.
 - Capability Profile controls.
 
-### 11. Dev / Prod / Web Readiness
+### 12. Dev / Prod / Web Readiness
 
 Status: staged approach documented; sandbox implementation pending before
 public exposure.
