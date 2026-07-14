@@ -254,7 +254,7 @@ Current caps and limits:
 - `web_fetch_url`: default 6,000 characters, capped at 12,000; best for short pages or first-pass reads.
 - `web_fetch_many`: up to 3 URLs; default 4,000 characters per URL, capped at 12,000.
 - `web_extract_links`: default 40 links, capped at 100.
-- All URL fetches reject private/local network targets, follow up to 5 redirects, time out after 20 seconds, reject unsupported content types, and cap downloaded responses at 700 KB.
+- All URL fetches reject private/local network targets, follow up to 5 redirects, time out after 20 seconds, reject unsupported content types, and cap downloaded responses at 2 MB.
 
 `web_search` is a no-key prototype using a public HTML provider, so it is fragile and may fail if the provider changes markup or blocks the request. Search snippets are untrusted discovery text, not citations. Use known-URL fetch tools to read sources before relying on content. For long articles/docs, prefer `web_read_url` and advance by `next_offset` instead of asking for one huge result. These tools are not browser automation, form submission, authentication, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
 

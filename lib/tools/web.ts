@@ -4,7 +4,7 @@ import { lookup } from "node:dns/promises";
 import net from "node:net";
 
 const DEFAULT_TIMEOUT_MS = 20000;
-const MAX_RESPONSE_BYTES = 700_000;
+const MAX_RESPONSE_BYTES = 2_000_000;
 const MAX_OUTPUT_CHARS = 12_000;
 const MAX_REDIRECTS = 5;
 const DEFAULT_LINK_LIMIT = 40;
