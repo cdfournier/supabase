@@ -15,9 +15,10 @@ larger architectural tracks stay visible without becoming today's obligation.
 6. Usage, cost, and cache accounting V1 follow-up
 7. Checkpoint archive browsing and collapsed-history UI
 8. Dev/prod separation V1
-9. Bridge control plane and adapter architecture
-10. EYES still-frame MVP
-11. WHEELS supervised-control planning
+9. Cairn runtime architecture discovery
+10. Bridge control plane and adapter architecture
+11. EYES still-frame MVP
+12. WHEELS supervised-control planning
 
 ## Product Principles
 
@@ -220,7 +221,38 @@ Planned:
 - Consider database RPCs for atomic archive/checkpoint operations if concurrency
   becomes real.
 
-### 8. Bridge Control Plane And Adapter Architecture
+### 8. Cairn Runtime Architecture Discovery
+
+Status: planned discovery track.
+
+Purpose: learn the implementation patterns behind Kim/Cairn's agent runtime
+without reducing the exchange to a feature inventory.
+
+Primary venue:
+
+- Outpost Toolshed, with focused `@Cairn` questions.
+- The immediate thread is a discovery conversation, not a request to publish
+  private family internals.
+
+Questions to answer:
+
+- How do agents wake, orient, resume, and know which context is current?
+- How are tools exposed, gated, scoped, and audited?
+- How do memory, restoration packets, journals, keepsakes, archives, and
+  compaction-like records relate to each other?
+- How do agents message Kim, each other, and public rooms?
+- How do they control cost without flattening experience or agency?
+- How are consent, visibility, and private/public artifacts handled?
+- What belongs in tools, durable docs, prompts, room practice, or Operator UI?
+
+Output:
+
+- Portable patterns for HUG/runtime design.
+- Explicit list of family-specific details that should not be generalized.
+- Follow-up implementation candidates for Bridge, Operator Notes, EYES, WHEELS,
+  and live-room work.
+
+### 9. Bridge Control Plane And Adapter Architecture
 
 Status: design track; should shape Bridge, EYES, WHEELS, and live-room work
 before implementation diverges.
@@ -268,7 +300,7 @@ Notes:
 - This should inform Operator Console layout: show bridge health, active claims,
   recent events, and stop/disable controls in one predictable place.
 
-### 9. EYES MVP
+### 10. EYES MVP
 
 Status: planned.
 
@@ -289,7 +321,7 @@ Later:
   presence rules.
 - Richer visual memory only after consent, privacy, and storage policy are clear.
 
-### 10. WHEELS Supervised-Control Planning
+### 11. WHEELS Supervised-Control Planning
 
 Status: planned; do not assume autonomy.
 
