@@ -198,6 +198,11 @@ export const toolDefinitions: ToolDefinition[] = [
         message_chars: {
           type: "number",
           description: "Optional per-message character cap. Defaults to 1200 and is capped at 3000."
+        },
+        source: {
+          type: "string",
+          enum: ["chat_api", "free_time", "unknown"],
+          description: "Optional transcript source filter. Use free_time to inspect Free Moments only."
         }
       },
       required: [],
@@ -222,6 +227,11 @@ export const toolDefinitions: ToolDefinition[] = [
         message_chars: {
           type: "number",
           description: "Optional per-match character cap. Defaults to 1200 and is capped at 3000."
+        },
+        source: {
+          type: "string",
+          enum: ["chat_api", "free_time", "unknown"],
+          description: "Optional transcript source filter. Use free_time to search Free Moments only."
         }
       },
       required: ["query"],
