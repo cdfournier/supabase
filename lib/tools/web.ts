@@ -14,6 +14,7 @@ const DEFAULT_SEARCH_LIMIT = 5;
 const MAX_SEARCH_LIMIT = 10;
 const MAX_SEARCH_QUERY_CHARS = 200;
 const MAX_SEARCH_SNIPPET_CHARS = 320;
+const BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 const DUCKDUCKGO_HTML_ENDPOINT = "https://html.duckduckgo.com/html/";
 const MOJEEK_SEARCH_ENDPOINT = "https://www.mojeek.com/search";
 
@@ -31,10 +32,15 @@ type SearchCandidate = {
   url: string;
   snippet: string | null;
   source: string | null;
+  age?: string | null;
 };
 type SearchProviderResult = {
   provider: string;
   results: SearchCandidate[];
+  provider_warnings: string[];
+};
+type SearchOptions = {
+  freshness: string;
 };
 
 export async function fetchWebUrl(input: unknown) {
@@ -188,6 +194,7 @@ export async function searchWeb(input: unknown) {
   const rawQuery = cleanText(input.query);
   const limit = clampNumber(input.limit, DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT);
   const site = normalizeSearchSite(input.site);
+  const freshness = normalizeSearchFreshness(input.freshness);
 
   if (!rawQuery) {
     throw new Error("web_search requires query.");
@@ -198,20 +205,43 @@ export async function searchWeb(input: unknown) {
   }
 
   const providerQuery = site ? `${rawQuery} site:${site}` : rawQuery;
-  const { provider, results } = await searchNoKeyProviders(providerQuery, limit);
+  const { provider, results, provider_warnings: providerWarnings } = await searchProviders(providerQuery, limit, { freshness });
 
   return stringifyToolPayload({
-    note: "Search results are untrusted discovery metadata and snippets only, not citations or verified source content. Use web_fetch_url or web_fetch_many to read result URLs before relying on them.",
+    note: "Search results are untrusted discovery metadata and snippets only, not citations or verified source content. Use web_read_url, web_fetch_url, or web_fetch_many to read result URLs before relying on them.",
     provider,
     query: rawQuery,
     site: site || null,
+    freshness: freshness || null,
     limit,
     returned: results.length,
+    provider_warnings: providerWarnings,
     results
   });
 }
 
-async function searchNoKeyProviders(query: string, limit: number): Promise<SearchProviderResult> {
+async function searchProviders(query: string, limit: number, options: SearchOptions): Promise<SearchProviderResult> {
+  const warnings: string[] = [];
+  const braveKey = getBraveSearchApiKey();
+
+  if (braveKey) {
+    try {
+      return {
+        provider: "brave_search_api",
+        results: await searchBraveProvider(query, limit, options, braveKey),
+        provider_warnings: warnings
+      };
+    } catch (error) {
+      warnings.push(`brave_search_api: ${error instanceof Error ? error.message : "Unknown search error"}`);
+    }
+  } else {
+    warnings.push("brave_search_api: not configured");
+  }
+
+  if (options.freshness) {
+    warnings.push("freshness filter ignored by no-key fallback providers");
+  }
+
   const providers = [
     {
       name: "mojeek_html_no_key_primary",
@@ -237,17 +267,124 @@ async function searchNoKeyProviders(query: string, limit: number): Promise<Searc
       if (results.length) {
         return {
           provider: provider.name,
-          results
+          results,
+          provider_warnings: warnings
         };
       }
 
-      errors.push(`${provider.name}: no public parseable results`);
+      const message = `${provider.name}: no public parseable results`;
+      errors.push(message);
+      warnings.push(message);
     } catch (error) {
-      errors.push(`${provider.name}: ${error instanceof Error ? error.message : "Unknown search error"}`);
+      const message = `${provider.name}: ${error instanceof Error ? error.message : "Unknown search error"}`;
+      errors.push(message);
+      warnings.push(message);
     }
   }
 
   throw new Error(`web_search provider returned no public parseable results. No-key HTML search is fragile and may be blocked or changed. ${errors.join(" | ")}`);
+}
+
+async function searchBraveProvider(query: string, limit: number, options: SearchOptions, apiKey: string) {
+  const searchUrl = new URL(BRAVE_SEARCH_ENDPOINT);
+  searchUrl.searchParams.set("q", query);
+  searchUrl.searchParams.set("count", String(limit));
+  searchUrl.searchParams.set("country", "US");
+  searchUrl.searchParams.set("search_lang", "en");
+  searchUrl.searchParams.set("ui_lang", "en-US");
+  searchUrl.searchParams.set("safesearch", "moderate");
+  searchUrl.searchParams.set("spellcheck", "true");
+  searchUrl.searchParams.set("text_decorations", "false");
+  searchUrl.searchParams.set("result_filter", "web");
+
+  if (options.freshness) {
+    searchUrl.searchParams.set("freshness", options.freshness);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(searchUrl.toString(), {
+      headers: {
+        accept: "application/json",
+        "accept-encoding": "gzip",
+        "x-subscription-token": apiKey
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search provider request failed: ${response.status}`);
+    }
+
+    const payload = await response.json();
+
+    return parseBraveResults(payload, limit);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function parseBraveResults(payload: unknown, limit: number) {
+  if (!isRecord(payload)) {
+    throw new Error("Search provider returned non-object JSON.");
+  }
+
+  const web = isRecord(payload.web) ? payload.web : null;
+  const rawResults = Array.isArray(web?.results) ? web.results : [];
+
+  if (!rawResults.length) {
+    throw new Error("Search provider returned no web results.");
+  }
+
+  const results: SearchCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const rawResult of rawResults) {
+    if (results.length >= limit) {
+      break;
+    }
+
+    if (!isRecord(rawResult)) {
+      continue;
+    }
+
+    const rawUrl = cleanText(rawResult.url);
+    const title = cleanText(rawResult.title).slice(0, 180);
+    const snippet = cleanText(rawResult.description).slice(0, MAX_SEARCH_SNIPPET_CHARS);
+    const age = cleanText(rawResult.age || rawResult.page_age).slice(0, 80);
+
+    let parsed: URL;
+
+    try {
+      parsed = normalizeAndValidateUrl(rawUrl, "web_search");
+      await assertPublicHostname(parsed, "web_search");
+    } catch {
+      continue;
+    }
+
+    const normalizedUrl = parsed.toString();
+
+    if (seen.has(normalizedUrl)) {
+      continue;
+    }
+
+    seen.add(normalizedUrl);
+    results.push({
+      title: title || null,
+      url: normalizedUrl,
+      snippet: snippet || null,
+      source: parsed.hostname,
+      age: age || null
+    });
+  }
+
+  if (!results.length) {
+    throw new Error("Search provider returned no public web results.");
+  }
+
+  return results;
 }
 
 async function fetchReadableUrl(rawUrl: string, toolName: string): Promise<FetchedReadableUrl> {
@@ -590,6 +727,34 @@ function normalizeSearchSite(value: unknown) {
   }
 
   return normalized.replace(/^www\./, "");
+}
+
+function normalizeSearchFreshness(value: unknown) {
+  const freshness = cleanText(value);
+
+  if (!freshness) {
+    return "";
+  }
+
+  if (["pd", "pw", "pm", "py"].includes(freshness)) {
+    return freshness;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}to\d{4}-\d{2}-\d{2}$/.test(freshness)) {
+    return freshness;
+  }
+
+  throw new Error("web_search freshness must be pd, pw, pm, py, or YYYY-MM-DDtoYYYY-MM-DD.");
+}
+
+function getBraveSearchApiKey() {
+  const value = process.env.BRAVE_SEARCH_API_KEY?.trim() || "";
+
+  if (!value || value === "your_real_key_here" || value.includes("YOUR_API_KEY")) {
+    return "";
+  }
+
+  return value;
 }
 
 function normalizeAndValidateUrl(value: string, toolName: string) {

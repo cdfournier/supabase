@@ -147,9 +147,9 @@ Notes:
 - Repository skills belong behind a bridge/review boundary, not inside the
   normal runtime tool surface by default.
 
-### 5. Web Search Provider Decision
+### 5. Web Search Provider Reliability
 
-Status: revisit soon.
+Status: first implementation slice landed; provider/cost policy still planned.
 
 Current state:
 
@@ -157,13 +157,17 @@ Current state:
 - `web_read_url` improves long-page handling by returning bounded text windows
   with `next_offset`, so agents can continue deliberately instead of swallowing
   one oversized page blob.
-- `web_search` is a no-key HTML prototype and is explicitly fragile.
-- Soren has reported that search may currently be broken.
+- `web_search` now prefers the configured Brave Search API when
+  `BRAVE_SEARCH_API_KEY` is present.
+- It still falls back to no-key HTML providers, which are explicitly fragile.
+- Soren and Varro have confirmed staged URL reading works cleanly.
 
-Decision needed:
+Remaining decisions:
 
-- Keep fragile no-key search only as a best-effort prototype, or
-- pay for a search provider / native tool path so search becomes dependable.
+- Decide whether Brave Search API is the production provider or whether another
+  provider/native path should be compared.
+- Decide cost/usage reporting thresholds before encouraging frequent autonomous
+  search.
 
 Requirements:
 

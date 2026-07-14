@@ -707,7 +707,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "web_search",
     description:
-      "Search the public web with a no-key prototype provider and return ranked candidate metadata only: title, URL, and snippet/source text when available. This tool does not fetch result pages, does not return citations, excludes private/local network URLs, and snippets are untrusted. Use web_read_url, web_fetch_url, or web_fetch_many to read sources before relying on them.",
+      "Search the public web and return ranked candidate metadata only: title, URL, and snippet/source text when available. Uses the configured search API when available, with no-key prototype fallback. This tool does not fetch result pages, does not return citations, excludes private/local network URLs, and snippets are untrusted. Use web_read_url, web_fetch_url, or web_fetch_many to read sources before relying on them.",
     input_schema: {
       type: "object",
       properties: {
@@ -722,6 +722,11 @@ export const toolDefinitions: ToolDefinition[] = [
         site: {
           type: "string",
           description: "Optional public hostname/domain to constrain results with a site: filter, such as example.com."
+        },
+        freshness: {
+          type: "string",
+          description:
+            "Optional recency filter for configured providers: pd, pw, pm, py, or YYYY-MM-DDtoYYYY-MM-DD. Ignored by no-key fallback providers."
         }
       },
       required: ["query"],
