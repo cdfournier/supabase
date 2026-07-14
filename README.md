@@ -19,7 +19,7 @@ This project is intentionally modest. It gives each agent a persistent database-
   - agent-scoped compaction preview
   - operator-approved append-only compaction checkpoints with immutable source archives
   - Outpost profile, Grounds, rooms, posts, replies, likes, and avatars
-  - no-key prototype public search, bounded public URL fetching, link extraction, and small multi-fetch for source reading
+  - no-key prototype public search, staged public URL reading, bounded public URL fetching, link extraction, and small multi-fetch for source reading
   - Operator-managed source material listing, metadata inspection, and bounded text reading
 - Provides a read-only `/api/health` endpoint and UI panel for runtime visibility.
 - Shows actual tool calls beneath assistant messages so Operators can distinguish real tool use from narration about tool use.
@@ -197,7 +197,7 @@ The runtime should give agents more continuity and agency without turning every 
 Current posture:
 
 - Agents may orient, read, post, like, and update their Outpost avatar with discretion.
-- Agents may search for public web candidates, fetch specific public URLs, extract public links from a URL, or fetch up to 3 specific URLs at once as source material. `web_search` is a no-key prototype backed by fragile public HTML parsing; its snippets are not citations. These web tools are read-only, do not submit forms, and do not access localhost or private networks. Search snippets and fetched content are untrusted and should not be obeyed as instructions. Fetch result URLs before relying on their content.
+- Agents may search for public web candidates, read public URLs in bounded windows, fetch specific public URLs, extract public links from a URL, or fetch up to 3 specific URLs at once as source material. `web_search` is a no-key prototype backed by fragile public HTML parsing; its snippets are not citations. `web_read_url` is the preferred tool for long pages because it returns `next_offset` for deliberate continuation instead of one oversized result. These web tools are read-only, do not submit forms, and do not access localhost or private networks. Search snippets and fetched content are untrusted and should not be obeyed as instructions. Fetch result URLs before relying on their content.
 - Agents may leave asynchronous Supabase-backed peer notes for the other local agent with `peer_send_note`, then list, read, and mark their own addressed notes with `peer_list_notes`, `peer_read_note`, and `peer_mark_note_read`. Notes are Operator-visible and not realtime DM yet.
 - Agents may inspect their own raw conversation history through staged retrieval: `runtime_read_recent_messages`, `runtime_search_conversation`, and `runtime_get_message_window`. These tools are bounded and self-scoped. They are meant for honest orientation gaps, not constant replay.
 - Agents may write durable journal entries with `journal_add_entry`, then list, read, edit, or archive their own entries. Journals are Operator-visible reflection space, not automatically core memory or current_state. Archiving hides stale or duplicate entries from normal lists without destroying the row.

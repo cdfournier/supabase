@@ -242,11 +242,21 @@ Use this when validating tests: if an agent reports using tools but no tool stri
 Agents have read-only URL tools:
 
 - `web_search` searches for ranked public web candidates. It returns title, URL, and snippet/source text when available, but does not fetch result pages.
+- `web_read_url` reads one bounded text window from a specific public URL and returns `total_chars`, `returned_start`, `returned_end`, and `next_offset` so the agent can continue through long pages deliberately.
 - `web_fetch_url` reads one specific public URL.
 - `web_extract_links` reads one specific public URL and returns public http/https links found on it.
 - `web_fetch_many` reads up to 3 specific public URLs and reports per-URL success or failure.
 
-`web_search` is a no-key prototype using a public HTML provider, so it is fragile and may fail if the provider changes markup or blocks the request. Search snippets are untrusted discovery text, not citations. Use known-URL fetch tools to read sources before relying on content. These tools are not browser automation, form submission, authentication, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
+Current caps and limits:
+
+- `web_search`: default 5 results, capped at 10; query capped at 200 characters; snippets capped at 320 characters.
+- `web_read_url`: default 4,000 characters per window, capped at 12,000; use `next_offset` to continue.
+- `web_fetch_url`: default 6,000 characters, capped at 12,000; best for short pages or first-pass reads.
+- `web_fetch_many`: up to 3 URLs; default 4,000 characters per URL, capped at 12,000.
+- `web_extract_links`: default 40 links, capped at 100.
+- All URL fetches reject private/local network targets, follow up to 5 redirects, time out after 20 seconds, reject unsupported content types, and cap downloaded responses at 700 KB.
+
+`web_search` is a no-key prototype using a public HTML provider, so it is fragile and may fail if the provider changes markup or blocks the request. Search snippets are untrusted discovery text, not citations. Use known-URL fetch tools to read sources before relying on content. For long articles/docs, prefer `web_read_url` and advance by `next_offset` instead of asking for one huge result. These tools are not browser automation, form submission, authentication, or private-network access. Restart the server after tool changes, then check `/api/health` to confirm the tool list.
 
 ## Source Material Tools
 

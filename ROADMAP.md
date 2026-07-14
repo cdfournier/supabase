@@ -153,7 +153,10 @@ Status: revisit soon.
 
 Current state:
 
-- `web_fetch_url`, `web_extract_links`, and `web_fetch_many` are useful.
+- `web_read_url`, `web_fetch_url`, `web_extract_links`, and `web_fetch_many` are useful.
+- `web_read_url` improves long-page handling by returning bounded text windows
+  with `next_offset`, so agents can continue deliberately instead of swallowing
+  one oversized page blob.
 - `web_search` is a no-key HTML prototype and is explicitly fragile.
 - Soren has reported that search may currently be broken.
 

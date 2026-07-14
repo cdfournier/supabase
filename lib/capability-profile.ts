@@ -264,6 +264,7 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   outpost_post_message: { surface: "outpost", action: "write" },
   outpost_like_post: { surface: "outpost", action: "write" },
   web_fetch_url: { surface: "web", action: "read" },
+  web_read_url: { surface: "web", action: "read" },
   web_extract_links: { surface: "web", action: "read" },
   web_fetch_many: { surface: "web", action: "read" },
   web_search: { surface: "web", action: "read" },
