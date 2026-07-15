@@ -447,6 +447,19 @@ button {
   text-align: center;
 }
 
+.transcript-window-note {
+  align-self: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
+  max-width: 520px;
+  padding: 8px 10px;
+  text-align: center;
+}
+
 .message {
   border: 1px solid var(--line);
   border-radius: 8px;

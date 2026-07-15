@@ -118,6 +118,42 @@ export async function loadConversationMessages(
   return messages;
 }
 
+export async function loadRecentConversationMessages(
+  supabase: SupabaseClient,
+  conversationId: string,
+  limit: number
+) {
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit), MESSAGE_PAGE_SIZE));
+  const { data, error } = await supabase
+    .from("conversation_messages")
+    .select("id, conversation_id, turn_id, position, role, source, content, created_at")
+    .eq("conversation_id", conversationId)
+    .order("position", { ascending: false })
+    .limit(safeLimit);
+
+  if (error) {
+    throw new Error(`Could not load recent messages: ${error.message}`);
+  }
+
+  return ((data ?? []) as ChatMessage[]).reverse();
+}
+
+export async function countConversationMessages(
+  supabase: SupabaseClient,
+  conversationId: string
+) {
+  const { count, error } = await supabase
+    .from("conversation_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", conversationId);
+
+  if (error) {
+    throw new Error(`Could not count messages: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
 export async function nextMessagePosition(
   supabase: SupabaseClient,
   conversationId: string

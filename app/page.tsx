@@ -203,6 +203,7 @@ type FreeTimeStatus = {
 
 const defaultAgent: AgentName = "soren";
 const freeTimePollMs = 30_000;
+const liveTranscriptLimit = 120;
 
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -241,8 +242,12 @@ export default function Home() {
   );
   const activeMessages = transcripts[selectedAgent] ?? [];
   const activeToolEvents = toolEvents[selectedAgent] ?? [];
-  const displayMessages = useMemo(() => [...activeMessages].reverse(), [activeMessages]);
   const activeHealth = health?.agents.find((agent) => agent.agent === selectedAgent);
+  const activeMessageCount = activeHealth?.conversation.message_count ?? activeMessages.length;
+  const hiddenOlderMessageCount = activeHealth
+    ? Math.max(0, activeMessageCount - activeMessages.length)
+    : 0;
+  const displayMessages = useMemo(() => [...activeMessages].reverse(), [activeMessages]);
   const toolEventsByTurn = useMemo(() => {
     const eventsByTurn = new Map<string, ToolEvent[]>();
 
@@ -625,7 +630,10 @@ export default function Home() {
 
       setTranscripts((current) => ({
         ...current,
-        [selectedAgent]: [...(current[selectedAgent] ?? []), ...(data.messages ?? [])]
+        [selectedAgent]: trimLiveMessages([
+          ...(current[selectedAgent] ?? []),
+          ...(data.messages ?? [])
+        ])
       }));
       setToolEvents((current) => ({
         ...current,
@@ -913,6 +921,14 @@ export default function Home() {
           {!loading && activeMessages.length === 0 ? (
             <p className="empty">
               No messages yet. Send the first note and the server will wake this agent with their seeded context.
+            </p>
+          ) : null}
+
+          {hiddenOlderMessageCount > 0 ? (
+            <p className="transcript-window-note">
+              Showing latest {activeMessages.length.toLocaleString()} of{" "}
+              {activeMessageCount.toLocaleString()} active messages. Older messages remain in
+              Supabase.
             </p>
           ) : null}
 
@@ -1291,6 +1307,10 @@ function RuntimeHealthPanel({
       )}
     </section>
   );
+}
+
+function trimLiveMessages(messages: ChatMessage[]) {
+  return messages.slice(-liveTranscriptLimit);
 }
 
 function conversationLabel(agent: AgentName) {
