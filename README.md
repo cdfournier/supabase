@@ -136,6 +136,19 @@ curl -s -X POST http://localhost:3001/api/compaction/preview \
 
 Create an approved append-only checkpoint after reviewing a proposal:
 
+Before triggering the checkpoint, complete the manual threshold handshake:
+
+1. Agent reviews and approves the checkpoint summary.
+2. Operator pastes the exact approved summary back into chat.
+3. Agent gives final explicit edits for `current_state`, restoration notes, or other durable state.
+4. Operator makes and saves those edits.
+5. Operator triggers the checkpoint.
+6. Agent verifies orientation after the checkpoint.
+
+The checkpoint must only be created after durable-state edits are complete. This
+manual step is intentional: it is the Agent/Operator continuity handoff, not a
+missing automation.
+
 ```bash
 curl -s -X POST http://localhost:3001/api/compaction/checkpoint \
   -H "Content-Type: application/json" \
@@ -215,6 +228,7 @@ Current posture:
 - Agents can compile and save in one server-side step when the proposal is too large to forward manually between tools.
 - Agents can save and revise proposal drafts in Supabase. Saved proposal status is a review signal only; it does not compact or checkpoint anything.
 - Approved checkpoints first snapshot active source messages into immutable archive rows, then write an append-only marker. They reduce active context pressure by giving the runtime a trusted summary of earlier conversation, but raw messages remain stored in Supabase.
+- Checkpoints require a final manual threshold handshake: the Operator pastes the approved summary back into chat, the agent gives explicit durable-state edits, the Operator applies and saves those edits, and only then triggers the checkpoint.
 - Agents can inspect their own compaction preview, but they cannot compact themselves through that tool.
 - Anthropic prompt caching is enabled by default to reduce repeated prefix processing. Set `ANTHROPIC_PROMPT_CACHE=false` to disable it.
 - Free Moments is local, in-process, and does not auto-start on boot. It wakes Soren and Varro one at a time, round-robin, using their existing main conversations. A quiet response, short response, or nothing-useful-to-report response is success.

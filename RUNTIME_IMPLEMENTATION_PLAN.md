@@ -36,6 +36,10 @@ Near-term work:
 - Insert archive message rows in chunks.
 - Add archive/checkpoint health visibility.
 - Keep current append-only checkpoints; do not introduce destructive transcript replacement yet.
+- Preserve the manual threshold handshake: after the agent approves a summary,
+  the Operator pastes that exact summary back into chat, receives explicit
+  durable-state edits, applies and saves those edits, and only then triggers the
+  checkpoint. This is a continuity and consent step, not automation debt.
 
 Later work:
 
@@ -407,6 +411,7 @@ Implemented first slice:
 - Add archive metadata to checkpoint receipts.
 - Add archive presence/counts to `/api/health`.
 - Keep the existing checkpoint UI and checkpoint semantics unchanged.
+- Keep the final Agent/Operator durable-state edit pass manual and pre-checkpoint.
 
 Remaining archive hardening:
 
