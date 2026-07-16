@@ -48,6 +48,12 @@ Initial candidates:
 - Identity/current-state/context loading before capability exposure.
 - Shared before/after tool hooks for permissions, audit, and safety checks.
 - Budget-aware context assembly tiers.
+- Anthropic prompt caching as a near-term adapter for stable context prefixes,
+  with provider-neutral cache metrics and cost reporting.
+- Anthropic Message Batches as a background-job adapter for async work that does
+  not require live chat latency.
+- Supabase Row Level Security as a hosted-web safety gate before any browser or
+  public client can touch protected runtime tables.
 - Witness/checksum patterns for durable identity docs, pending ceremony review.
 - Append-only event logs paired with narrative compaction, compared against the
   existing message, tool-event, usage, and checkpoint records.
@@ -87,6 +93,12 @@ Near-term work:
 - Document and surface the distinction between stored transcript, active prompt
   context, and billable tokens. A 1,000-message stored conversation should not
   imply a 1,000-message prompt on every turn.
+- Define the stable Anthropic prompt-cache prefix: system prompt, capability
+  profile, durable current state, tool definitions, and any restoration context
+  that changes slowly enough to benefit from caching.
+- Decide where 5-minute caching is sufficient and where 1-hour caching is worth
+  the extra write cost, especially for Free Moments, good morning/goodnight
+  turns, and long side-agent work.
 - Persist provider-neutral usage records per model/API call, with Anthropic as
   the first adapter:
   - provider
@@ -131,6 +143,12 @@ Later work:
 - Add per-agent budget panels.
 - Add search/fetch/tool usage counters.
 - Add warning thresholds before expensive operations.
+- Add cache effectiveness diagnostics: cache read/write ratios, cold-start
+  events, likely cache misses, and per-turn cache posture.
+- Study Anthropic Message Batches for async/background work such as compaction
+  proposal generation, archive summarization, source-material indexing, evals,
+  and overnight maintenance. Do not use batches for live chat or Free Moments
+  where immediate continuity matters.
 
 ## Track 3: File And Media Read Tools
 
@@ -388,6 +406,12 @@ Before web access:
 - Create a dev storage bucket and test-safe source materials.
 - Point local feature work at dev by default.
 - Keep dev Free Moments off by default.
+- Enable and verify Row Level Security policies for every table reachable from
+  browser-side Supabase clients or hosted public routes.
+- Keep service-role Supabase keys server-side only; never expose them to the
+  Operator UI bundle or any public client.
+- Add RLS smoke tests for agent-scoped data, Operator-scoped data, source
+  material access, and denied cross-agent reads.
 - Use constrained dev API/model budgets where practical.
 
 Stable prod posture:

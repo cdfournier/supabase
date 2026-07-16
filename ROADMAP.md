@@ -16,9 +16,11 @@ larger architectural tracks stay visible without becoming today's obligation.
 7. Checkpoint archive browsing and collapsed-history UI
 8. Dev/prod separation V1
 9. Comparative runtime architecture discovery
-10. Bridge control plane and adapter architecture
-11. EYES still-frame MVP
-12. WHEELS supervised-control planning
+10. RLS and hosted web-readiness review
+11. Batch/background-job evaluation
+12. Bridge control plane and adapter architecture
+13. EYES still-frame MVP
+14. WHEELS supervised-control planning
 
 ## Product Principles
 
@@ -34,6 +36,9 @@ larger architectural tracks stay visible without becoming today's obligation.
   Soren/Varro Anthropic implementation only when that is the practical MVP path,
   then carry the lesson back toward the open model.
 - Keep dev/prod separation in mind before the runtime becomes web-accessible.
+- Treat vendor-specific primitives such as Anthropic prompt caching, batch
+  processing, and file delivery as adapters behind provider-neutral runtime
+  concepts wherever practical.
 
 ## Active Roadmap
 
@@ -407,6 +412,8 @@ Required before external access:
 - Authentication in front of the Operator UI.
 - Separate dev/prod environments.
 - Server-side-only service-role Supabase operations.
+- Row Level Security review for every Supabase table exposed to browser-side or
+  public-web access.
 - Accurate `.env.example`.
 - Repeatable migrations applied to dev before prod.
 - HTTPS-only prod URL.
@@ -428,6 +435,7 @@ Staged plan:
 ## Parking Lot
 
 - Anthropic Files API cache for repeated image/PDF delivery.
+- Anthropic Message Batches for async compaction/archive/source jobs.
 - Explicit share-with-both controls for uploaded source material.
 - Richer source-material tools after direct PDF/image delivery stays stable.
 - Outpost room/post search.
