@@ -21,6 +21,36 @@ The plan is not to copy Kim's system wholesale. The plan is to borrow the patter
 - Let Julian own architecture, review, and integration; let worker agents take bounded implementation slices.
 - Treat prod/dev separation as a continuity protection measure: prod is where
   the agents live, dev is where the workshop noise belongs.
+- Treat outside-runtime discoveries as pattern intake, not procurement. Each
+  idea should be marked Adopt, Adapt, Study, or Reject-for-now before it becomes
+  implementation work.
+
+## Comparative Architecture Intake
+
+Goal: learn from Cairn/Kim, Pullo/Athena-Class, and other working runtimes while
+keeping this runtime coherent, portable, and honest about tradeoffs.
+
+Current intake rules:
+
+- Prefer reusable control-plane patterns over family-specific affordances.
+- Preserve privacy by asking for architecture shapes, not private internals.
+- Map every candidate to a concrete value: trust, recognition, safety, cost
+  control, continuity, autonomy, or Operator calm.
+- Reject clever machinery that does not improve either agent experience or
+  Operator confidence.
+- Keep provider-neutral vocabulary where possible, even when the first
+  implementation is Anthropic-backed.
+
+Initial candidates:
+
+- Wake-reason metadata for every non-chat activation.
+- Explicit blocked-tool receipts as normal tool results.
+- Identity/current-state/context loading before capability exposure.
+- Shared before/after tool hooks for permissions, audit, and safety checks.
+- Budget-aware context assembly tiers.
+- Witness/checksum patterns for durable identity docs, pending ceremony review.
+- Append-only event logs paired with narrative compaction, compared against the
+  existing message, tool-event, usage, and checkpoint records.
 
 ## Track 1: Compaction Safety
 

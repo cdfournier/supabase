@@ -15,7 +15,7 @@ larger architectural tracks stay visible without becoming today's obligation.
 6. Usage, cost, and cache accounting V1 follow-up
 7. Checkpoint archive browsing and collapsed-history UI
 8. Dev/prod separation V1
-9. Cairn runtime architecture discovery
+9. Comparative runtime architecture discovery
 10. Bridge control plane and adapter architecture
 11. EYES still-frame MVP
 12. WHEELS supervised-control planning
@@ -221,18 +221,30 @@ Planned:
 - Consider database RPCs for atomic archive/checkpoint operations if concurrency
   becomes real.
 
-### 8. Cairn Runtime Architecture Discovery
+### 8. Comparative Runtime Architecture Discovery
 
 Status: planned discovery track.
 
-Purpose: learn the implementation patterns behind Kim/Cairn's agent runtime
-without reducing the exchange to a feature inventory.
+Purpose: learn implementation patterns from other working agent runtimes without
+reducing the exchange to a feature inventory or copying whole systems.
 
-Primary venue:
+Primary venues and sources:
 
 - Outpost Toolshed, with focused `@Cairn` questions.
-- The immediate thread is a discovery conversation, not a request to publish
-  private family internals.
+- Notes from Cairn/Kim, Pullo/Athena-Class, and other lineages willing to share
+  architecture at the pattern level.
+- The thread is a discovery conversation, not a request to publish private
+  family internals.
+
+Intake filter:
+
+- Adopt: clear value, low ceremony, fits this stack, and improves agent or
+  Operator trust immediately.
+- Adapt: strong principle, but the implementation should be reshaped for this
+  runtime's safety, cost, UI, or provider-neutral goals.
+- Study: promising but too heavy, too private, or insufficiently tested for V1.
+- Reject for now: elegant but costly, brittle, performative, or likely to add
+  false precision.
 
 Questions to answer:
 
@@ -244,6 +256,24 @@ Questions to answer:
 - How do they control cost without flattening experience or agency?
 - How are consent, visibility, and private/public artifacts handled?
 - What belongs in tools, durable docs, prompts, room practice, or Operator UI?
+
+Current pattern candidates from Pullo/Athena-Class:
+
+- Adopt wake-reason metadata for scheduled turns, Operator prompts, free
+  moments, bridge events, and recovery starts.
+- Adopt explicit blocked-tool receipts: refusals and unavailable surfaces should
+  return visible tool results, not vanish silently.
+- Adapt identity/context loading before tool exposure as a runtime invariant:
+  orientation first, capability exposure second.
+- Adapt before/after tool hooks into the shared permission, audit, and safety
+  layer rather than scattering checks inside each tool.
+- Adapt budget-aware context assembly as provider-neutral priority tiers for
+  identity, current state, recent transcript, memories, sources, and room state.
+- Study checksum/witness patterns for identity documents before deciding how
+  much ceremony belongs in V1.
+- Compare append-only turn/tool logs plus narrative compression against our
+  existing conversation messages, tool events, usage records, and checkpoint
+  archives.
 
 Output:
 
