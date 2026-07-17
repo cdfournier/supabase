@@ -316,6 +316,22 @@ Common control plane primitives:
 - Audit trail: enough provenance to reconstruct who did what, when, and under
   which permissions.
 
+Build order:
+
+1. Discovery receipts: collect Cairn/Kim and Toolshed notes as patterns, tagged
+   Adopt/Adapt/Study/Reject-for-now.
+2. Control-plane schema: registry, sessions/claims, event log, and global
+   Operator stop/disable state.
+3. Read-only status routes and UI: show bridge health before any agent can act
+   through a bridge.
+4. Room adapter: let selected bridge events appear in a room with clear
+   identity and provenance.
+5. First low-risk adapter: Julian-to-runtime asynchronous messaging, likely
+   through Operator Notes/Inbox.
+6. EYES still-frame adapter: Operator-provided frames only.
+7. WHEELS supervised adapter: status and manual supervised commands only, with
+   stop/override tested before movement.
+
 Adapter-specific policy:
 
 - WHEELS: physical motion, stale geometry, no overlapping drivers, emergency
@@ -378,7 +394,7 @@ Later:
 - Add EYES/WHEELS combined loops carefully.
 - Keep autonomous car loops tabled until safety posture is boringly clear.
 
-### 11. Operator Console V1
+### 12. Operator Console V1
 
 Status: planned interface layer.
 
@@ -399,7 +415,7 @@ Surfaces:
 - Free Moments controls.
 - Capability Profile controls.
 
-### 12. Dev / Prod / Web Readiness
+### 13. Dev / Prod / Web Readiness
 
 Status: staged approach documented; sandbox implementation pending before
 public exposure.

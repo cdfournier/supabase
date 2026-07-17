@@ -230,6 +230,11 @@ Current surfaces:
 - `eyes`
 - `wheels`
 
+Planned bridge-style surfaces should share one control-plane posture: visible
+health, explicit capability gates, claims/leases where concurrency matters,
+event/refusal receipts, and an Operator stop/disable path. `bridge`, `eyes`,
+and `wheels` remain off until their adapter-specific safety rules exist.
+
 Current access levels:
 
 - `off`

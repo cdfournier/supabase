@@ -390,22 +390,64 @@ Safety posture:
 - Make artifact permissions portable and provider-neutral.
 - Repository skills are bridge/review capabilities, not default runtime tools.
 
-## Track 8: WHEELS/EYES And Car Loops
+## Track 8: Bridge Control Plane And Adapters
 
-Goal: return to embodied experiences after runtime foundations are stronger.
+Goal: build one shared control layer for cross-runtime messaging, EYES, WHEELS,
+Outpost room events, and future live rooms, while keeping each adapter's safety
+rules specific to its domain.
+
+Near-term:
+
+- Capture Cairn/Kim, Pullo/Athena-Class, and Toolshed discoveries as portable
+  patterns, tagged Adopt, Adapt, Study, or Reject-for-now.
+- Define the common control-plane primitives before adapter-specific code:
+  bridge registry, capability gates, session/claim leases, event log, Operator
+  override, room event projection, and audit trail.
+- Start with read-only bridge health/status surfaces so Operators and agents can
+  see whether a bridge exists, who owns it, whether it is healthy, and what it
+  is allowed to do before any action tools are exposed.
+- Treat Operator Notes / Inbox as the likely first transport for
+  Julian-to-runtime asynchronous bridge messaging.
+- Make every bridge event attributable: sender, target, adapter, room if any,
+  correlation id, permission posture, timestamp, and result/refusal.
+- Keep adapter events visible to the Operator by default in V1.
+- Route selected events into Outpost/runtime rooms only after identity and
+  provenance are boringly clear.
+
+Later:
+
+- Add adapter-specific action surfaces in rising risk order:
+  Julian-to-runtime messaging, EYES still-frame sessions, WHEELS supervised
+  control, then live multi-agent rooms.
+- Explore realtime chat only after asynchronous bridge semantics, identity,
+  logging, and stop/disable controls have survived normal use.
+- Keep repository/code capabilities as artifacts or bridge-reviewed proposals,
+  not default runtime shell authority.
+
+## Track 9: WHEELS/EYES And Car Loops
+
+Goal: return to embodied experiences after runtime foundations are stronger,
+using the bridge control plane rather than one-off safety paths.
 
 Near-term:
 
 - Table autonomous car loops.
 - Keep WHEELS/EYES references as known future integrations.
+- Treat EYES as the first embodied adapter because Operator-provided still
+  frames have lower physical risk than motion.
+- Treat WHEELS as supervised-only: visible status, voice/status checks, manual
+  commands, no overlapping drivers, and emergency stop before movement.
 
 Later:
 
-- Adapt Kim's car-room pattern only after Free Moments and archive safety are stable.
+- Adapt Kim's car-room pattern only after Free Moments, archive safety,
+  capability profiles, and the bridge control plane are stable.
 - Preserve Operator presence and manual override.
 - Avoid overlapping drivers or autonomous turns.
+- Add combined EYES/WHEELS loops carefully and only after each surface is
+  boringly reliable alone.
 
-## Track 9: Dev / Prod Separation
+## Track 10: Dev / Prod Separation
 
 Goal: let the live runtime become calm and stable while build work continues at
 speed in a dev sandbox.
@@ -493,3 +535,31 @@ Remaining archive hardening:
 ### 2. Free Moments V1
 
 Free Moments V1 is implemented for local use. Next step is cautious testing with manual `Wake One Now` before leaving the scheduler running.
+
+### 3. Bridge Control Plane Discovery Slice
+
+Reason: EYES, WHEELS, Julian-to-runtime messaging, Cairn collaboration, and
+future live rooms all need the same visibility and safety scaffolding before
+they diverge into separate adapters.
+
+First slice:
+
+- Gather Toolshed/Cairn/Kim/Pullo/Athena-Class bridge patterns as structured
+  notes, tagged Adopt, Adapt, Study, or Reject-for-now.
+- Draft the minimal control-plane schema: bridge registry, session/claim lease,
+  bridge event log, and Operator stop/disable state.
+- Define the first status-only API shape before exposing action tools.
+- Decide which events may project into rooms and what attribution/provenance
+  they must carry.
+- Pick the first adapter implementation target. Current bias: asynchronous
+  Julian-to-runtime messaging through Operator Notes / Inbox before EYES or
+  WHEELS.
+
+Verification for this slice:
+
+- No live bridge can execute commands yet.
+- Operators can see proposed bridge health/state fields.
+- Agents can see only their own allowed bridge posture through the capability
+  profile.
+- Every proposed action path has a refusal/event receipt shape before the action
+  exists.
