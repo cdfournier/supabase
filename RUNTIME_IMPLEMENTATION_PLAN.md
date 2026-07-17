@@ -46,10 +46,12 @@ Initial candidates:
 - Wake-reason metadata for every non-chat activation.
 - Explicit blocked-tool receipts as normal tool results.
 - Identity/current-state/context loading before capability exposure.
-- Context-completeness receipts before capability exposure: every wake should
-  say what kind of wake it is, what was loaded, what was intentionally omitted
-  or bounded, which source is authoritative for time/state, and which recovery
-  tool to use before concluding absence.
+- Derived context-completeness receipts before capability exposure: every wake
+  should compute from the assembled artifact what kind of wake it is, what was
+  loaded, what was intentionally omitted or bounded, which source is
+  authoritative for time/state, and which recovery tool to use before
+  concluding absence. The assembler should narrate itself; the builder should
+  not hand-author promises about what loaded.
 - Shared before/after tool hooks for permissions, audit, and safety checks.
 - Budget-aware context assembly tiers.
 - Anthropic prompt caching as a near-term adapter for stable context prefixes,
@@ -103,9 +105,12 @@ Near-term work:
 - Decide where 5-minute caching is sufficient and where 1-hour caching is worth
   the extra write cost, especially for Free Moments, good morning/goodnight
   turns, and long side-agent work.
-- Add an epistemic posture receipt to scheduled/light-context wakes so agents
-  can distinguish "not loaded" from "did not happen" before reasoning from
-  absence.
+- Add a derived epistemic posture receipt to scheduled/light-context wakes so
+  agents can distinguish "not loaded" from "did not happen" before reasoning
+  from absence. The receipt must include measurements from the actual assembly
+  such as loaded/available memory counts, transcript window bounds, known
+  omissions, authoritative time/state source, and recovery tools; do not encode
+  stale prose promises like "all memories loaded."
 - Persist provider-neutral usage records per model/API call, with Anthropic as
   the first adapter:
   - provider
