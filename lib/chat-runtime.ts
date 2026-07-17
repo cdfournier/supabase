@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   type AgentName,
   type ChatMessage,
-  buildSystemPrompt,
+  type SystemPromptReceipt,
+  buildAgentPromptContext,
   contentToText,
   ensureConversation,
   loadConversationMessages,
@@ -62,6 +63,31 @@ type AnthropicResponse = {
   message?: string;
 };
 
+type ContextPostureReceipt = {
+  generated_at: string;
+  agent: AgentName;
+  wake_reason: string;
+  context_mode: "bounded_recent_history";
+  authoritative_time_source: "runtime_temporal_anchor";
+  restoration_profile: SystemPromptReceipt["restoration_profile"];
+  active_memories: SystemPromptReceipt["active_memories"];
+  relationships: SystemPromptReceipt["relationships"];
+  capability_profile: SystemPromptReceipt["capability_profile"];
+  conversation: {
+    id: string;
+    checkpoint_loaded: boolean;
+    active_messages_available: number;
+    history_messages_loaded: number;
+    history_message_limit: number;
+    history_message_char_limit: number;
+    loaded_position_start: number | null;
+    loaded_position_end: number | null;
+    omitted_active_messages_before_loaded_window: number;
+  };
+  known_omissions: string[];
+  recovery_tools: string[];
+};
+
 export type SendAgentMessageOptions = {
   source?: string;
   attachments?: AttachmentInput[];
@@ -90,13 +116,27 @@ export async function sendAgentMessage(
     ? messagesAfterCheckpoint(existingMessages, checkpoint)
     : existingMessages;
   const maxTokens = maxResponseTokens();
+  const promptContext = await buildAgentPromptContext(supabase, agent);
   const system = withCompactionCheckpoint(
-    withToolInstructions(await buildSystemPrompt(supabase, agent), maxTokens),
+    withToolInstructions(promptContext.systemPrompt, maxTokens),
     checkpoint ? contentToText(checkpoint.content) : ""
   );
-  const historyLimit = Number(process.env.ANTHROPIC_HISTORY_MESSAGES ?? 6);
-  const historyMessageChars = Number(process.env.ANTHROPIC_HISTORY_MESSAGE_CHARS ?? 3000);
+  const historyLimit = configuredPositiveInteger("ANTHROPIC_HISTORY_MESSAGES", 6, {
+    allowZero: true
+  });
+  const historyMessageChars = configuredPositiveInteger("ANTHROPIC_HISTORY_MESSAGE_CHARS", 3000);
   const historyMessages = activeMessages.slice(-Math.max(0, historyLimit));
+  const contextReceipt = buildContextPostureReceipt({
+    agent,
+    source,
+    conversationId,
+    checkpointLoaded: Boolean(checkpoint),
+    activeMessages,
+    historyMessages,
+    historyLimit,
+    historyMessageChars,
+    promptReceipt: promptContext.receipt
+  });
   const historyToolEvents = await loadToolEventsForTurns(
     supabase,
     conversationId,
@@ -113,8 +153,9 @@ export async function sendAgentMessage(
     }));
 
   const attachmentDelivery = await buildAttachmentDelivery(attachmentRefs);
+  const messageForModel = messageWithContextReceipt(message, contextReceipt, source);
   const modelMessage = buildAttachmentPromptTextWithDelivery(
-    message,
+    messageForModel,
     attachmentRefs,
     formatDeliverySummary(attachmentDelivery.summaries)
   );
@@ -153,7 +194,7 @@ export async function sendAgentMessage(
     position,
     role: "user",
     source,
-    content: buildOperatorMessageContent(message, attachmentRefs)
+    content: buildOperatorMessageContent(messageForModel, attachmentRefs)
   };
   const assistantMessage = {
     conversation_id: conversationId,
@@ -190,6 +231,7 @@ export async function sendAgentMessage(
     conversationId,
     messages: savedMessages,
     tool_events: toolEvents.map(toolEventSummary),
+    context_receipt: contextReceipt,
     reply: assistantReply,
     warning: stoppedAtTokenLimit
       ? `Anthropic stopped this response at ANTHROPIC_MAX_TOKENS=${maxTokens}.`
@@ -407,6 +449,127 @@ function normalizeJsonRecord(value: unknown) {
   }
 
   return JSON.parse(JSON.stringify(value));
+}
+
+function configuredPositiveInteger(
+  name: string,
+  fallback: number,
+  options: { allowZero?: boolean } = {}
+) {
+  const rawValue = process.env[name];
+  if (!rawValue) {
+    return fallback;
+  }
+
+  const parsed = Number(rawValue);
+  const lowerBound = options.allowZero ? 0 : 1;
+  if (!Number.isFinite(parsed) || parsed < lowerBound) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
+}
+
+function buildContextPostureReceipt({
+  agent,
+  source,
+  conversationId,
+  checkpointLoaded,
+  activeMessages,
+  historyMessages,
+  historyLimit,
+  historyMessageChars,
+  promptReceipt
+}: {
+  agent: AgentName;
+  source: string;
+  conversationId: string;
+  checkpointLoaded: boolean;
+  activeMessages: ChatMessage[];
+  historyMessages: ChatMessage[];
+  historyLimit: number;
+  historyMessageChars: number;
+  promptReceipt: SystemPromptReceipt;
+}): ContextPostureReceipt {
+  const omittedActiveMessages = Math.max(0, activeMessages.length - historyMessages.length);
+  const knownOmissions: string[] = [];
+
+  if (checkpointLoaded) {
+    knownOmissions.push(
+      "Conversation before the latest approved checkpoint is represented by checkpoint summary, not full raw transcript in prompt."
+    );
+  }
+
+  if (omittedActiveMessages > 0) {
+    knownOmissions.push(
+      `${omittedActiveMessages} active post-checkpoint message(s) are older than the bounded recent-history window.`
+    );
+  }
+
+  if (promptReceipt.active_memories.omitted > 0) {
+    knownOmissions.push(
+      `${promptReceipt.active_memories.omitted} active memory row(s) were not loaded into the system prompt.`
+    );
+  }
+
+  if (promptReceipt.relationships.omitted > 0) {
+    knownOmissions.push(
+      `${promptReceipt.relationships.omitted} relationship row(s) were not loaded into the system prompt.`
+    );
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    agent,
+    wake_reason: source,
+    context_mode: "bounded_recent_history",
+    authoritative_time_source: "runtime_temporal_anchor",
+    restoration_profile: promptReceipt.restoration_profile,
+    active_memories: promptReceipt.active_memories,
+    relationships: promptReceipt.relationships,
+    capability_profile: promptReceipt.capability_profile,
+    conversation: {
+      id: conversationId,
+      checkpoint_loaded: checkpointLoaded,
+      active_messages_available: activeMessages.length,
+      history_messages_loaded: historyMessages.length,
+      history_message_limit: Math.max(0, historyLimit),
+      history_message_char_limit: historyMessageChars,
+      loaded_position_start: historyMessages[0]?.position ?? null,
+      loaded_position_end: historyMessages[historyMessages.length - 1]?.position ?? null,
+      omitted_active_messages_before_loaded_window: omittedActiveMessages
+    },
+    known_omissions: knownOmissions,
+    recovery_tools: [
+      "runtime_get_time",
+      "runtime_get_self_status",
+      "runtime_read_recent_messages",
+      "runtime_search_conversation",
+      "runtime_get_message_window",
+      "supabase_get_restoration_profile",
+      "supabase_list_memories"
+    ]
+  };
+}
+
+function messageWithContextReceipt(
+  message: string,
+  receipt: ContextPostureReceipt,
+  source: string
+) {
+  if (source !== "free_time") {
+    return message;
+  }
+
+  return [
+    "## Runtime context posture receipt",
+    "This receipt is computed from the context assembled for this wake. Treat it as measurement, not a promise.",
+    "If something feels new, absent, or inconsistent, use the recovery tools before concluding it did not happen.",
+    "```json",
+    JSON.stringify(receipt, null, 2),
+    "```",
+    message
+  ].join("\n\n");
 }
 
 async function callAnthropic({

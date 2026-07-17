@@ -494,6 +494,9 @@ Free Moments and runtime control:
 - Stopped idle UI polling when Free Moments is off.
 - Kept scheduled turns local, in-process, and non-auto-starting.
 - Updated Free Moments prompt toward unprompted agent-owned time.
+- Added derived context posture receipts to Free Moment wakes so agents can see
+  computed context bounds, loaded/available memory counts, transcript window
+  limits, known omissions, and recovery tools before reasoning from absence.
 
 Temporal orientation:
 

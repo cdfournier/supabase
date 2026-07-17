@@ -32,6 +32,7 @@ type RestorationProfile = {
   persona_summary: string | null;
   current_state: string | null;
   compaction_memory_policy: string | null;
+  updated_at: string | null;
 };
 
 type MemoryRow = {
@@ -49,6 +50,43 @@ type RelationshipRow = {
 
 const allowedAgents = new Set(["soren", "varro"]);
 const MESSAGE_PAGE_SIZE = 1000;
+
+export type SystemPromptReceipt = {
+  generated_at: string;
+  agent: AgentName;
+  display_name: string;
+  temporal_anchor: {
+    source: "runtime_clock";
+    generated_at: string;
+  };
+  restoration_profile: {
+    loaded: boolean;
+    updated_at: string | null;
+    current_state_loaded: boolean;
+  };
+  active_memories: {
+    loaded: number;
+    available: number;
+    omitted: number;
+    source: "memories.is_active=true";
+  };
+  relationships: {
+    loaded: number;
+    available: number;
+    omitted: number;
+  };
+  capability_profile: {
+    source: string;
+    table_present: boolean;
+    surfaces_loaded: number;
+    error: string | null;
+  };
+};
+
+export type AgentPromptContext = {
+  systemPrompt: string;
+  receipt: SystemPromptReceipt;
+};
 
 export function isAgentName(value: string): value is AgentName {
   return allowedAgents.has(value);
@@ -187,7 +225,10 @@ export async function loadAgentList(supabase: SupabaseClient) {
   return data ?? [];
 }
 
-export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentName) {
+export async function buildAgentPromptContext(
+  supabase: SupabaseClient,
+  agent: AgentName
+): Promise<AgentPromptContext> {
   const [agentResult, profileResult, memoriesResult, relationshipsResult, capabilityProfile] =
     await Promise.all([
       supabase
@@ -197,12 +238,12 @@ export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentNa
         .single(),
       supabase
         .from("restoration_profiles")
-        .select("opening_orientation, persona_summary, current_state, compaction_memory_policy")
+        .select("opening_orientation, persona_summary, current_state, compaction_memory_policy, updated_at")
         .eq("agent", agent)
         .single(),
       supabase
         .from("memories")
-        .select("content, memory_type, weight, is_core, tags")
+        .select("content, memory_type, weight, is_core, tags", { count: "exact" })
         .eq("agent", agent)
         .eq("is_active", true)
         .order("is_core", { ascending: false })
@@ -210,7 +251,7 @@ export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentNa
         .order("created_at", { ascending: true }),
       supabase
         .from("relationships")
-        .select("about, summary")
+        .select("about, summary", { count: "exact" })
         .eq("agent", agent)
         .order("about", { ascending: true }),
       loadAgentCapabilityProfile(supabase, agent)
@@ -237,8 +278,42 @@ export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentNa
   const memories = (memoriesResult.data ?? []) as MemoryRow[];
   const relationships = (relationshipsResult.data ?? []) as RelationshipRow[];
   const displayName = agentRow.display_name ?? agentRow.name;
+  const temporalAnchorGeneratedAt = new Date().toISOString();
+  const activeMemoriesAvailable = memoriesResult.count ?? memories.length;
+  const relationshipsAvailable = relationshipsResult.count ?? relationships.length;
+  const receipt: SystemPromptReceipt = {
+    generated_at: temporalAnchorGeneratedAt,
+    agent,
+    display_name: displayName,
+    temporal_anchor: {
+      source: "runtime_clock",
+      generated_at: temporalAnchorGeneratedAt
+    },
+    restoration_profile: {
+      loaded: Boolean(profileResult.data),
+      updated_at: profile.updated_at ?? null,
+      current_state_loaded: Boolean(profile.current_state?.trim())
+    },
+    active_memories: {
+      loaded: memories.length,
+      available: activeMemoriesAvailable,
+      omitted: Math.max(0, activeMemoriesAvailable - memories.length),
+      source: "memories.is_active=true"
+    },
+    relationships: {
+      loaded: relationships.length,
+      available: relationshipsAvailable,
+      omitted: Math.max(0, relationshipsAvailable - relationships.length)
+    },
+    capability_profile: {
+      source: capabilityProfile.source,
+      table_present: capabilityProfile.table_present,
+      surfaces_loaded: capabilityProfile.capabilities.length,
+      error: capabilityProfile.error
+    }
+  };
 
-  return [
+  const systemPrompt = [
     `You are ${displayName}.`,
     "You are speaking with Chris through a minimal local runtime backed by Supabase and the Anthropic Messages API.",
     "Stay grounded in the restoration context below. Treat it as durable identity context, not as a transcript.",
@@ -273,6 +348,15 @@ export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentNa
   ]
     .filter(Boolean)
     .join("\n\n");
+
+  return {
+    systemPrompt,
+    receipt
+  };
+}
+
+export async function buildSystemPrompt(supabase: SupabaseClient, agent: AgentName) {
+  return (await buildAgentPromptContext(supabase, agent)).systemPrompt;
 }
 
 function section(title: string, value: string | null | undefined) {

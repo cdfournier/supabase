@@ -149,6 +149,11 @@ Implemented first slice:
   active/total message depth, compaction pressure, checkpoint/archive/proposal
   basics, capability gates, resource counts, and usage totals without seeing
   other agents' state.
+- Added derived context posture receipts for Free Moments. The runtime computes
+  loaded/available prompt context facts from the assembled artifact, injects
+  the receipt into `source='free_time'` wakes, saves that receipt-bearing wake
+  prompt into the transcript, and returns the raw receipt from `sendAgentMessage`
+  for verification.
 
 Later work:
 

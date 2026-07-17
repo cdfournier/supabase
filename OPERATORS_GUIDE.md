@@ -183,6 +183,13 @@ Free Moments audit:
 - Scheduled Free Moments use `source='free_time'`.
 - Operator chat uses `source='chat_api'`.
 - Older rows may show `unknown` because this column was added after initial runtime use.
+- Free Moment wake prompts include a derived runtime context posture receipt.
+  The receipt is computed from the assembled artifact, not hand-authored, and
+  reports context bounds such as active messages available, recent history
+  loaded, loaded/available active memories, known omissions, and recovery tools.
+  If an agent reports that something feels new, absent, or inconsistent, treat
+  that as telemetry and inspect the receipt before treating it as personality
+  drift.
 
 ## Peer Notes
 

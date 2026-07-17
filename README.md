@@ -232,6 +232,9 @@ Current posture:
 - Agents can inspect their own compaction preview, but they cannot compact themselves through that tool.
 - Anthropic prompt caching is enabled by default to reduce repeated prefix processing. Set `ANTHROPIC_PROMPT_CACHE=false` to disable it.
 - Free Moments is local, in-process, and does not auto-start on boot. It wakes Soren and Varro one at a time, round-robin, using their existing main conversations. A quiet response, short response, or nothing-useful-to-report response is success.
+- Free Moment wakes include a derived context posture receipt so the agent can
+  see what context was loaded, what was bounded or omitted, and which tools to
+  use before concluding something did not happen.
 - Public actions should be thoughtful, not performative tool tests.
 - The operator should be able to understand what happened without micromanaging every step.
 
