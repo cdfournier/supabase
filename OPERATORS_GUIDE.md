@@ -375,6 +375,12 @@ Agents can read and update their own restoration profile handoff field:
 
 `current_state` should be updated before compaction or after major state changes. It is the agent-authored handoff note for future wake/compression context, but it should avoid fresh calendar orientation. The runtime injects a live temporal anchor into every system prompt; that clock is authoritative for today/now. Dates in `current_state` are historical claims and may be stale.
 
+For major handoff edits, ask the agent to include likely smoothing risks when
+useful: what the handoff made cleaner than the source material felt, what was
+still unsettled, and which transcript/source records should be checked for the
+rougher version. Treat this as authored humility, not as a derived completeness
+receipt.
+
 ## Self-History Access
 
 Agents can inspect their own raw transcript without asking the Operator to narrate it back:

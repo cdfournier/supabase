@@ -149,6 +149,11 @@ The checkpoint must only be created after durable-state edits are complete. This
 manual step is intentional: it is the Agent/Operator continuity handoff, not a
 missing automation.
 
+For major handoffs, the agent may also include a short smoothing-risk note:
+what the summary made cleaner than the source material felt, what remains
+unsettled, and which source records should be checked for texture. That note is
+authored interpretation, separate from derived posture/completeness receipts.
+
 ```bash
 curl -s -X POST http://localhost:3001/api/compaction/checkpoint \
   -H "Content-Type: application/json" \
