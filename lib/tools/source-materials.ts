@@ -24,6 +24,7 @@ type SourceMaterialRow = {
   uploaded_via?: string | null;
   conversation_id?: string | null;
   turn_id?: string | null;
+  metadata?: JsonRecord | null;
   created_at: string;
   updated_at: string;
 };
@@ -61,7 +62,7 @@ export async function listSourceMaterials(agent: AgentName, input: unknown) {
   let query = supabase
     .from("source_materials")
     .select(
-      "id, title, description, bucket, storage_path, material_type, mime_type, size_bytes, tags, source_notes, status, created_by, original_filename, content_sha256, uploaded_via, conversation_id, turn_id, created_at, updated_at"
+      "id, title, description, bucket, storage_path, material_type, mime_type, size_bytes, tags, source_notes, status, created_by, metadata, original_filename, content_sha256, uploaded_via, conversation_id, turn_id, created_at, updated_at"
     )
     .in("id", materialIds)
     .eq("status", "active")
@@ -217,7 +218,7 @@ async function getPermittedSourceMaterial(agent: AgentName, id: string) {
   const { data: material, error: materialError } = await supabase
     .from("source_materials")
     .select(
-      "id, title, description, bucket, storage_path, material_type, mime_type, size_bytes, tags, source_notes, status, created_by, original_filename, content_sha256, uploaded_via, conversation_id, turn_id, created_at, updated_at"
+      "id, title, description, bucket, storage_path, material_type, mime_type, size_bytes, tags, source_notes, status, created_by, metadata, original_filename, content_sha256, uploaded_via, conversation_id, turn_id, created_at, updated_at"
     )
     .eq("id", id)
     .eq("status", "active")

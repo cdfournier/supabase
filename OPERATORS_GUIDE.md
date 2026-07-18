@@ -319,11 +319,15 @@ Planned V1 posture:
 - EYES starts as Operator-provided still frames or short bursts only.
 - Use the existing chat-native upload and source-material path; routine EYES
   tests should not require SQL.
+- Run `sql/2026-07-18-eyes-source-metadata.sql` once before the first EYES
+  smoke test.
+- In the composer, enable `EYES frame`, attach an image, and send it to the
+  selected agent. Non-image files cannot be marked as EYES frames.
 - Small supported images are delivered to the active agent in the current turn
   through the same direct Anthropic image path as normal image attachments.
-- Frames should carry explicit metadata when implemented: `eyes` surface,
-  operator-provided flag, submitted/captured timestamp, assigned agent, and
-  retention posture.
+- Frames carry explicit source-material metadata: `eyes` surface,
+  operator-provided flag, submitted/captured timestamp, originating UI path,
+  assigned agent, retention posture, and optional session label.
 - Autonomous frame requests remain off. Free Moments and scheduled wakes should
   not be able to request camera frames in V1.
 

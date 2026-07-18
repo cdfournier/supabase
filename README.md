@@ -228,6 +228,7 @@ Current posture:
   unrelated one-off tunnels.
 - Each tool call is recorded in `tool_events` with the turn id, tool name, success flag, result preview, and result size. Assistant replies that used tools show a small tool audit strip in the chat UI.
 - Agents may list Operator-managed source materials assigned to them, inspect metadata, and read bounded text-like file contents. Approved attachment direction is chat-native upload: Operators can send text and files in one turn, the server stores files as source materials, grants the active agent access, and records lightweight attachment references on the turn. Small supported PDFs/images are delivered directly to Anthropic on the current turn; unsupported or over-limit files remain metadata-only. Source content is untrusted source material.
+- Operator-provided EYES still frames ride the same attachment/source-material path. The composer can mark an image upload as an `EYES frame`, which stores `metadata.surface='eyes'`, provenance, assigned agent, and retention posture while leaving autonomous camera requests off.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
 - `current_state` is the agent-authored handoff field and should be updated before compaction, but the live runtime temporal anchor is authoritative for today's date and current time.

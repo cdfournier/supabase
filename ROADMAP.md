@@ -357,12 +357,12 @@ Notes:
 
 ### 10. EYES MVP
 
-Status: next build slice; still-frame MVP only.
+Status: first implementation slice in progress; still-frame MVP only.
 
 Purpose: bring camera-frame awareness into the runtime without overbuilding the
 full embodied loop first.
 
-Likely V1:
+V1 shape:
 
 - Operator-provided still frame or short burst only. No autonomous camera
   requests in V1.
@@ -371,6 +371,9 @@ Likely V1:
   operator-provided flag, retention posture, and assigned agent(s).
 - Route current-turn image delivery through the existing direct Anthropic image
   attachment path instead of inventing a second media channel.
+- Operator UI exposes a small `EYES frame` checkbox on the existing composer.
+  When enabled, uploads are marked `metadata.surface='eyes'` and must be image
+  files.
 - Let agents discover prior frames through source-material metadata, but keep
   image reread semantics explicit. Text read tools do not magically inspect
   images.
@@ -392,7 +395,8 @@ First smoke test:
 Done means:
 
 - EYES has a documented source-material metadata shape.
-- Operator-provided image turns work without SQL.
+- Operator-provided image turns work through the composer after the one-time
+  `source_materials.metadata` migration is applied.
 - Capability posture clearly distinguishes "can inspect this provided frame"
   from "can ask for a camera frame."
 - No frame retention or autonomous-camera behavior is implicit.

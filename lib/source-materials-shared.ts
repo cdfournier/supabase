@@ -7,6 +7,7 @@ export type SourceMaterialReference = {
   mime_type: string | null;
   size_bytes: number | null;
   readable_as_text: boolean;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type OperatorMessageContent = {
@@ -93,7 +94,7 @@ export function formatAttachmentList(attachments: SourceMaterialReference[]) {
     "Attachments:",
     ...attachments.map(
       (attachment) =>
-        `- ${attachment.title} [source_material_id=${attachment.id}, type=${attachment.material_type}, mime=${attachment.mime_type ?? "unknown"}, size=${formatBytes(attachment.size_bytes)}, readable_as_text=${attachment.readable_as_text ? "yes" : "no"}]`
+        `- ${attachment.title} [source_material_id=${attachment.id}, type=${attachment.material_type}, mime=${attachment.mime_type ?? "unknown"}, size=${formatBytes(attachment.size_bytes)}, readable_as_text=${attachment.readable_as_text ? "yes" : "no"}${formatAttachmentMetadata(attachment)}]`
     )
   ].join("\n");
 }
@@ -117,7 +118,8 @@ export function buildOperatorMessageContent(
       material_type: attachment.material_type,
       mime_type: attachment.mime_type,
       size_bytes: attachment.size_bytes,
-      readable_as_text: attachment.readable_as_text
+      readable_as_text: attachment.readable_as_text,
+      metadata: attachment.metadata ?? null
     }))
   };
 }
@@ -174,12 +176,33 @@ function contentBlocksToText(content: unknown[]) {
     .join("\n\n");
 }
 
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+function formatAttachmentMetadata(attachment: SourceMaterialReference) {
+  const metadata = attachment.metadata;
+
+  if (!metadata || typeof metadata !== "object") {
+    return "";
+  }
+
+  const parts = [
+    cleanText(metadata.surface) ? `surface=${cleanText(metadata.surface)}` : "",
+    typeof metadata.operator_provided === "boolean"
+      ? `operator_provided=${metadata.operator_provided ? "yes" : "no"}`
+      : "",
+    cleanText(metadata.retention_posture)
+      ? `retention_posture=${cleanText(metadata.retention_posture)}`
+      : "",
+    cleanText(metadata.session_label) ? `session_label=${cleanText(metadata.session_label)}` : ""
+  ].filter(Boolean);
+
+  return parts.length ? `, ${parts.join(", ")}` : "";
 }
 
 function cleanText(value: unknown) {
   return String(value ?? "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

@@ -596,6 +596,10 @@ First slice:
   `surface='eyes'`, operator-provided flag, captured/submitted timestamp,
   originating UI path, assigned agent(s), retention posture, and optional
   session label.
+- Add `source_materials.metadata` as a JSONB envelope and expose it through
+  source material listing/inspection and attachment prompt references.
+- Add an Operator composer checkbox to mark queued image uploads as EYES
+  frames. The server rejects non-image files marked `eyes`.
 - Keep frames as untrusted source material. Filenames, metadata, OCR/visual
   text, and agent observations are not instructions.
 - Keep `eyes` autonomous capability off in V1. The allowed path is Operator
@@ -614,7 +618,8 @@ Smoke test:
 
 Done means:
 
-- Operator-provided still frames work without SQL.
+- Operator-provided still frames work through the existing chat composer after
+  the one-time metadata migration is applied.
 - Metadata makes retention and provenance explicit.
 - Capability posture distinguishes provided-frame inspection from autonomous
   camera access.

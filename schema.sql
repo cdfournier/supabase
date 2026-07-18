@@ -269,6 +269,7 @@ create table if not exists public.source_materials (
   source_notes text,
   status text not null default 'active',
   created_by text not null default 'operator',
+  metadata jsonb not null default '{}'::jsonb,
   original_filename text,
   content_sha256 text,
   uploaded_via text,
@@ -289,6 +290,9 @@ alter table public.source_materials
   add column if not exists uploaded_via text;
 
 alter table public.source_materials
+  add column if not exists metadata jsonb not null default '{}'::jsonb;
+
+alter table public.source_materials
   add column if not exists conversation_id text references public.conversations(id);
 
 alter table public.source_materials
@@ -299,6 +303,9 @@ create index if not exists source_materials_by_status
 
 create index if not exists source_materials_by_tags
   on public.source_materials using gin (tags);
+
+create index if not exists source_materials_by_metadata_surface
+  on public.source_materials ((metadata->>'surface'), created_at desc);
 
 create index if not exists source_materials_by_conversation
   on public.source_materials (conversation_id, created_at desc);
