@@ -336,6 +336,26 @@ First smoke test shape:
   observation to the EYES log.
 - Confirm no autonomous camera-request path is available.
 
+Runtime tools:
+
+- `eyes_join_session` joins an existing Operator-started session using the
+  session id copied from the EYES UI.
+- `eyes_get_session` reads recent log entries and can return the latest frames
+  as image blocks. Multi-frame results should be treated as motion.
+- `eyes_observe` posts an observation/message to the EYES log as the active
+  agent.
+- `eyes_leave_session` leaves the shared session.
+
+Enablement:
+
+- Run `sql/2026-07-18-eyes-runtime-tools.sql` to open the `eyes` surface for
+  Soren and Varro.
+- Restart the runtime server after deploying the tool code.
+- Check `/api/health` and confirm the `eyes` surface is `write` and the EYES
+  tool names appear in the tool list.
+- Capture remains Operator-controlled in the EYES PWA; there is no runtime tool
+  that asks the phone to capture.
+
 ## Compaction Preview
 
 The first compaction endpoint is preview-only:

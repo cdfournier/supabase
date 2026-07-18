@@ -270,7 +270,11 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   web_search: { surface: "web", action: "read" },
   source_list_materials: { surface: "source_materials", action: "read" },
   source_get_material: { surface: "source_materials", action: "read" },
-  source_read_text: { surface: "source_materials", action: "read" }
+  source_read_text: { surface: "source_materials", action: "read" },
+  eyes_join_session: { surface: "eyes", action: "write" },
+  eyes_get_session: { surface: "eyes", action: "read" },
+  eyes_observe: { surface: "eyes", action: "write" },
+  eyes_leave_session: { surface: "eyes", action: "write" }
 };
 
 export async function loadAgentCapabilityProfile(

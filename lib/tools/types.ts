@@ -11,5 +11,19 @@ export type ToolDefinition = {
 
 export type ToolResult = {
   ok: boolean;
-  content: string;
+  content: string | ToolResultContentBlock[];
 };
+
+export type ToolResultContentBlock =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "image";
+      source: {
+        type: "base64";
+        media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+        data: string;
+      };
+    };

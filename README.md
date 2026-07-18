@@ -231,6 +231,11 @@ Current posture:
 - Source-material uploads now carry a generic metadata envelope for provenance
   and assigned-agent context. EYES proper is not a composer attachment mode; it
   should integrate as a session/control adapter to the existing EYES service.
+- Runtime EYES tools are available as an observer-only adapter once the
+  `eyes` surface is enabled in `agent_capabilities`: agents may join an
+  Operator-provided session id, read recent frames/log entries, post
+  observations, and leave. There is no runtime capture-request tool in V1;
+  phone capture remains Operator-controlled in the EYES PWA.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
 - `current_state` is the agent-authored handoff field and should be updated before compaction, but the live runtime temporal anchor is authoritative for today's date and current time.

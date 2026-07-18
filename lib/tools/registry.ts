@@ -62,6 +62,12 @@ import {
   readSourceMaterialText
 } from "@/lib/tools/source-materials";
 import type { ToolDefinition, ToolResult } from "@/lib/tools/types";
+import {
+  getEyesSession,
+  joinEyesSession,
+  leaveEyesSession,
+  observeEyesSession
+} from "@/lib/tools/eyes";
 import { extractWebLinks, fetchWebMany, fetchWebUrl, readWebUrl, searchWeb } from "@/lib/tools/web";
 
 export const toolDefinitions: ToolDefinition[] = [
@@ -1079,6 +1085,86 @@ export const toolDefinitions: ToolDefinition[] = [
       required: ["proposal_id"],
       additionalProperties: false
     }
+  },
+  {
+    name: "eyes_join_session",
+    description:
+      "Join an existing Operator-started EYES phone-camera session as this active agent. Requires a session_id copied from the EYES UI. This does not start the camera and cannot request captures.",
+    input_schema: {
+      type: "object",
+      properties: {
+        session_id: {
+          type: "string",
+          description: "The EYES session id from the Operator's copied join prompt."
+        }
+      },
+      required: ["session_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "eyes_get_session",
+    description:
+      "Read the current state of an EYES session, including recent log entries and optionally the latest image frames. Multi-frame results should be read as motion over time, not unrelated stills. This does not request new captures.",
+    input_schema: {
+      type: "object",
+      properties: {
+        session_id: {
+          type: "string",
+          description: "The EYES session id."
+        },
+        include_frames: {
+          type: "boolean",
+          description: "Whether to attach latest frames for visual inspection. Defaults to true."
+        },
+        frame_limit: {
+          type: "number",
+          description: "How many latest frames to return. Defaults to 6 and caps at 6."
+        },
+        log_limit: {
+          type: "number",
+          description: "How many recent log entries to include. Defaults to 10 and caps at 20."
+        }
+      },
+      required: ["session_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "eyes_observe",
+    description:
+      "Post an observation or message to an EYES session log as this active agent. Use after reading frames or to respond to the Operator in the EYES session.",
+    input_schema: {
+      type: "object",
+      properties: {
+        session_id: {
+          type: "string",
+          description: "The EYES session id."
+        },
+        content: {
+          type: "string",
+          description: "The observation or message to post."
+        }
+      },
+      required: ["session_id", "content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "eyes_leave_session",
+    description:
+      "Leave an EYES session as this active agent. This only updates the shared EYES passenger list and log.",
+    input_schema: {
+      type: "object",
+      properties: {
+        session_id: {
+          type: "string",
+          description: "The EYES session id."
+        }
+      },
+      required: ["session_id"],
+      additionalProperties: false
+    }
   }
 ];
 
@@ -1125,6 +1211,26 @@ export async function runTool(
         return {
           ok: true,
           content: await markPeerNoteRead(agent, input)
+        };
+      case "eyes_join_session":
+        return {
+          ok: true,
+          content: await joinEyesSession(agent, input)
+        };
+      case "eyes_get_session":
+        return {
+          ok: true,
+          content: await getEyesSession(input)
+        };
+      case "eyes_observe":
+        return {
+          ok: true,
+          content: await observeEyesSession(agent, input)
+        };
+      case "eyes_leave_session":
+        return {
+          ok: true,
+          content: await leaveEyesSession(agent, input)
         };
       case "runtime_read_recent_messages":
         return {
