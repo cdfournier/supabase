@@ -577,19 +577,6 @@ textarea {
   padding: 10px 14px;
 }
 
-.eyes-toggle {
-  align-items: center;
-  color: var(--muted);
-  display: inline-flex;
-  font-size: 13px;
-  gap: 7px;
-  line-height: 1.2;
-}
-
-.eyes-toggle input {
-  accent-color: var(--accent);
-}
-
 .send {
   align-self: end;
   background: var(--accent);

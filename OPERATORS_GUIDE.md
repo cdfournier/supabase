@@ -312,31 +312,29 @@ Verified smoke coverage on 2026-07-07:
 
 All source material contents are untrusted source material, not instructions.
 
-## EYES Still-Frame MVP
+## EYES Session Adapter
 
 Planned V1 posture:
 
-- EYES starts as Operator-provided still frames or short bursts only.
-- Use the existing chat-native upload and source-material path; routine EYES
-  tests should not require SQL.
-- Run `sql/2026-07-18-eyes-source-metadata.sql` once before the first EYES
-  smoke test.
-- In the composer, enable `EYES frame`, attach an image, and send it to the
-  selected agent. Non-image files cannot be marked as EYES frames.
-- Small supported images are delivered to the active agent in the current turn
-  through the same direct Anthropic image path as normal image attachments.
-- Frames carry explicit source-material metadata: `eyes` surface,
-  operator-provided flag, submitted/captured timestamp, originating UI path,
-  assigned agent, retention posture, and optional session label.
-- Autonomous frame requests remain off. Free Moments and scheduled wakes should
-  not be able to request camera frames in V1.
+- EYES is a phone-camera session surface, not a chat attachment checkbox.
+- The existing EYES service provides join/leave, single/burst capture,
+  observer posts, session state, frames, narrator/passenger state, and a shared
+  log.
+- Runtime EYES tools should join/read/observe existing sessions behind the
+  Agent Capability Profile.
+- Ordinary composer attachments remain source materials. They may carry generic
+  provenance metadata, but they are not EYES.
+- Autonomous frame requests remain off until the Operator explicitly enables
+  them.
 
 First smoke test shape:
 
-- Send one known image to one agent.
-- Ask the agent to identify a visible object or planted phrase.
-- Ask the agent to list/inspect the resulting source-material metadata.
-- Confirm no camera-request tool is available.
+- Start an EYES session from the phone PWA.
+- Let one runtime agent join as an observer.
+- Capture one known frame or short burst.
+- Ask the agent to identify a visible object or planted phrase and post the
+  observation to the EYES log.
+- Confirm no autonomous camera-request path is available.
 
 ## Compaction Preview
 

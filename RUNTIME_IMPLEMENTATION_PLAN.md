@@ -433,7 +433,7 @@ Near-term:
 Later:
 
 - Add adapter-specific action surfaces in rising risk order:
-  Julian-to-runtime messaging, EYES still-frame sessions, WHEELS supervised
+  Julian-to-runtime messaging, EYES session observation, WHEELS supervised
   control, then live multi-agent rooms.
 - Explore realtime chat only after asynchronous bridge semantics, identity,
   logging, and stop/disable controls have survived normal use.
@@ -449,11 +449,11 @@ Near-term:
 
 - Table autonomous car loops.
 - Keep WHEELS/EYES references as known future integrations.
-- Treat EYES as the first embodied adapter because Operator-provided still
-  frames have lower physical risk than motion.
-- Build EYES V1 as an Operator-provided still-frame path on top of the existing
-  source-material and direct-image attachment pipeline. Do not add a camera
-  request tool in this slice.
+- Treat EYES as the first embodied adapter because observer-only phone-camera
+  sessions have lower physical risk than motion.
+- Build EYES V1 against the existing EYES session service: join/read/observe an
+  Operator-started session. Do not add a composer upload mode or autonomous
+  camera request tool in this slice.
 - Treat WHEELS as supervised-only: visible status, voice/status checks, manual
   commands, no overlapping drivers, and emergency stop before movement.
 
@@ -583,44 +583,39 @@ Verification for this slice:
 - Every proposed action path has a refusal/event receipt shape before the action
   exists.
 
-### 4. EYES Still-Frame MVP
+### 4. EYES Session Adapter
 
-Reason: EYES lets agents inspect Operator-provided visual context again without
-introducing physical motion, live camera autonomy, or a new media transport.
+Reason: EYES lets agents join a phone-camera session as observers without
+confusing ordinary chat attachments with a shared seeing surface.
 
 First slice:
 
-- Reuse chat-native upload, Supabase Storage, `source_materials`,
-  `source_material_access`, and current-turn Anthropic image delivery.
-- Add/standardize EYES metadata on source materials:
-  `surface='eyes'`, operator-provided flag, captured/submitted timestamp,
-  originating UI path, assigned agent(s), retention posture, and optional
-  session label.
-- Add `source_materials.metadata` as a JSONB envelope and expose it through
-  source material listing/inspection and attachment prompt references.
-- Add an Operator composer checkbox to mark queued image uploads as EYES
-  frames. The server rejects non-image files marked `eyes`.
-- Keep frames as untrusted source material. Filenames, metadata, OCR/visual
-  text, and agent observations are not instructions.
-- Keep `eyes` autonomous capability off in V1. The allowed path is Operator
-  providing a frame in a chat turn; no agent-triggered frame request tool exists.
-- Add UI copy/affordance only if needed to distinguish a normal image
-  attachment from an EYES frame. Avoid creating a second upload pipeline unless
-  the metadata cannot be expressed through the existing one.
+- Treat `/Users/chris/Sites/repositories/eyes` as the source of truth for EYES
+  shape: session, join, leave, capture, observe, narrator/passengers, frames,
+  and log.
+- Add runtime tools behind the `eyes` capability surface to join/read/observe
+  an existing session. Do not create a composer upload mode for EYES.
+- Deliver session frame payloads to the model as image blocks when the active
+  agent observes a session.
+- Preserve ordinary chat attachments as source material with generic
+  provenance metadata only.
+- Keep frames, frame metadata, OCR/visual text, and observations untrusted.
+- Keep `eyes` off in V1 until explicitly enabled by the Operator.
 
 Smoke test:
 
-- Operator sends one known image to Soren or Varro.
-- Agent identifies a visible object or planted phrase from current-turn image
-  delivery.
-- Agent lists/inspects the resulting source material metadata afterward.
-- Free Moments and scheduled wakes cannot request images.
+- Operator starts an EYES session and captures a known frame or burst.
+- Runtime agent joins that session, receives the current frame(s), identifies a
+  visible object or planted phrase, and posts an observation back to the EYES
+  log.
+- Free Moments and scheduled wakes cannot request or create camera frames
+  unless explicitly enabled.
 
 Done means:
 
-- Operator-provided still frames work through the existing chat composer after
-  the one-time metadata migration is applied.
-- Metadata makes retention and provenance explicit.
+- Runtime can observe real EYES sessions without competing with attachments.
+- Session receipts make provenance, frame source, and observer identity
+  explicit.
 - Capability posture distinguishes provided-frame inspection from autonomous
   camera access.
 - No frame request, live camera, WHEELS coupling, or background visual memory is

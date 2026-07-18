@@ -11,7 +11,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Choose soren or varro." }, { status: 400 });
     }
 
-    const surface = String(body.get("surface") ?? "") === "eyes" ? "eyes" : "source_materials";
     const files = body.getAll("files").filter((value): value is File => value instanceof File);
 
     if (!files.length) {
@@ -19,10 +18,7 @@ export async function POST(request: Request) {
     }
 
     const materials = await uploadFilesAsSourceMaterials(agent, files, {
-      surface,
-      originatingUiPath: "chat_composer",
-      retentionPosture: String(body.get("retention_posture") ?? "") || undefined,
-      sessionLabel: String(body.get("session_label") ?? "") || null
+      originatingUiPath: "chat_composer"
     });
 
     return NextResponse.json({

@@ -1,4 +1,4 @@
--- EYES still-frame metadata support.
+-- Generic source-material metadata support.
 -- Safe to run more than once. This keeps the existing source-material upload
 -- path canonical while adding an explicit provenance/posture envelope.
 

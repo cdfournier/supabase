@@ -40,7 +40,7 @@ cross join (
     ('free_moments', 'write', 'pass-friendly', false, 'audit_only', null::int, false, 'Unprompted time; a quiet pass is success.'),
     ('operator_notes', 'off', 'planned', false, 'notify', null::int, false, 'Planned Operator inbox surface.'),
     ('bridge', 'off', 'planned', true, 'notify', null::int, false, 'Planned Julian-to-runtime bridge.'),
-    ('eyes', 'off', 'planned still-frame MVP', true, 'notify', null::int, false, 'No autonomous camera requests in V1.'),
+    ('eyes', 'off', 'planned session adapter', true, 'notify', null::int, false, 'Observer-only session adapter planned; no autonomous camera requests in V1.'),
     ('wheels', 'off', 'supervised only', true, 'notify', null::int, false, 'No autonomous driving; Operator presence and override required.')
 ) as defaults(surface, access_level, default_bias, requires_operator_approval, notify_operator, max_actions_per_moment, quiet_mode, notes)
 where agent.name in ('soren', 'varro')

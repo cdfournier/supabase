@@ -200,12 +200,12 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
   {
     surface: "eyes",
     access_level: "off",
-    default_bias: "planned still-frame MVP",
+    default_bias: "planned session adapter",
     requires_operator_approval: true,
     notify_operator: "notify",
     max_actions_per_moment: null,
     quiet_mode: false,
-    notes: "No autonomous camera requests in V1."
+    notes: "Observer-only session adapter planned; no autonomous camera requests in V1."
   },
   {
     surface: "wheels",

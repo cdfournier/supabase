@@ -230,7 +230,6 @@ export default function Home() {
   const [savedProposalError, setSavedProposalError] = useState("");
   const [message, setMessage] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
-  const [eyesFrameMode, setEyesFrameMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -642,7 +641,6 @@ export default function Home() {
         [selectedAgent]: [...(current[selectedAgent] ?? []), ...(data.tool_events ?? [])]
       }));
       setPendingAttachments([]);
-      setEyesFrameMode(false);
     } catch (sendError) {
       setMessage(trimmed);
       setError(sendError instanceof Error ? sendError.message : "Message failed.");
@@ -692,7 +690,6 @@ export default function Home() {
 
     const formData = new FormData();
     formData.append("agent", selectedAgent);
-    formData.append("surface", eyesFrameMode ? "eyes" : "source_materials");
 
     for (const attachment of queued) {
       formData.append("files", attachment.file);
@@ -829,7 +826,6 @@ export default function Home() {
                 }}
                 ref={fileInputRef}
                 type="file"
-                accept={eyesFrameMode ? "image/*" : undefined}
               />
               <button
                 className="attach"
@@ -839,15 +835,6 @@ export default function Home() {
               >
                 Attach
               </button>
-              <label className="eyes-toggle">
-                <input
-                  checked={eyesFrameMode}
-                  disabled={loading || sending || agents.length === 0}
-                  onChange={(event) => setEyesFrameMode(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>EYES frame</span>
-              </label>
               <button
                 className="send"
                 disabled={loading || sending || (!message.trim() && pendingAttachments.length === 0)}
@@ -863,10 +850,7 @@ export default function Home() {
                 <span className={`attachment-chip ${attachment.status}`} key={attachment.localId}>
                   <span>
                     {attachment.file.name}
-                    <small>
-                      {formatBytes(attachment.file.size)} · {attachment.status}
-                      {eyesFrameMode ? " · EYES" : ""}
-                    </small>
+                    <small>{formatBytes(attachment.file.size)} · {attachment.status}</small>
                     {attachment.error ? <small className="attachment-error">{attachment.error}</small> : null}
                   </span>
                   <button
