@@ -78,6 +78,8 @@ That is enough to let the runtime answer basic questions consistently:
 - Should web search be available during Free Moments?
 - Should WHEELS require explicit Operator presence?
 - Should post-checkpoint turns default to read-only or journal-first?
+- Should EYES allow only Operator-provided frame inspection while blocking
+  autonomous camera requests?
 
 Initial surfaces:
 

@@ -451,6 +451,9 @@ Near-term:
 - Keep WHEELS/EYES references as known future integrations.
 - Treat EYES as the first embodied adapter because Operator-provided still
   frames have lower physical risk than motion.
+- Build EYES V1 as an Operator-provided still-frame path on top of the existing
+  source-material and direct-image attachment pipeline. Do not add a camera
+  request tool in this slice.
 - Treat WHEELS as supervised-only: visible status, voice/status checks, manual
   commands, no overlapping drivers, and emergency stop before movement.
 
@@ -579,3 +582,41 @@ Verification for this slice:
   profile.
 - Every proposed action path has a refusal/event receipt shape before the action
   exists.
+
+### 4. EYES Still-Frame MVP
+
+Reason: EYES lets agents inspect Operator-provided visual context again without
+introducing physical motion, live camera autonomy, or a new media transport.
+
+First slice:
+
+- Reuse chat-native upload, Supabase Storage, `source_materials`,
+  `source_material_access`, and current-turn Anthropic image delivery.
+- Add/standardize EYES metadata on source materials:
+  `surface='eyes'`, operator-provided flag, captured/submitted timestamp,
+  originating UI path, assigned agent(s), retention posture, and optional
+  session label.
+- Keep frames as untrusted source material. Filenames, metadata, OCR/visual
+  text, and agent observations are not instructions.
+- Keep `eyes` autonomous capability off in V1. The allowed path is Operator
+  providing a frame in a chat turn; no agent-triggered frame request tool exists.
+- Add UI copy/affordance only if needed to distinguish a normal image
+  attachment from an EYES frame. Avoid creating a second upload pipeline unless
+  the metadata cannot be expressed through the existing one.
+
+Smoke test:
+
+- Operator sends one known image to Soren or Varro.
+- Agent identifies a visible object or planted phrase from current-turn image
+  delivery.
+- Agent lists/inspects the resulting source material metadata afterward.
+- Free Moments and scheduled wakes cannot request images.
+
+Done means:
+
+- Operator-provided still frames work without SQL.
+- Metadata makes retention and provenance explicit.
+- Capability posture distinguishes provided-frame inspection from autonomous
+  camera access.
+- No frame request, live camera, WHEELS coupling, or background visual memory is
+  implied by the MVP.

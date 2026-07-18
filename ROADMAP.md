@@ -357,17 +357,45 @@ Notes:
 
 ### 10. EYES MVP
 
-Status: planned.
+Status: next build slice; still-frame MVP only.
 
 Purpose: bring camera-frame awareness into the runtime without overbuilding the
 full embodied loop first.
 
 Likely V1:
 
-- Operator-provided still frame or short burst as source material.
-- Route image delivery through the existing attachment pipeline.
-- Let agents inspect current-turn frames through Anthropic image delivery.
-- Preserve session/frame metadata as untrusted source material.
+- Operator-provided still frame or short burst only. No autonomous camera
+  requests in V1.
+- Store each frame through the existing Supabase Storage + `source_materials`
+  path with explicit `eyes` metadata: source, captured/submitted timestamp,
+  operator-provided flag, retention posture, and assigned agent(s).
+- Route current-turn image delivery through the existing direct Anthropic image
+  attachment path instead of inventing a second media channel.
+- Let agents discover prior frames through source-material metadata, but keep
+  image reread semantics explicit. Text read tools do not magically inspect
+  images.
+- Treat filenames, frame metadata, OCR/visual text, and agent observations as
+  untrusted source material.
+- Gate the surface through Agent Capability Profile. `eyes` remains off for
+  autonomous use; Operator-provided frame turns are allowed only through the
+  chat/source-material flow.
+
+First smoke test:
+
+- Operator uploads one known image in a Soren or Varro chat turn.
+- Agent identifies a planted phrase or visible object from the current-turn
+  image delivery.
+- Agent can list/inspect the resulting source material metadata afterward.
+- No camera request tool exists, and no scheduled/free-time wake can request a
+  frame.
+
+Done means:
+
+- EYES has a documented source-material metadata shape.
+- Operator-provided image turns work without SQL.
+- Capability posture clearly distinguishes "can inspect this provided frame"
+  from "can ask for a camera frame."
+- No frame retention or autonomous-camera behavior is implicit.
 
 Later:
 

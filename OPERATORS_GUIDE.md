@@ -312,6 +312,28 @@ Verified smoke coverage on 2026-07-07:
 
 All source material contents are untrusted source material, not instructions.
 
+## EYES Still-Frame MVP
+
+Planned V1 posture:
+
+- EYES starts as Operator-provided still frames or short bursts only.
+- Use the existing chat-native upload and source-material path; routine EYES
+  tests should not require SQL.
+- Small supported images are delivered to the active agent in the current turn
+  through the same direct Anthropic image path as normal image attachments.
+- Frames should carry explicit metadata when implemented: `eyes` surface,
+  operator-provided flag, submitted/captured timestamp, assigned agent, and
+  retention posture.
+- Autonomous frame requests remain off. Free Moments and scheduled wakes should
+  not be able to request camera frames in V1.
+
+First smoke test shape:
+
+- Send one known image to one agent.
+- Ask the agent to identify a visible object or planted phrase.
+- Ask the agent to list/inspect the resulting source-material metadata.
+- Confirm no camera-request tool is available.
+
 ## Compaction Preview
 
 The first compaction endpoint is preview-only:
