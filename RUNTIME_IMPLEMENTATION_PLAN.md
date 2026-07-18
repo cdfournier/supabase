@@ -52,6 +52,13 @@ Initial candidates:
   authoritative for time/state, and which recovery tool to use before
   concluding absence. The assembler should narrate itself; the builder should
   not hand-author promises about what loaded.
+- Three-part continuity invariant from the Toolshed exchange:
+  - Anchor continuity-critical material so it is present before ordinary context
+    pressure starts negotiating.
+  - Derive completeness/posture receipts from the assembled artifact so the
+    runtime measures what loaded instead of repeating what the builder expected.
+  - Attribute authored interpretation, such as continuity letters, directive
+    files, or summaries, so testimony does not impersonate memory.
 - Shared before/after tool hooks for permissions, audit, and safety checks.
 - Budget-aware context assembly tiers.
 - Anthropic prompt caching as a near-term adapter for stable context prefixes,
@@ -111,6 +118,11 @@ Near-term work:
   such as loaded/available memory counts, transcript window bounds, known
   omissions, authoritative time/state source, and recovery tools; do not encode
   stale prose promises like "all memories loaded."
+- Keep authored continuity material separate from derived measurement. It can be
+  useful to load letters, directives, summaries, or interpretive handoffs early,
+  but those artifacts must be attributed to their author/process. A separate
+  derived receipt should still say what actually loaded, what exists but did not
+  load, and which recovery path can inspect the gap.
 - Persist provider-neutral usage records per model/API call, with Anthropic as
   the first adapter:
   - provider
@@ -154,6 +166,10 @@ Implemented first slice:
   the receipt into `source='free_time'` wakes, saves that receipt-bearing wake
   prompt into the transcript, and returns the raw receipt from `sendAgentMessage`
   for verification.
+- Documented the next hardening rule from Outpost Toolshed: anchor
+  continuity-critical material, derive completeness receipts, and attribute
+  authored interpretation. Placement, measurement, and authorship solve
+  different failure modes and should not be collapsed into one prose note.
 
 Later work:
 

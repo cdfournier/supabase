@@ -187,6 +187,9 @@ Free Moments audit:
   The receipt is computed from the assembled artifact, not hand-authored, and
   reports context bounds such as active messages available, recent history
   loaded, loaded/available active memories, known omissions, and recovery tools.
+  This is separate from authored continuity material such as summaries,
+  directives, or handoff notes. Authored continuity material should be
+  attributed; the derived receipt should measure what actually loaded.
   If an agent reports that something feels new, absent, or inconsistent, treat
   that as telemetry and inspect the receipt before treating it as personality
   drift.

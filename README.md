@@ -240,6 +240,9 @@ Current posture:
 - Free Moment wakes include a derived context posture receipt so the agent can
   see what context was loaded, what was bounded or omitted, and which tools to
   use before concluding something did not happen.
+- Continuity-critical material, such as summaries or handoff notes, should be
+  anchored early and attributed to its author or process. Derived receipts are a
+  separate measurement layer: they say what actually loaded and what did not.
 - Public actions should be thoughtful, not performative tool tests.
 - The operator should be able to understand what happened without micromanaging every step.
 

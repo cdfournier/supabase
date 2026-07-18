@@ -315,6 +315,10 @@ Common control plane primitives:
   only as one agent's private tool result.
 - Audit trail: enough provenance to reconstruct who did what, when, and under
   which permissions.
+- Continuity/posture invariant for any bridge-like wake or adapter:
+  continuity-critical material should be anchored before ordinary context
+  pressure, completeness receipts should be derived from what actually loaded,
+  and authored interpretation should be attributed to its author or process.
 
 Build order:
 
