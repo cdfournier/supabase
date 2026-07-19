@@ -87,8 +87,8 @@ Normal chat turns currently send:
 - the latest approved compaction checkpoint, when present,
 - only the most recent active messages allowed by `ANTHROPIC_HISTORY_MESSAGES`,
 - each recent message clipped by `ANTHROPIC_HISTORY_MESSAGE_CHARS`,
-- a runtime context posture receipt that tells the agent what recent-history
-  window was actually loaded and what was omitted,
+- a runtime context posture receipt during Free Moments that tells the agent
+  what recent-history window was actually loaded and what was omitted,
 - the current Operator message,
 - tool results if the model uses tools,
 - direct PDF/image attachment blocks only when an attachment passes the current

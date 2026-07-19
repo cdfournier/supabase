@@ -153,7 +153,9 @@ export async function sendAgentMessage(
     }));
 
   const attachmentDelivery = await buildAttachmentDelivery(attachmentRefs);
-  const messageForModel = messageWithContextReceipt(message, contextReceipt);
+  const messageForModel = source === "free_time"
+    ? messageWithContextReceipt(message, contextReceipt)
+    : message;
   const modelMessage = buildAttachmentPromptTextWithDelivery(
     messageForModel,
     attachmentRefs,
