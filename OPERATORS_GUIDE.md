@@ -96,9 +96,10 @@ Normal chat turns currently send:
 
 Tool results are live inside the turn that produced them. On later turns, the
 runtime preserves a bounded tool audit with result previews for recently loaded
-assistant messages, but the full tool payload is not part of durable memory
-unless the agent summarized or saved it. If an agent seems to have forgotten a
-lookup it just performed, ask it to use `runtime_read_recent_messages`,
+assistant messages and exposes those audits through the conversation-history
+tools, but the full tool payload is not part of durable memory unless the agent
+summarized or saved it. If an agent seems to have forgotten a lookup it just
+performed, ask it to use `runtime_read_recent_messages`,
 `runtime_search_conversation`, or `runtime_get_message_window` before re-running
 the lookup.
 

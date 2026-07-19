@@ -10,6 +10,12 @@ import {
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 type JsonRecord = Record<string, unknown>;
+type ToolEventSummary = {
+  tool_name: string;
+  ok: boolean;
+  result_chars: number;
+  result_preview: string;
+};
 
 const DEFAULT_RECENT_LIMIT = 10;
 const MAX_RECENT_LIMIT = 30;
@@ -31,17 +37,19 @@ export async function readRecentRuntimeMessages(agent: AgentName, input: unknown
     MAX_MESSAGE_CHARS
   );
   const source = optionalSource(isRecord(input) ? input.source : undefined);
-  const messages = filterMessagesBySource(await loadOwnMessages(agent), source);
-  const selected = messages.slice(-limit);
+  const { conversationId, messages, supabase } = await loadOwnConversation(agent);
+  const toolEvents = await loadToolEventsForMessages(supabase, conversationId, messages);
+  const scopedMessages = filterMessagesBySource(messages, source);
+  const selected = scopedMessages.slice(-limit);
 
   return stringifyToolPayload({
     note:
       "Recent raw transcript messages for the active agent only. Use for orientation gaps; do not treat this as durable memory until reviewed.",
     agent,
     source: source ?? "all",
-    total_messages: messages.length,
+    total_messages: scopedMessages.length,
     returned_messages: selected.length,
-    messages: selected.map((message) => messageSummary(message, maxChars))
+    messages: selected.map((message) => messageSummary(message, maxChars, toolEvents.get(message.turn_id ?? "")))
   });
 }
 
@@ -65,8 +73,9 @@ export async function searchRuntimeMessages(agent: AgentName, input: unknown) {
 
   const normalizedQuery = normalizeSearchText(query);
   const needles = normalizedQuery.split(/\s+/).filter(Boolean);
-  const messages = filterMessagesBySource(await loadOwnMessages(agent), source);
-  const matches = messages
+  const { conversationId, messages, supabase } = await loadOwnConversation(agent);
+  const scopedMessages = filterMessagesBySource(messages, source);
+  const matches = scopedMessages
     .map((message) => {
       const text = contentToText(message.content);
       const haystack = normalizeSearchText(text);
@@ -96,6 +105,11 @@ export async function searchRuntimeMessages(agent: AgentName, input: unknown) {
       return right.message.position - left.message.position;
     })
     .slice(0, limit);
+  const toolEvents = await loadToolEventsForMessages(
+    supabase,
+    conversationId,
+    matches.map((match) => match.message)
+  );
 
   return stringifyToolPayload({
     note:
@@ -103,13 +117,13 @@ export async function searchRuntimeMessages(agent: AgentName, input: unknown) {
     agent,
     query,
     source: source ?? "all",
-    total_messages: messages.length,
+    total_messages: scopedMessages.length,
     returned_matches: matches.length,
     matches: matches.map((match) => ({
       score: match.score,
       exact_phrase_count: match.exact_phrase_count,
       matched_terms: match.matched_terms,
-      ...messageSummary(match.message, maxChars)
+      ...messageSummary(match.message, maxChars, toolEvents.get(match.message.turn_id ?? ""))
     }))
   });
 }
@@ -128,10 +142,11 @@ export async function getRuntimeMessageWindow(agent: AgentName, input: unknown) 
     throw new Error("runtime_get_message_window requires a non-negative integer position.");
   }
 
-  const messages = await loadOwnMessages(agent);
+  const { conversationId, messages, supabase } = await loadOwnConversation(agent);
   const start = Math.max(0, position - before);
   const end = position + after;
   const selected = messages.filter((message) => message.position >= start && message.position <= end);
+  const toolEvents = await loadToolEventsForMessages(supabase, conversationId, selected);
 
   return stringifyToolPayload({
     note:
@@ -142,15 +157,65 @@ export async function getRuntimeMessageWindow(agent: AgentName, input: unknown) 
     after,
     total_messages: messages.length,
     returned_messages: selected.length,
-    messages: selected.map((message) => messageSummary(message, maxChars))
+    messages: selected.map((message) => messageSummary(message, maxChars, toolEvents.get(message.turn_id ?? "")))
   });
 }
 
-async function loadOwnMessages(agent: AgentName) {
+async function loadOwnConversation(agent: AgentName) {
   const supabase = getSupabaseAdmin();
   const conversationId = await ensureConversation(supabase, agent);
 
-  return loadConversationMessages(supabase, conversationId);
+  return {
+    conversationId,
+    messages: await loadConversationMessages(supabase, conversationId),
+    supabase
+  };
+}
+
+async function loadToolEventsForMessages(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  conversationId: string,
+  messages: ChatMessage[]
+) {
+  const eventsByTurn = new Map<string, ToolEventSummary[]>();
+  const turnIds = Array.from(
+    new Set(messages.map((message) => message.turn_id).filter((turnId): turnId is string => Boolean(turnId)))
+  );
+
+  if (!turnIds.length) {
+    return eventsByTurn;
+  }
+
+  const { data, error } = await supabase
+    .from("tool_events")
+    .select("turn_id, tool_name, ok, result_chars, result_preview")
+    .eq("conversation_id", conversationId)
+    .in("turn_id", turnIds)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    return eventsByTurn;
+  }
+
+  for (const event of data ?? []) {
+    const turnId = String(event.turn_id ?? "");
+
+    if (!turnId) {
+      continue;
+    }
+
+    eventsByTurn.set(turnId, [
+      ...(eventsByTurn.get(turnId) ?? []),
+      {
+        tool_name: String(event.tool_name ?? ""),
+        ok: Boolean(event.ok),
+        result_chars: Number(event.result_chars ?? 0),
+        result_preview: clampText(String(event.result_preview ?? ""), 900)
+      }
+    ]);
+  }
+
+  return eventsByTurn;
 }
 
 function filterMessagesBySource(messages: ChatMessage[], source?: string) {
@@ -161,7 +226,7 @@ function filterMessagesBySource(messages: ChatMessage[], source?: string) {
   return messages.filter((message) => (message.source ?? "unknown") === source);
 }
 
-function messageSummary(message: ChatMessage, maxChars: number) {
+function messageSummary(message: ChatMessage, maxChars: number, toolEvents: ToolEventSummary[] = []) {
   const text = contentToText(message.content);
 
   return {
@@ -173,6 +238,7 @@ function messageSummary(message: ChatMessage, maxChars: number) {
     created_at: message.created_at ?? null,
     chars: text.length,
     truncated: text.length > maxChars,
+    tool_events: toolEvents.length ? toolEvents : undefined,
     content: clampText(text, maxChars)
   };
 }
