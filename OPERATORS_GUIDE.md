@@ -87,10 +87,20 @@ Normal chat turns currently send:
 - the latest approved compaction checkpoint, when present,
 - only the most recent active messages allowed by `ANTHROPIC_HISTORY_MESSAGES`,
 - each recent message clipped by `ANTHROPIC_HISTORY_MESSAGE_CHARS`,
+- a runtime context posture receipt that tells the agent what recent-history
+  window was actually loaded and what was omitted,
 - the current Operator message,
 - tool results if the model uses tools,
 - direct PDF/image attachment blocks only when an attachment passes the current
   delivery caps.
+
+Tool results are live inside the turn that produced them. On later turns, the
+runtime preserves a bounded tool audit with result previews for recently loaded
+assistant messages, but the full tool payload is not part of durable memory
+unless the agent summarized or saved it. If an agent seems to have forgotten a
+lookup it just performed, ask it to use `runtime_read_recent_messages`,
+`runtime_search_conversation`, or `runtime_get_message_window` before re-running
+the lookup.
 
 This means a 1,000-message stored transcript does not mean every turn sends
 1,000 messages to Anthropic. Cost can still rise through large system context,

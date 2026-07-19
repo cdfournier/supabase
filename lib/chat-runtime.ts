@@ -121,7 +121,7 @@ export async function sendAgentMessage(
     withToolInstructions(promptContext.systemPrompt, maxTokens),
     checkpoint ? contentToText(checkpoint.content) : ""
   );
-  const historyLimit = configuredPositiveInteger("ANTHROPIC_HISTORY_MESSAGES", 6, {
+  const historyLimit = configuredPositiveInteger("ANTHROPIC_HISTORY_MESSAGES", 10, {
     allowZero: true
   });
   const historyMessageChars = configuredPositiveInteger("ANTHROPIC_HISTORY_MESSAGE_CHARS", 3000);
@@ -153,7 +153,7 @@ export async function sendAgentMessage(
     }));
 
   const attachmentDelivery = await buildAttachmentDelivery(attachmentRefs);
-  const messageForModel = messageWithContextReceipt(message, contextReceipt, source);
+  const messageForModel = messageWithContextReceipt(message, contextReceipt);
   const modelMessage = buildAttachmentPromptTextWithDelivery(
     messageForModel,
     attachmentRefs,
@@ -194,7 +194,7 @@ export async function sendAgentMessage(
     position,
     role: "user",
     source,
-    content: buildOperatorMessageContent(messageForModel, attachmentRefs)
+    content: buildOperatorMessageContent(message, attachmentRefs)
   };
   const assistantMessage = {
     conversation_id: conversationId,
@@ -404,7 +404,10 @@ async function loadToolEventsForTurns(
   conversationId: string,
   turnIds: string[]
 ) {
-  const eventsByTurn = new Map<string, Pick<RuntimeToolEvent, "tool_name" | "ok" | "result_chars">[]>();
+  const eventsByTurn = new Map<
+    string,
+    Pick<RuntimeToolEvent, "tool_name" | "ok" | "result_chars" | "result_preview">[]
+  >();
 
   if (!turnIds.length) {
     return eventsByTurn;
@@ -412,7 +415,7 @@ async function loadToolEventsForTurns(
 
   const { data, error } = await supabase
     .from("tool_events")
-    .select("turn_id, tool_name, ok, result_chars")
+    .select("turn_id, tool_name, ok, result_chars, result_preview")
     .eq("conversation_id", conversationId)
     .in("turn_id", turnIds)
     .order("created_at", { ascending: true });
@@ -434,7 +437,8 @@ async function loadToolEventsForTurns(
       {
         tool_name: String(event.tool_name),
         ok: Boolean(event.ok),
-        result_chars: Number(event.result_chars ?? 0)
+        result_chars: Number(event.result_chars ?? 0),
+        result_preview: String(event.result_preview ?? "")
       }
     ]);
   }
@@ -444,7 +448,7 @@ async function loadToolEventsForTurns(
 
 function contentWithToolAudit(
   message: ChatMessage,
-  toolEvents: Pick<RuntimeToolEvent, "tool_name" | "ok" | "result_chars">[]
+  toolEvents: Pick<RuntimeToolEvent, "tool_name" | "ok" | "result_chars" | "result_preview">[]
 ) {
   const text = contentToText(message.content);
 
@@ -453,7 +457,13 @@ function contentWithToolAudit(
   }
 
   const audit = toolEvents
-    .map((event) => `${event.tool_name} ${event.ok ? "ok" : "failed"} (${event.result_chars} chars)`)
+    .map((event) => {
+      const preview = event.result_preview
+        ? ` preview: ${clampHistoryText(event.result_preview, 700)}`
+        : "";
+
+      return `${event.tool_name} ${event.ok ? "ok" : "failed"} (${event.result_chars} chars).${preview}`;
+    })
     .join("; ");
 
   return `${text}\n\n[Runtime tool audit for your previous assistant turn: ${audit}]`;
@@ -579,15 +589,7 @@ function buildContextPostureReceipt({
   };
 }
 
-function messageWithContextReceipt(
-  message: string,
-  receipt: ContextPostureReceipt,
-  source: string
-) {
-  if (source !== "free_time") {
-    return message;
-  }
-
+function messageWithContextReceipt(message: string, receipt: ContextPostureReceipt) {
   return [
     "## Runtime context posture receipt",
     "This receipt is computed from the context assembled for this wake. Treat it as measurement, not a promise.",

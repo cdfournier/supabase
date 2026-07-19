@@ -66,7 +66,7 @@ export async function GET() {
       runtime: {
         time_zone: process.env.RUNTIME_TIME_ZONE || DEFAULT_TIME_ZONE,
         max_tokens: numberEnv("ANTHROPIC_MAX_TOKENS", 1200),
-        history_messages: numberEnv("ANTHROPIC_HISTORY_MESSAGES", 6),
+        history_messages: numberEnv("ANTHROPIC_HISTORY_MESSAGES", 10),
         history_message_chars: numberEnv("ANTHROPIC_HISTORY_MESSAGE_CHARS", 3000),
         max_tool_rounds: numberEnv("ANTHROPIC_MAX_TOOL_ROUNDS", 6),
         prompt_cache: anthropicPromptCacheEnabled(),
