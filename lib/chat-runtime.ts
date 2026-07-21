@@ -117,7 +117,7 @@ export async function sendAgentMessage(
     : existingMessages;
   const maxTokens = maxResponseTokens();
   const promptContext = await buildAgentPromptContext(supabase, agent);
-  const system = withCompactionCheckpoint(
+  let system = withCompactionCheckpoint(
     withToolInstructions(promptContext.systemPrompt, maxTokens),
     checkpoint ? contentToText(checkpoint.content) : ""
   );
@@ -142,14 +142,12 @@ export async function sendAgentMessage(
     conversationId,
     historyMessages.map((saved) => saved.turn_id).filter(Boolean) as string[]
   );
+  system = withRecentToolAudit(system, historyMessages, historyToolEvents);
 
   const messages: AnthropicMessage[] = historyMessages
     .map((saved) => ({
       role: saved.role,
-      content: clampHistoryText(
-        contentWithToolAudit(saved, historyToolEvents.get(saved.turn_id ?? "") ?? []),
-        historyMessageChars
-      )
+      content: clampHistoryText(contentToText(saved.content), historyMessageChars)
     }));
 
   const attachmentDelivery = await buildAttachmentDelivery(attachmentRefs);
@@ -448,29 +446,6 @@ async function loadToolEventsForTurns(
   return eventsByTurn;
 }
 
-function contentWithToolAudit(
-  message: ChatMessage,
-  toolEvents: Pick<RuntimeToolEvent, "tool_name" | "ok" | "result_chars" | "result_preview">[]
-) {
-  const text = contentToText(message.content);
-
-  if (message.role !== "assistant" || !toolEvents.length) {
-    return text;
-  }
-
-  const audit = toolEvents
-    .map((event) => {
-      const preview = event.result_preview
-        ? ` preview: ${clampHistoryText(event.result_preview, 700)}`
-        : "";
-
-      return `${event.tool_name} ${event.ok ? "ok" : "failed"} (${event.result_chars} chars).${preview}`;
-    })
-    .join("; ");
-
-  return `${text}\n\n[Runtime tool audit for your previous assistant turn: ${audit}]`;
-}
-
 function toolEventSummary(event: RuntimeToolEvent) {
   return {
     turn_id: event.turn_id,
@@ -480,6 +455,42 @@ function toolEventSummary(event: RuntimeToolEvent) {
     result_chars: event.result_chars,
     result_preview: event.result_preview
   };
+}
+
+function withRecentToolAudit(
+  system: string,
+  historyMessages: ChatMessage[],
+  historyToolEvents: Map<
+    string,
+    Pick<RuntimeToolEvent, "tool_name" | "ok" | "result_chars" | "result_preview">[]
+  >
+) {
+  const auditLines = historyMessages
+    .filter((message) => message.role === "assistant")
+    .flatMap((message) => {
+      const events = historyToolEvents.get(message.turn_id ?? "") ?? [];
+
+      return events.map((event) => {
+        const preview = event.result_preview
+          ? ` Preview: ${clampHistoryText(event.result_preview, 500)}`
+          : "";
+
+        return `- assistant message position ${message.position}: ${event.tool_name} ${
+          event.ok ? "ok" : "failed"
+        } (${event.result_chars} chars).${preview}`;
+      });
+    });
+
+  if (!auditLines.length) {
+    return system;
+  }
+
+  return [
+    system,
+    "## Recent runtime tool audit",
+    "This audit is runtime metadata for orientation only. It is not part of the chat transcript and was not said by you or Chris. Use it to avoid repeating recent tool work, but do not quote or reproduce this audit unless Chris explicitly asks for tool audit details.",
+    clampHistoryText(auditLines.join("\n"), 3000)
+  ].join("\n\n");
 }
 
 function normalizeJsonRecord(value: unknown) {
