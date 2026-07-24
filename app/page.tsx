@@ -874,7 +874,7 @@ export default function Home() {
                 <h3>Compaction Proposal</h3>
                 <p>
                   {compactionCompile.saved_proposal_id
-                    ? `Loaded approved proposal ${compactionCompile.saved_proposal_id}`
+                    ? savedProposalLabel(compactionCompile)
                     : `${compactionCompile.source?.selected_message_count ?? 0} messages selected${
                         compactionCompile.source?.bounded
                           ? `, ${compactionCompile.source.omitted_message_count} omitted by budget`
@@ -1316,6 +1316,22 @@ function trimLiveMessages(messages: ChatMessage[]) {
 
 function conversationLabel(agent: AgentName) {
   return `${agent}-main`;
+}
+
+function savedProposalLabel(proposal: CompactionCompile) {
+  if (!proposal.saved_proposal_id) {
+    return "";
+  }
+
+  const shortId = proposal.saved_proposal_id.slice(0, 8);
+  const updatedAt = formatMessageTime(proposal.generated_at);
+
+  return [
+    `Loaded ${proposal.saved_proposal_status ?? "saved"} proposal ${shortId}`,
+    updatedAt ? `updated ${updatedAt}` : null
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function sourceSummaryFromSavedProposal(value: unknown): CompactionCompile["source"] {
