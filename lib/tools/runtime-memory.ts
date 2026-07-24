@@ -260,7 +260,7 @@ export async function updateRuntimeCurrentState(agent: AgentName, input: unknown
 
   return stringifyToolPayload({
     note:
-      "Current state updated for the active agent only. This is the pre-compaction handoff field; live runtime clock remains authoritative for today/now.",
+      "Current state updated for the active agent only. This is the living handoff field for meaningful sessions, major state changes, and pre-compaction orientation; live runtime clock remains authoritative for today/now.",
     reason,
     profile: data
   });

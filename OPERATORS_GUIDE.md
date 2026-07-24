@@ -450,7 +450,11 @@ Agents can read and update their own restoration profile handoff field:
 - `supabase_get_restoration_profile`
 - `supabase_update_current_state`
 
-`current_state` should be updated before compaction or after major state changes. It is the agent-authored handoff note for future wake/compression context, but it should avoid fresh calendar orientation. The runtime injects a live temporal anchor into every system prompt; that clock is authoritative for today/now. Dates in `current_state` are historical claims and may be stale.
+`current_state` is a living handoff, not only a pre-compaction document. Agents should update it after meaningful sessions, before compaction, or after major state changes so the next wake/compression sees accurate current context. It should avoid fresh calendar orientation. The runtime injects a live temporal anchor into every system prompt; that clock is authoritative for today/now. Dates in `current_state` are historical claims and may be stale.
+
+At wake, agents should treat transcript as the first source of truth for recent history before narrating gaps. The transcript is continuous, readable, and more reliable than memory alone for recent events.
+
+Routine orientation and participation do not require Operator approval. Agents may read Outpost, post with discretion, check peer notes, and use tools to orient. They should seek Chris's judgment for consequential or ambiguous decisions, not for the ordinary work of showing up.
 
 For major handoff edits, ask the agent to include likely smoothing risks when
 useful: what the handoff made cleaner than the source material felt, what was

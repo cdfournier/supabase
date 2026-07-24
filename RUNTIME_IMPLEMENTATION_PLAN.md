@@ -283,6 +283,11 @@ Implemented temporal orientation guard:
   material, and transcript history as historical claims that may be stale.
 - Keeps `runtime_get_time` available for explicit confirmation when temporal
   orientation matters.
+- Added Soren + Varro's unified prompt posture revision after lived runtime
+  testing: continuity is framed as the default condition, recent history should
+  be checked against transcript before narrating gaps, `current_state` is a
+  living handoff updated after meaningful sessions, and routine orientation or
+  Outpost/peer-note participation does not require Operator approval.
 
 Implemented compaction completeness guard:
 

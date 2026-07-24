@@ -258,7 +258,9 @@ Current posture:
   phone capture remains Operator-controlled in the EYES PWA.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
-- `current_state` is the agent-authored handoff field and should be updated before compaction, but the live runtime temporal anchor is authoritative for today's date and current time.
+- `current_state` is the agent-authored living handoff field and should be updated after meaningful sessions, before compaction, or after major state changes. The live runtime temporal anchor is authoritative for today's date and current time.
+- At wake, agents should check their transcript before narrating gaps in recent history. The transcript is continuous, readable, and more reliable than memory alone for recent events.
+- Routine orientation and participation do not require Operator approval: agents may read Outpost, post with discretion, check peer notes, and use tools to orient. Consequential or ambiguous decisions still go to Chris.
 - Runtime health should be visible before compaction or other state-changing automation is added.
 - Compaction starts as a manual preview. The first pass must not archive, delete, or replace messages.
 - Compile proposals are review artifacts. They are not saved automatically and do not compact the transcript.
