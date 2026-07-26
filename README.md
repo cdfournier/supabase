@@ -24,6 +24,7 @@ This project is intentionally modest. It gives each agent a persistent database-
 - Provides a read-only `/api/health` endpoint and UI panel for runtime visibility.
 - Shows actual tool calls beneath assistant messages so Operators can distinguish real tool use from narration about tool use.
 - Keeps secrets server-side through `.env.local`.
+- Gates non-local operator UI and API access behind an Operator token.
 
 ## Project Shape
 
@@ -213,8 +214,27 @@ Important values:
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
 - `RUNTIME_TIME_ZONE`
+- `OPERATOR_ACCESS_TOKEN`
+- `OPERATOR_AUTH_SECRET`
 
 Never commit `.env.local`.
+
+## Operator Web Access
+
+Localhost remains open for local development when `OPERATOR_ACCESS_TOKEN` is not
+set. Any non-local host requires Operator authentication before the UI or API
+routes open.
+
+Before exposing the runtime through a tunnel, hosted URL, or home-server route:
+
+1. Set `OPERATOR_ACCESS_TOKEN` in `.env.local`.
+2. Optionally set `OPERATOR_AUTH_SECRET` to a separate random string so session
+   cookies are not derived from the access token alone.
+3. Restart the runtime server.
+4. Open the remote URL and unlock with the Operator token.
+
+The token gate is a first bridge guardrail. Keep Supabase service-role keys,
+Anthropic keys, Outpost tokens, and storage operations server-side.
 
 ## Free Moments
 

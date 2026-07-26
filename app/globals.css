@@ -24,12 +24,77 @@ body {
 }
 
 button,
+input,
 textarea {
   font: inherit;
 }
 
 button {
   cursor: pointer;
+}
+
+.login-page {
+  align-items: center;
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.login-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 16px 44px rgba(33, 31, 27, 0.08);
+  display: grid;
+  gap: 16px;
+  justify-self: center;
+  max-width: 460px;
+  padding: 28px;
+  width: 100%;
+}
+
+.login-eyebrow {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.login-panel h1 {
+  font-size: 28px;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.login-panel p {
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.login-panel form {
+  display: grid;
+  gap: 10px;
+}
+
+.login-panel label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.login-panel input {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.login-panel .send {
+  justify-self: start;
 }
 
 .shell {

@@ -50,6 +50,24 @@ npm run dev
 
 If the change touches runtime tools, prompts, environment variables, or API routes, restart before asking an agent to test.
 
+## Operator Web Access
+
+Localhost is allowed without a token when `OPERATOR_ACCESS_TOKEN` is unset, so
+normal local development stays easy. Any non-local host requires Operator login.
+
+Before opening the runtime outside local trusted access:
+
+```bash
+OPERATOR_ACCESS_TOKEN=choose-a-long-random-token
+OPERATOR_AUTH_SECRET=choose-a-second-random-secret
+```
+
+Then restart the server and open the remote URL. The login screen unlocks the UI
+and API routes with an HTTP-only session cookie.
+
+If a remote URL returns `Operator access token is not configured for remote
+access.`, set `OPERATOR_ACCESS_TOKEN` and restart.
+
 ## Health Check
 
 The runtime exposes a read-only health endpoint:
