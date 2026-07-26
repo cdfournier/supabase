@@ -252,6 +252,7 @@ export default function Home() {
   const [transcripts, setTranscripts] = useState<Record<string, ChatMessage[]>>({});
   const [cafe, setCafe] = useState<CafeState | null>(null);
   const [cafeMessage, setCafeMessage] = useState("");
+  const [cafePendingAttachments, setCafePendingAttachments] = useState<PendingAttachment[]>([]);
   const [cafeLoading, setCafeLoading] = useState(true);
   const [cafeSending, setCafeSending] = useState(false);
   const [cafeError, setCafeError] = useState("");
@@ -721,8 +722,9 @@ export default function Home() {
   async function sendCafeMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = cafeMessage.trim();
+    const hasAttachments = cafePendingAttachments.length > 0;
 
-    if (!trimmed || cafeSending) {
+    if ((!trimmed && !hasAttachments) || cafeSending) {
       return;
     }
 
@@ -731,13 +733,15 @@ export default function Home() {
     setCafeMessage("");
 
     try {
+      const uploadedAttachments = await uploadQueuedCafeAttachments();
       const response = await fetch("/api/cafe", {
         method: "POST",
         headers: {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          message: trimmed
+          message: trimmed,
+          attachments: uploadedAttachments.map((attachment) => ({ id: attachment.id }))
         })
       });
       const data = await response.json();
@@ -747,12 +751,36 @@ export default function Home() {
       }
 
       setCafe(data);
+      setCafePendingAttachments([]);
     } catch (sendCafeError) {
       setCafeMessage(trimmed);
       setCafeError(sendCafeError instanceof Error ? sendCafeError.message : "Cafe message failed.");
     } finally {
       setCafeSending(false);
     }
+  }
+
+  function addCafeFiles(files: FileList | File[]) {
+    const nextFiles = Array.from(files);
+
+    if (!nextFiles.length) {
+      return;
+    }
+
+    setCafePendingAttachments((current) => [
+      ...current,
+      ...nextFiles.map((file) => ({
+        localId: createLocalId(),
+        file,
+        status: "queued" as const
+      }))
+    ]);
+  }
+
+  function removeCafeAttachment(localId: string) {
+    setCafePendingAttachments((current) =>
+      current.filter((attachment) => attachment.localId !== localId)
+    );
   }
 
   function addFiles(files: FileList | File[]) {
@@ -851,6 +879,82 @@ export default function Home() {
     return [...uploaded, ...materials];
   }
 
+  async function uploadQueuedCafeAttachments() {
+    const queued = cafePendingAttachments.filter((attachment) => attachment.status !== "uploaded");
+    const uploaded = cafePendingAttachments
+      .filter((attachment) => attachment.status === "uploaded" && attachment.material)
+      .map((attachment) => attachment.material as UploadedAttachment);
+
+    if (!queued.length) {
+      return uploaded;
+    }
+
+    setCafePendingAttachments((current) =>
+      current.map((attachment) =>
+        queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+          ? { ...attachment, status: "uploading", error: undefined }
+          : attachment
+      )
+    );
+
+    const formData = new FormData();
+
+    for (const attachment of queued) {
+      formData.append("files", attachment.file);
+    }
+
+    const response = await fetch("/api/source-materials/cafe-upload", {
+      method: "POST",
+      body: formData
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      setCafePendingAttachments((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: data.error || "Upload failed." }
+            : attachment
+        )
+      );
+      throw new Error(data.error || "Upload failed.");
+    }
+
+    const materials = (data.materials ?? []) as UploadedAttachment[];
+
+    if (materials.length !== queued.length) {
+      setCafePendingAttachments((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: "Upload response did not match selected files." }
+            : attachment
+        )
+      );
+      throw new Error("Upload response did not match selected files.");
+    }
+
+    setCafePendingAttachments((current) =>
+      current.map((attachment) => {
+        const queuedIndex = queued.findIndex(
+          (queuedAttachment) => queuedAttachment.localId === attachment.localId
+        );
+
+        if (queuedIndex === -1) {
+          return attachment;
+        }
+
+        return {
+          ...attachment,
+          status: "uploaded",
+          material: materials[queuedIndex],
+          error: undefined
+        };
+      })
+    );
+
+    return [...uploaded, ...materials];
+  }
+
   return (
     <main className="shell">
       <aside className="sidebar">
@@ -916,9 +1020,12 @@ export default function Home() {
           error={cafeError}
           loading={cafeLoading}
           message={cafeMessage}
+          onAddFiles={addCafeFiles}
           onMessageChange={setCafeMessage}
+          onRemoveAttachment={removeCafeAttachment}
           onRefresh={loadCafe}
           onSubmit={sendCafeMessage}
+          pendingAttachments={cafePendingAttachments}
           sending={cafeSending}
         />
       ) : (
@@ -1135,20 +1242,27 @@ function CafeView({
   error,
   loading,
   message,
+  onAddFiles,
   onMessageChange,
+  onRemoveAttachment,
   onRefresh,
   onSubmit,
+  pendingAttachments,
   sending
 }: {
   cafe: CafeState | null;
   error: string;
   loading: boolean;
   message: string;
+  onAddFiles: (files: FileList | File[]) => void;
   onMessageChange: (message: string) => void;
+  onRemoveAttachment: (localId: string) => void;
   onRefresh: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  pendingAttachments: PendingAttachment[];
   sending: boolean;
 }) {
+  const cafeFileInputRef = useRef<HTMLInputElement | null>(null);
   const participants = cafe?.participants ?? [];
   const messages = cafe?.messages ?? [];
 
@@ -1173,7 +1287,17 @@ function CafeView({
         </button>
       </header>
 
-      <form className="composer cafe-composer" onSubmit={onSubmit}>
+      <form
+        className="composer cafe-composer"
+        onDragOver={(event) => {
+          event.preventDefault();
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          onAddFiles(event.dataTransfer.files);
+        }}
+        onSubmit={onSubmit}
+      >
         {error ? <p className="error">{error}</p> : null}
         <div className="composer-row">
           <textarea
@@ -1183,11 +1307,55 @@ function CafeView({
             value={message}
           />
           <div className="composer-actions">
-            <button className="send" disabled={loading || sending || !message.trim()} type="submit">
+            <input
+              multiple
+              onChange={(event) => {
+                if (event.target.files) {
+                  onAddFiles(event.target.files);
+                }
+                event.target.value = "";
+              }}
+              ref={cafeFileInputRef}
+              type="file"
+            />
+            <button
+              className="attach"
+              disabled={loading || sending}
+              onClick={() => cafeFileInputRef.current?.click()}
+              type="button"
+            >
+              Attach
+            </button>
+            <button
+              className="send"
+              disabled={loading || sending || (!message.trim() && pendingAttachments.length === 0)}
+              type="submit"
+            >
               {sending ? "Posting" : "Post"}
             </button>
           </div>
         </div>
+        {pendingAttachments.length ? (
+          <div className="attachment-tray" aria-label="Pending Cafe attachments">
+            {pendingAttachments.map((attachment) => (
+              <span className={`attachment-chip ${attachment.status}`} key={attachment.localId}>
+                <span>
+                  {attachment.file.name}
+                  <small>{formatBytes(attachment.file.size)} · {attachment.status}</small>
+                  {attachment.error ? <small className="attachment-error">{attachment.error}</small> : null}
+                </span>
+                <button
+                  aria-label={`Remove ${attachment.file.name}`}
+                  disabled={sending}
+                  onClick={() => onRemoveAttachment(attachment.localId)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </form>
 
       <div className="transcript cafe-transcript">
@@ -1195,18 +1363,35 @@ function CafeView({
         {!loading && !messages.length ? (
           <p className="empty">No Cafe messages yet. Say something and the room exists.</p>
         ) : null}
-        {messages.map((cafeMessage) => (
-          <article
-            className={`message ${cafeMessage.author_type === "operator" ? "user" : "assistant"}`}
-            key={cafeMessage.id}
-          >
-            <div className="message-meta">
-              <span>{cafeMessage.author_display_name}</span>
-              <time dateTime={cafeMessage.created_at}>{formatMessageTime(cafeMessage.created_at)}</time>
-            </div>
-            <div>{cafeMessage.content}</div>
-          </article>
-        ))}
+        {messages.map((cafeMessage) => {
+          const messageAttachments = attachmentsFromCafeMetadata(cafeMessage.metadata);
+
+          return (
+            <article
+              className={`message ${cafeMessage.author_type === "operator" ? "user" : "assistant"}`}
+              key={cafeMessage.id}
+            >
+              <div className="message-meta">
+                <span>{cafeMessage.author_display_name}</span>
+                <time dateTime={cafeMessage.created_at}>{formatMessageTime(cafeMessage.created_at)}</time>
+              </div>
+              <div>{cafeMessage.content}</div>
+              {messageAttachments.length > 0 ? (
+                <div className="message-attachments" aria-label="Cafe message attachments">
+                  {messageAttachments.map((attachment) => (
+                    <span className="message-attachment" key={attachment.id}>
+                      {attachment.title}
+                      <small>
+                        {attachment.material_type} · {formatBytes(attachment.size_bytes)}
+                        {attachment.readable_as_text ? " · text-readable" : ""}
+                      </small>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -1546,6 +1731,48 @@ function participantAdapterLabel(adapter: CafeParticipant["participant_adapter"]
     default:
       return adapter;
   }
+}
+
+function attachmentsFromCafeMetadata(metadata: Record<string, unknown>): SourceMaterialReference[] {
+  const attachments = metadata.attachments;
+
+  if (!Array.isArray(attachments)) {
+    return [];
+  }
+
+  const parsed: SourceMaterialReference[] = [];
+
+  for (const attachment of attachments) {
+    if (!attachment || typeof attachment !== "object") {
+      continue;
+    }
+
+    const source = attachment as Record<string, unknown>;
+    const id = String(source.id ?? "").trim();
+    const title = String(source.title ?? "").trim();
+    const materialType = String(source.material_type ?? "file").trim();
+
+    if (!id || !title) {
+      continue;
+    }
+
+    parsed.push({
+      id,
+      title,
+      bucket: typeof source.bucket === "string" ? source.bucket : undefined,
+      storage_path: typeof source.storage_path === "string" ? source.storage_path : undefined,
+      material_type: materialType || "file",
+      mime_type: typeof source.mime_type === "string" ? source.mime_type : null,
+      size_bytes: typeof source.size_bytes === "number" ? source.size_bytes : null,
+      readable_as_text: source.readable_as_text === true,
+      metadata:
+        source.metadata && typeof source.metadata === "object" && !Array.isArray(source.metadata)
+          ? (source.metadata as Record<string, unknown>)
+          : null
+    });
+  }
+
+  return parsed;
 }
 
 function savedProposalLabel(proposal: CompactionCompile) {

@@ -152,6 +152,22 @@ curl -s -X POST http://localhost:3001/api/cafe \
   -d '{"message":"Coffee is on."}'
 ```
 
+Upload an Operator Cafe attachment, then attach the returned source material id
+to a Cafe post:
+
+```bash
+curl -s -X POST http://localhost:3001/api/source-materials/cafe-upload \
+  -F "files=@./note.md"
+
+curl -s -X POST http://localhost:3001/api/cafe \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Source on the table.","attachments":[{"id":"<source_material_id>"}]}'
+```
+
+Cafe attachments use the source-materials storage bucket, are tagged
+`cafe-attachment`, grant read access to Soren and Varro, and are referenced from
+`cafe_messages.metadata.attachments`.
+
 Before using Cafe in an existing Supabase project, run
 `sql/2026-07-26-cafe-mvp.sql` once in the Supabase SQL editor, then restart the
 runtime.

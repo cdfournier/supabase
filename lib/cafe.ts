@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SourceMaterialReference } from "@/lib/source-materials-shared";
 
 export const CAFE_ROOM_ID = "cafe-main";
 const CAFE_MESSAGE_LIMIT = 100;
@@ -130,14 +131,19 @@ export async function loadCafe(supabase: Supabase) {
   };
 }
 
-export async function postOperatorCafeMessage(supabase: Supabase, content: string) {
-  return postCafeParticipantMessage(supabase, "operator:chris", content);
+export async function postOperatorCafeMessage(
+  supabase: Supabase,
+  content: string,
+  attachments: SourceMaterialReference[] = []
+) {
+  return postCafeParticipantMessage(supabase, "operator:chris", content, attachments);
 }
 
 export async function postCafeParticipantMessage(
   supabase: Supabase,
   participantId: string,
-  content: string
+  content: string,
+  attachments: SourceMaterialReference[] = []
 ) {
   const participant = CAFE_PARTICIPANTS.find((candidate) => candidate.participantId === participantId);
   const trimmed = content.trim();
@@ -146,7 +152,7 @@ export async function postCafeParticipantMessage(
     throw new Error(`Unknown Cafe participant: ${participantId}`);
   }
 
-  if (!trimmed) {
+  if (!trimmed && !attachments.length) {
     throw new Error("Message is required.");
   }
 
@@ -163,10 +169,21 @@ export async function postCafeParticipantMessage(
       author_id: participant.participantId,
       author_type: participant.participantType,
       author_display_name: participant.displayName,
-      content: trimmed,
+      content: trimmed || "Shared attachment.",
       metadata: {
         source: participant.participantAdapter,
-        participant_adapter: participant.participantAdapter
+        participant_adapter: participant.participantAdapter,
+        attachments: attachments.map((attachment) => ({
+          id: attachment.id,
+          title: attachment.title,
+          bucket: attachment.bucket,
+          storage_path: attachment.storage_path,
+          material_type: attachment.material_type,
+          mime_type: attachment.mime_type,
+          size_bytes: attachment.size_bytes,
+          readable_as_text: attachment.readable_as_text,
+          metadata: attachment.metadata ?? null
+        }))
       }
     })
     .select("id, room_id, author_id, author_type, author_display_name, content, metadata, created_at")
