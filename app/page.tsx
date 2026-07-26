@@ -1155,27 +1155,23 @@ function CafeView({
   return (
     <section className="main">
       <header className="header cafe-header">
-        <div>
-          <h2>{cafe?.room.title ?? "Cafe"}</h2>
-          <p>cafe-main</p>
+        <h2 className="visually-hidden">{cafe?.room.title ?? "Cafe"}</h2>
+        <div className="cafe-participants" aria-label="Cafe participants">
+          {participants.length ? (
+            participants.map((participant) => (
+              <span className="participant-chip" key={participant.id}>
+                <strong>{participant.display_name}</strong>
+                <small>{participantAdapterLabel(participant.participant_adapter)}</small>
+              </span>
+            ))
+          ) : (
+            <span className="participant-chip muted">No participants loaded</span>
+          )}
         </div>
         <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
           Refresh
         </button>
       </header>
-
-      <div className="cafe-participants" aria-label="Cafe participants">
-        {participants.length ? (
-          participants.map((participant) => (
-            <span className="participant-chip" key={participant.id}>
-              <strong>{participant.display_name}</strong>
-              <small>{participantAdapterLabel(participant.participant_adapter)}</small>
-            </span>
-          ))
-        ) : (
-          <span className="participant-chip muted">No participants loaded</span>
-        )}
-      </div>
 
       <form className="composer cafe-composer" onSubmit={onSubmit}>
         {error ? <p className="error">{error}</p> : null}

@@ -33,6 +33,16 @@ button {
   cursor: pointer;
 }
 
+.visually-hidden {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
 .login-page {
   align-items: center;
   display: grid;
@@ -409,24 +419,25 @@ button {
 
 .cafe-header {
   align-items: center;
+  background: #f9fbfa;
   display: flex;
   gap: 16px;
   justify-content: space-between;
+  padding: 14px 24px;
 }
 
 .cafe-header .quiet-action {
+  flex: 0 0 auto;
   margin-top: 0;
   width: auto;
 }
 
 .cafe-participants {
   align-items: center;
-  background: #f9fbfa;
-  border-bottom: 1px solid var(--line);
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 14px 24px;
+  min-width: 0;
 }
 
 .participant-chip {
