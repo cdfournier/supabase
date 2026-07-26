@@ -236,6 +236,20 @@ Before exposing the runtime through a tunnel, hosted URL, or home-server route:
 The token gate is a first bridge guardrail. Keep Supabase service-role keys,
 Anthropic keys, Outpost tokens, and storage operations server-side.
 
+Current remote-access topology:
+
+```text
+Operator browser
+  -> runtime.blackcoffeeshoppe.com
+  -> Cloudflare DNS / Tunnel / edge SSL
+  -> Chris's home Mac
+  -> this runtime server
+```
+
+HostGator/shared hosting may remain part of the domain/static-web setup, but it
+is not the runtime host. Use Cloudflare as the public doorway and keep the
+runtime on a machine that can run the Next server continuously.
+
 ## Free Moments
 
 Free Moments can run on a cadence or as a manual single wake. Scheduled turns rotate through Soren and Varro. The UI's "Wake [agent] Now" action targets the currently selected agent instead of advancing the round-robin pointer.

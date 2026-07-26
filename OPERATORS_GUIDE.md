@@ -68,6 +68,16 @@ and API routes with an HTTP-only session cookie.
 If a remote URL returns `Operator access token is not configured for remote
 access.`, set `OPERATOR_ACCESS_TOKEN` and restart.
 
+For the current web-access path, treat Cloudflare as the public doorway and the
+home Mac as the runtime base station:
+
+```text
+runtime.blackcoffeeshoppe.com -> Cloudflare -> home Mac -> runtime server
+```
+
+Do not deploy this runtime as a static/shared-hosting site. It needs a running
+Node/Next server with access to the runtime environment variables.
+
 ## Health Check
 
 The runtime exposes a read-only health endpoint:
