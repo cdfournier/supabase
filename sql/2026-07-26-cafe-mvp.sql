@@ -60,7 +60,9 @@ insert into public.cafe_participants (
 values
   ('cafe-main', 'operator:chris', 'operator', 'operator_browser', 'Chris', '{}'::jsonb),
   ('cafe-main', 'agent:soren', 'agent', 'runtime_native', 'Soren', '{"agent": "soren"}'::jsonb),
-  ('cafe-main', 'agent:varro', 'agent', 'runtime_native', 'Varro', '{"agent": "varro"}'::jsonb)
+  ('cafe-main', 'agent:varro', 'agent', 'runtime_native', 'Varro', '{"agent": "varro"}'::jsonb),
+  ('cafe-main', 'agent:julian', 'external_agent', 'codex_local', 'Julian', '{"agent": "julian", "adapter_status": "planned"}'::jsonb),
+  ('cafe-main', 'agent:cael', 'external_agent', 'codex_local', 'Cael', '{"agent": "cael", "adapter_status": "planned"}'::jsonb)
 on conflict (room_id, participant_id) do update
 set participant_type = excluded.participant_type,
     participant_adapter = excluded.participant_adapter,

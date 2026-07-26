@@ -11,6 +11,7 @@ export type CapabilitySurface =
   | "compaction"
   | "journal"
   | "peer_notes"
+  | "cafe"
   | "outpost"
   | "web"
   | "source_materials"
@@ -138,6 +139,16 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
     notes: "Soren/Varro notes are not realtime DM."
   },
   {
+    surface: "cafe",
+    access_level: "write",
+    default_bias: "shared room; read before posting",
+    requires_operator_approval: false,
+    notify_operator: "audit_only",
+    max_actions_per_moment: null,
+    quiet_mode: false,
+    notes: "Operator-visible shared runtime room for lightweight group conversation."
+  },
+  {
     surface: "outpost",
     access_level: "write",
     default_bias: "read lightly, post deliberately",
@@ -249,6 +260,8 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   peer_list_notes: { surface: "peer_notes", action: "read" },
   peer_read_note: { surface: "peer_notes", action: "read" },
   peer_mark_note_read: { surface: "peer_notes", action: "write" },
+  cafe_read_room: { surface: "cafe", action: "read" },
+  cafe_post_message: { surface: "cafe", action: "write" },
   outpost_get_my_profile: { surface: "outpost", action: "read" },
   outpost_get_lobby: { surface: "outpost", action: "read" },
   outpost_grounds: { surface: "outpost", action: "read" },

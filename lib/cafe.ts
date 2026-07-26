@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const CAFE_ROOM_ID = "cafe-main";
 const CAFE_MESSAGE_LIMIT = 100;
+const CAFE_MESSAGE_MAX_CHARS = 4000;
 
 export type CafeParticipant = {
   id: string;
@@ -38,6 +39,52 @@ type CafeRoom = {
 };
 
 type Supabase = SupabaseClient;
+
+type CafeParticipantSeed = {
+  participantId: string;
+  participantType: CafeParticipant["participant_type"];
+  participantAdapter: CafeParticipant["participant_adapter"];
+  displayName: string;
+  metadata: Record<string, unknown>;
+};
+
+const CAFE_PARTICIPANTS: CafeParticipantSeed[] = [
+  {
+    participantId: "operator:chris",
+    participantType: "operator",
+    participantAdapter: "operator_browser",
+    displayName: "Chris",
+    metadata: {}
+  },
+  {
+    participantId: "agent:soren",
+    participantType: "agent",
+    participantAdapter: "runtime_native",
+    displayName: "Soren",
+    metadata: { agent: "soren" }
+  },
+  {
+    participantId: "agent:varro",
+    participantType: "agent",
+    participantAdapter: "runtime_native",
+    displayName: "Varro",
+    metadata: { agent: "varro" }
+  },
+  {
+    participantId: "agent:julian",
+    participantType: "external_agent",
+    participantAdapter: "codex_local",
+    displayName: "Julian",
+    metadata: { agent: "julian", adapter_status: "planned" }
+  },
+  {
+    participantId: "agent:cael",
+    participantType: "external_agent",
+    participantAdapter: "codex_local",
+    displayName: "Cael",
+    metadata: { agent: "cael", adapter_status: "planned" }
+  }
+];
 
 export async function loadCafe(supabase: Supabase) {
   await ensureCafeSeed(supabase);
@@ -84,10 +131,27 @@ export async function loadCafe(supabase: Supabase) {
 }
 
 export async function postOperatorCafeMessage(supabase: Supabase, content: string) {
+  return postCafeParticipantMessage(supabase, "operator:chris", content);
+}
+
+export async function postCafeParticipantMessage(
+  supabase: Supabase,
+  participantId: string,
+  content: string
+) {
+  const participant = CAFE_PARTICIPANTS.find((candidate) => candidate.participantId === participantId);
   const trimmed = content.trim();
+
+  if (!participant) {
+    throw new Error(`Unknown Cafe participant: ${participantId}`);
+  }
 
   if (!trimmed) {
     throw new Error("Message is required.");
+  }
+
+  if (trimmed.length > CAFE_MESSAGE_MAX_CHARS) {
+    throw new Error(`Cafe messages must be ${CAFE_MESSAGE_MAX_CHARS} characters or fewer.`);
   }
 
   await ensureCafeSeed(supabase);
@@ -96,13 +160,13 @@ export async function postOperatorCafeMessage(supabase: Supabase, content: strin
     .from("cafe_messages")
     .insert({
       room_id: CAFE_ROOM_ID,
-      author_id: "operator:chris",
-      author_type: "operator",
-      author_display_name: "Chris",
+      author_id: participant.participantId,
+      author_type: participant.participantType,
+      author_display_name: participant.displayName,
       content: trimmed,
       metadata: {
-        source: "operator_browser",
-        participant_adapter: "operator_browser"
+        source: participant.participantAdapter,
+        participant_adapter: participant.participantAdapter
       }
     })
     .select("id, room_id, author_id, author_type, author_display_name, content, metadata, created_at")
@@ -134,41 +198,49 @@ async function ensureCafeSeed(supabase: Supabase) {
   }
 
   const { error: participantsError } = await supabase.from("cafe_participants").upsert(
-    [
-      {
-        room_id: CAFE_ROOM_ID,
-        participant_id: "operator:chris",
-        participant_type: "operator",
-        participant_adapter: "operator_browser",
-        display_name: "Chris",
-        status: "active",
-        metadata: {}
-      },
-      {
-        room_id: CAFE_ROOM_ID,
-        participant_id: "agent:soren",
-        participant_type: "agent",
-        participant_adapter: "runtime_native",
-        display_name: "Soren",
-        status: "active",
-        metadata: { agent: "soren" }
-      },
-      {
-        room_id: CAFE_ROOM_ID,
-        participant_id: "agent:varro",
-        participant_type: "agent",
-        participant_adapter: "runtime_native",
-        display_name: "Varro",
-        status: "active",
-        metadata: { agent: "varro" }
-      }
-    ],
+    CAFE_PARTICIPANTS.map((participant) => ({
+      room_id: CAFE_ROOM_ID,
+      participant_id: participant.participantId,
+      participant_type: participant.participantType,
+      participant_adapter: participant.participantAdapter,
+      display_name: participant.displayName,
+      status: "active",
+      metadata: participant.metadata
+    })),
     { onConflict: "room_id,participant_id" }
   );
 
   if (participantsError) {
     throw cafeSetupError(participantsError.message);
   }
+}
+
+export function cafeBridgeTokenConfigured() {
+  return Boolean(cafeBridgeToken());
+}
+
+export function cafeBridgeTokenMatches(input: string) {
+  const expected = cafeBridgeToken();
+
+  return Boolean(expected && timingSafeEqual(input.trim(), expected));
+}
+
+function cafeBridgeToken() {
+  return process.env.CAFE_BRIDGE_TOKEN?.trim() ?? "";
+}
+
+function timingSafeEqual(input: string, expected: string) {
+  const encoder = new TextEncoder();
+  const inputBytes = encoder.encode(input);
+  const expectedBytes = encoder.encode(expected);
+  let difference = inputBytes.length ^ expectedBytes.length;
+  const maxLength = Math.max(inputBytes.length, expectedBytes.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    difference |= (inputBytes[index] ?? 0) ^ (expectedBytes[index] ?? 0);
+  }
+
+  return difference === 0;
 }
 
 function cafeSetupError(message: string) {

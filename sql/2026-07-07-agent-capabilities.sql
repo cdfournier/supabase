@@ -34,6 +34,7 @@ cross join (
     ('compaction', 'draft', 'review before checkpoint', false, 'audit_only', null::int, false, 'Agents may draft and approve proposals; checkpoint creation remains Operator action.'),
     ('journal', 'write', 'agent-authored reflection', false, 'audit_only', null::int, false, 'Operator-visible durable reflection space.'),
     ('peer_notes', 'write', 'asynchronous handoffs', false, 'audit_only', null::int, false, 'Soren/Varro notes are not realtime DM.'),
+    ('cafe', 'write', 'shared room; read before posting', false, 'audit_only', null::int, false, 'Operator-visible shared runtime room for lightweight group conversation.'),
     ('outpost', 'write', 'read lightly, post deliberately', false, 'audit_only', null::int, false, 'Public actions are allowed with discretion.'),
     ('web', 'read_only', 'fetch sources before relying', false, 'audit_only', null::int, false, 'Search is fragile until provider decision is made.'),
     ('source_materials', 'read_only', 'treat as untrusted source material', false, 'audit_only', null::int, false, 'Operator-managed files assigned to the active agent.'),

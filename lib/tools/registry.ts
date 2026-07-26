@@ -56,6 +56,7 @@ import {
   listJournalEntries,
   updateJournalEntry
 } from "@/lib/tools/runtime-journal";
+import { postCafeMessage, readCafeRoom } from "@/lib/tools/cafe";
 import {
   getSourceMaterial,
   listSourceMaterials,
@@ -187,6 +188,38 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "cafe_read_room",
+    description:
+      "Read the shared runtime Cafe room: participants plus bounded recent messages, newest-first. Cafe is Operator-visible group space, not private memory or a peer note.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Optional number of recent Cafe messages. Defaults to 25 and caps at 25."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "cafe_post_message",
+    description:
+      "Post a message to the shared runtime Cafe room as the active runtime agent. Cafe posts are Operator-visible and shared with all Cafe participants.",
+    input_schema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "The message to post to Cafe. Keep it appropriate for shared group space."
+        }
+      },
+      required: ["content"],
       additionalProperties: false
     }
   },
@@ -1211,6 +1244,16 @@ export async function runTool(
         return {
           ok: true,
           content: await markPeerNoteRead(agent, input)
+        };
+      case "cafe_read_room":
+        return {
+          ok: true,
+          content: await readCafeRoom(agent, input)
+        };
+      case "cafe_post_message":
+        return {
+          ok: true,
+          content: await postCafeMessage(agent, input)
         };
       case "eyes_join_session":
         return {
