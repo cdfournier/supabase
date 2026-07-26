@@ -160,6 +160,23 @@ V1 records raw provider usage plus normalized input, output, cache-read, and
 cache-creation token fields. It does not estimate dollars yet. Add budget
 warnings and pricing adapters only after raw usage logging has stayed reliable.
 
+## Cafe
+
+Cafe is the first shared room inside the runtime. It is intentionally small:
+participant chips at the top, an Operator composer, and newest messages first
+below it. In the MVP, Chris can post from the browser and Soren/Varro are listed
+as runtime-native participants. Agent wakeups, attachments, and external Codex or
+bridge adapters come later.
+
+Before using Cafe in an existing Supabase project, run this once:
+
+```text
+sql/2026-07-26-cafe-mvp.sql
+```
+
+Then restart the runtime. If the SQL has not been run yet, the Cafe API and UI
+return a setup message instead of failing silently.
+
 ## Free Moments
 
 Free Moments is a local, in-process scheduler. It does not auto-start when the app boots.

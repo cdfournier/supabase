@@ -9,6 +9,7 @@ import {
 } from "@/lib/source-materials-shared";
 
 type AgentName = "soren" | "varro";
+type ActiveSurface = "chat" | "cafe";
 
 type Agent = {
   name: AgentName;
@@ -25,6 +26,44 @@ type ChatMessage = {
   source?: string | null;
   content: unknown;
   created_at?: string;
+};
+
+type CafeParticipant = {
+  id: string;
+  room_id: string;
+  participant_id: string;
+  participant_type: "operator" | "agent" | "system" | "external_agent";
+  participant_adapter: "operator_browser" | "runtime_native" | "codex_local" | "external_bridge";
+  display_name: string;
+  status: string;
+  metadata: Record<string, unknown>;
+  joined_at: string;
+  updated_at: string;
+};
+
+type CafeMessage = {
+  id: string;
+  room_id: string;
+  author_id: string;
+  author_type: "operator" | "agent" | "system" | "external_agent";
+  author_display_name: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+type CafeState = {
+  room: {
+    id: string;
+    title: string;
+    status: string;
+    metadata: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+  };
+  participants: CafeParticipant[];
+  messages: CafeMessage[];
+  message_limit: number;
 };
 
 type ToolEvent = {
@@ -209,7 +248,13 @@ const liveTranscriptLimit = 120;
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AgentName>(defaultAgent);
+  const [activeSurface, setActiveSurface] = useState<ActiveSurface>("chat");
   const [transcripts, setTranscripts] = useState<Record<string, ChatMessage[]>>({});
+  const [cafe, setCafe] = useState<CafeState | null>(null);
+  const [cafeMessage, setCafeMessage] = useState("");
+  const [cafeLoading, setCafeLoading] = useState(true);
+  const [cafeSending, setCafeSending] = useState(false);
+  const [cafeError, setCafeError] = useState("");
   const [health, setHealth] = useState<Health | null>(null);
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
   const [toolEvents, setToolEvents] = useState<Record<string, ToolEvent[]>>({});
@@ -326,6 +371,30 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  const loadCafe = useCallback(async () => {
+    setCafeError("");
+
+    try {
+      const response = await fetch("/api/cafe");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load Cafe.");
+      }
+
+      setCafe(data);
+    } catch (loadCafeError) {
+      setCafeError(loadCafeError instanceof Error ? loadCafeError.message : "Could not load Cafe.");
+      setCafe(null);
+    } finally {
+      setCafeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCafe();
+  }, [loadCafe]);
 
   useEffect(() => {
     let cancelled = false;
@@ -649,6 +718,43 @@ export default function Home() {
     }
   }
 
+  async function sendCafeMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = cafeMessage.trim();
+
+    if (!trimmed || cafeSending) {
+      return;
+    }
+
+    setCafeSending(true);
+    setCafeError("");
+    setCafeMessage("");
+
+    try {
+      const response = await fetch("/api/cafe", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          message: trimmed
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Cafe message failed.");
+      }
+
+      setCafe(data);
+    } catch (sendCafeError) {
+      setCafeMessage(trimmed);
+      setCafeError(sendCafeError instanceof Error ? sendCafeError.message : "Cafe message failed.");
+    } finally {
+      setCafeSending(false);
+    }
+  }
+
   function addFiles(files: FileList | File[]) {
     const nextFiles = Array.from(files);
 
@@ -749,13 +855,27 @@ export default function Home() {
     <main className="shell">
       <aside className="sidebar">
         <h1>Agents</h1>
+        <button
+          className={`cafe-button ${activeSurface === "cafe" ? "active" : ""}`}
+          onClick={() => setActiveSurface("cafe")}
+          type="button"
+        >
+          <strong>Cafe</strong>
+          <br />
+          <span>shared room</span>
+        </button>
         <div className="agent-list">
           {agents.map((agent) => (
             <button
-              className={`agent-button ${agent.name === selectedAgent ? "active" : ""}`}
+              className={`agent-button ${
+                activeSurface === "chat" && agent.name === selectedAgent ? "active" : ""
+              }`}
               disabled={sending}
               key={agent.name}
-              onClick={() => setSelectedAgent(agent.name)}
+              onClick={() => {
+                setSelectedAgent(agent.name);
+                setActiveSurface("chat");
+              }}
               type="button"
             >
               <strong>{agent.display_name ?? agent.name}</strong>
@@ -790,6 +910,18 @@ export default function Home() {
         />
       </aside>
 
+      {activeSurface === "cafe" ? (
+        <CafeView
+          cafe={cafe}
+          error={cafeError}
+          loading={cafeLoading}
+          message={cafeMessage}
+          onMessageChange={setCafeMessage}
+          onRefresh={loadCafe}
+          onSubmit={sendCafeMessage}
+          sending={cafeSending}
+        />
+      ) : (
       <section className="main">
         <header className="header">
           <h2>{activeAgent?.display_name ?? selectedAgent}</h2>
@@ -993,7 +1125,94 @@ export default function Home() {
           })}
         </div>
       </section>
+      )}
     </main>
+  );
+}
+
+function CafeView({
+  cafe,
+  error,
+  loading,
+  message,
+  onMessageChange,
+  onRefresh,
+  onSubmit,
+  sending
+}: {
+  cafe: CafeState | null;
+  error: string;
+  loading: boolean;
+  message: string;
+  onMessageChange: (message: string) => void;
+  onRefresh: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  sending: boolean;
+}) {
+  const participants = cafe?.participants ?? [];
+  const messages = cafe?.messages ?? [];
+
+  return (
+    <section className="main">
+      <header className="header cafe-header">
+        <div>
+          <h2>{cafe?.room.title ?? "Cafe"}</h2>
+          <p>cafe-main</p>
+        </div>
+        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
+          Refresh
+        </button>
+      </header>
+
+      <div className="cafe-participants" aria-label="Cafe participants">
+        {participants.length ? (
+          participants.map((participant) => (
+            <span className="participant-chip" key={participant.id}>
+              <strong>{participant.display_name}</strong>
+              <small>{participantAdapterLabel(participant.participant_adapter)}</small>
+            </span>
+          ))
+        ) : (
+          <span className="participant-chip muted">No participants loaded</span>
+        )}
+      </div>
+
+      <form className="composer cafe-composer" onSubmit={onSubmit}>
+        {error ? <p className="error">{error}</p> : null}
+        <div className="composer-row">
+          <textarea
+            disabled={loading || sending}
+            onChange={(event) => onMessageChange(event.target.value)}
+            placeholder="Message the Cafe"
+            value={message}
+          />
+          <div className="composer-actions">
+            <button className="send" disabled={loading || sending || !message.trim()} type="submit">
+              {sending ? "Posting" : "Post"}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <div className="transcript cafe-transcript">
+        {loading ? <p className="empty">Loading Cafe...</p> : null}
+        {!loading && !messages.length ? (
+          <p className="empty">No Cafe messages yet. Say something and the room exists.</p>
+        ) : null}
+        {messages.map((cafeMessage) => (
+          <article
+            className={`message ${cafeMessage.author_type === "operator" ? "user" : "assistant"}`}
+            key={cafeMessage.id}
+          >
+            <div className="message-meta">
+              <span>{cafeMessage.author_display_name}</span>
+              <time dateTime={cafeMessage.created_at}>{formatMessageTime(cafeMessage.created_at)}</time>
+            </div>
+            <div>{cafeMessage.content}</div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1316,6 +1535,21 @@ function trimLiveMessages(messages: ChatMessage[]) {
 
 function conversationLabel(agent: AgentName) {
   return `${agent}-main`;
+}
+
+function participantAdapterLabel(adapter: CafeParticipant["participant_adapter"]) {
+  switch (adapter) {
+    case "operator_browser":
+      return "Operator";
+    case "runtime_native":
+      return "Runtime";
+    case "codex_local":
+      return "Codex";
+    case "external_bridge":
+      return "Bridge";
+    default:
+      return adapter;
+  }
 }
 
 function savedProposalLabel(proposal: CompactionCompile) {

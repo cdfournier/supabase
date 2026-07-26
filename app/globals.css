@@ -120,7 +120,8 @@ button {
   gap: 8px;
 }
 
-.agent-button {
+.agent-button,
+.cafe-button {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -130,9 +131,14 @@ button {
   text-align: left;
 }
 
-.agent-button.active {
+.agent-button.active,
+.cafe-button.active {
   border-color: var(--accent);
   background: #dcebed;
+}
+
+.cafe-button {
+  margin-bottom: 14px;
 }
 
 .health-panel {
@@ -401,6 +407,50 @@ button {
   margin: 6px 0 0;
 }
 
+.cafe-header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.cafe-header .quiet-action {
+  margin-top: 0;
+  width: auto;
+}
+
+.cafe-participants {
+  align-items: center;
+  background: #f9fbfa;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 24px;
+}
+
+.participant-chip {
+  align-items: baseline;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: inline-flex;
+  gap: 8px;
+  line-height: 1.2;
+  padding: 8px 10px;
+}
+
+.participant-chip small {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.participant-chip.muted {
+  color: var(--muted);
+}
+
 .proposal-panel {
   border-bottom: 1px solid var(--line);
   background: #fffaf2;
@@ -658,7 +708,8 @@ textarea {
 
 .send:disabled,
 .attach:disabled,
-.agent-button:disabled {
+.agent-button:disabled,
+.cafe-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

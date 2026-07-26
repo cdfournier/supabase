@@ -10,6 +10,7 @@ This project is intentionally modest. It gives each agent a persistent database-
 - Sends chat messages to the correct Anthropic model per agent.
 - Stores conversation messages in Supabase.
 - Records each runtime tool call in a per-turn audit log.
+- Provides a first shared Cafe room for Operator-visible group conversation.
 - Provides runtime tools for:
   - current time
   - agent-scoped memories
@@ -34,6 +35,7 @@ app/
     agents/        Agent and transcript loader
     chat/          Anthropic chat + tool loop
     compaction/    Manual compaction previews
+    cafe/          Shared Cafe room loader/poster
     free-time/     Local Free Moments scheduler controls
     health/        Read-only runtime health
   page.tsx         Minimal operator UI
@@ -134,6 +136,24 @@ curl -s -X POST http://localhost:3001/api/compaction/preview \
   -H "Content-Type: application/json" \
   -d '{"agent":"varro"}'
 ```
+
+Cafe room:
+
+```bash
+curl http://localhost:3001/api/cafe
+```
+
+Post an Operator message to the Cafe:
+
+```bash
+curl -s -X POST http://localhost:3001/api/cafe \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Coffee is on."}'
+```
+
+Before using Cafe in an existing Supabase project, run
+`sql/2026-07-26-cafe-mvp.sql` once in the Supabase SQL editor, then restart the
+runtime.
 
 Create an approved append-only checkpoint after reviewing a proposal:
 
