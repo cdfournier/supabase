@@ -20,6 +20,33 @@ export async function POST(request: Request) {
     }
 
     const supabase = getSupabaseAdmin();
+
+    if (!proposalId && status === "agent_approved") {
+      const { data: latestReviewCandidate, error: latestReviewError } = await supabase
+        .from("compaction_proposals")
+        .select("id, status, created_at, updated_at")
+        .eq("agent", agent)
+        .in("status", ["agent_reviewed", "agent_approved"])
+        .order("created_at", { ascending: false })
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestReviewError) {
+        throw new Error(`Could not check latest compaction proposal: ${latestReviewError.message}`);
+      }
+
+      if (latestReviewCandidate && latestReviewCandidate.status !== "agent_approved") {
+        return NextResponse.json(
+          {
+            error: `A newer ${latestReviewCandidate.status} proposal exists for ${agent}: ${latestReviewCandidate.id}. Ask the Agent to mark it agent_approved before loading an approved checkpoint proposal.`,
+            latest_proposal: latestReviewCandidate
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     let query = supabase
       .from("compaction_proposals")
       .select("id, agent, conversation_id, proposal, source_summary, status, agent_notes, created_at, updated_at")
