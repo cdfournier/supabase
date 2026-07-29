@@ -88,8 +88,8 @@ export async function GET() {
         names: toolDefinitions.map((tool) => tool.name)
       },
       compaction: {
-        status: "preview enabled; destructive compaction disabled",
-        mode: "manual preview first",
+        status: "Room Review enabled; destructive compaction disabled",
+        mode: "manual review first",
         policy: "loaded from restoration_profiles.compaction_memory_policy",
         pressure_basis: "approximate saved conversation character count; not tokenizer-accurate"
       },

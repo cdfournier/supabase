@@ -490,13 +490,13 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not preview compaction.");
+        throw new Error(data.error || "Could not review the room.");
       }
 
       setCompactionPreview(data);
     } catch (previewError) {
       setCompactionError(
-        previewError instanceof Error ? previewError.message : "Could not preview compaction."
+        previewError instanceof Error ? previewError.message : "Could not review the room."
       );
     } finally {
       setCompactionLoading(false);
@@ -520,7 +520,7 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not compile proposal.");
+        throw new Error(data.error || "Could not draft the room note.");
       }
 
       setCompactionCompile(data);
@@ -528,7 +528,7 @@ export default function Home() {
       setCheckpointReceipt(null);
     } catch (compileFailure) {
       setCompileError(
-        compileFailure instanceof Error ? compileFailure.message : "Could not compile proposal."
+        compileFailure instanceof Error ? compileFailure.message : "Could not draft the room note."
       );
     } finally {
       setCompileLoading(false);
@@ -554,7 +554,7 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not load approved proposal.");
+        throw new Error(data.error || "Could not load the approved note.");
       }
 
       setCompactionCompile({
@@ -562,7 +562,7 @@ export default function Home() {
         destructive: false,
         dry_run: false,
         generated_at: data.proposal.updated_at,
-        next_step: "Review the loaded approved proposal, then create an append-only checkpoint.",
+        next_step: "Review the loaded approved room note, then send housekeeping.",
         proposal: data.proposal.proposal,
         source: sourceSummaryFromSavedProposal(data.proposal.source_summary),
         status: "saved_proposal_loaded",
@@ -574,7 +574,7 @@ export default function Home() {
       setCheckpointReceipt(null);
     } catch (loadFailure) {
       setSavedProposalError(
-        loadFailure instanceof Error ? loadFailure.message : "Could not load approved proposal."
+        loadFailure instanceof Error ? loadFailure.message : "Could not load the approved note."
       );
     } finally {
       setSavedProposalLoading(false);
@@ -602,8 +602,8 @@ export default function Home() {
           summary,
           approved_by: "operator",
           approval_note: compactionCompile?.saved_proposal_id
-            ? `Operator-created checkpoint from saved approved proposal ${compactionCompile.saved_proposal_id}.`
-            : "Operator-created checkpoint from reviewed compaction proposal.",
+            ? `Operator-created room refresh from saved approved proposal ${compactionCompile.saved_proposal_id}.`
+            : "Operator-created room refresh from reviewed room note.",
           source: compactionCompile?.saved_proposal_id
             ? `saved_compaction_proposal:${compactionCompile.saved_proposal_id}`
             : "compiled_compaction_proposal"
@@ -612,7 +612,7 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not create checkpoint.");
+        throw new Error(data.error || "Could not send housekeeping.");
       }
 
       setCheckpointReceipt(data);
@@ -627,7 +627,7 @@ export default function Home() {
       setCheckpointError(
         checkpointFailure instanceof Error
           ? checkpointFailure.message
-          : "Could not create checkpoint."
+          : "Could not send housekeeping."
       );
     } finally {
       setCheckpointLoading(false);
@@ -1107,10 +1107,10 @@ export default function Home() {
         </form>
 
         {compactionCompile ? (
-          <section className="proposal-panel" aria-label="Compaction proposal">
+          <section className="proposal-panel" aria-label="Room note">
             <div className="proposal-header">
               <div>
-                <h3>Compaction Proposal</h3>
+                <h3>Room Note</h3>
                 <p>
                   {compactionCompile.saved_proposal_id
                     ? savedProposalLabel(compactionCompile)
@@ -1126,7 +1126,7 @@ export default function Home() {
               </button>
             </div>
             <p className="proposal-note">
-              No messages changed yet. Edit this proposal after agent/operator review, then create an append-only checkpoint.
+              No messages changed yet. Edit this note after Agent/Operator review, then send housekeeping.
               {compactionCompile.agent_notes ? ` Agent notes: ${compactionCompile.agent_notes}` : ""}
             </p>
             <textarea
@@ -1141,14 +1141,14 @@ export default function Home() {
                 onClick={createCompactionCheckpoint}
                 type="button"
               >
-                {checkpointLoading ? "Creating" : "Create Checkpoint"}
+                {checkpointLoading ? "Sending" : "Send Housekeeping"}
               </button>
               <span>Append-only. Raw messages stay in Supabase.</span>
             </div>
             {checkpointError ? <p className="error">{checkpointError}</p> : null}
             {checkpointReceipt ? (
               <p className="proposal-receipt">
-                Checkpoint saved at position {checkpointReceipt.checkpoint.position}. Active
+                Room refreshed at position {checkpointReceipt.checkpoint.position}. Active
                 pressure now starts after this marker.
               </p>
             ) : null}
@@ -1632,7 +1632,7 @@ function RuntimeHealthPanel({
 
           <div className="pressure">
             <div className="pressure-row">
-              <span>Compaction</span>
+              <span>Room pressure</span>
               <strong>{pressure?.level ?? "unknown"}</strong>
             </div>
             <div className="pressure-track">
@@ -1643,7 +1643,7 @@ function RuntimeHealthPanel({
             </div>
             <p>{health?.compaction.status ?? "unknown"} · {health?.compaction.mode ?? "manual"}</p>
             {activeHealth.conversation.latest_checkpoint_at ? (
-              <p>checkpoint active; raw transcript retained</p>
+              <p>room refresh active; raw transcript retained</p>
             ) : null}
           </div>
 
@@ -1653,7 +1653,7 @@ function RuntimeHealthPanel({
             onClick={onPreviewCompaction}
             type="button"
           >
-            {compactionLoading ? "Previewing" : "Preview Blink"}
+            {compactionLoading ? "Reviewing" : "Review Room"}
           </button>
 
           <button
@@ -1662,7 +1662,7 @@ function RuntimeHealthPanel({
             onClick={onLoadApprovedProposal}
             type="button"
           >
-            {savedProposalLoading ? "Loading" : "Load Approved Proposal"}
+            {savedProposalLoading ? "Loading" : "Load Approved Note"}
           </button>
 
           {compactionError ? <p className="health-error">{compactionError}</p> : null}
@@ -1671,9 +1671,9 @@ function RuntimeHealthPanel({
           {compactionPreview ? (
             <div className="compaction-preview">
               <p>
-                <strong>Preview ready</strong>
+                <strong>Room review ready</strong>
               </p>
-              <p>No messages changed. This is a read-only briefing for planning the blink.</p>
+              <p>No messages changed. This is a read-only look at what the room may need to carry forward.</p>
               <dl>
                 <div>
                   <dt>Messages</dt>
@@ -1688,14 +1688,14 @@ function RuntimeHealthPanel({
                   <dd>{compactionPreview.pressure.level}</dd>
                 </div>
               </dl>
-              <p>Next: ask the agent to review the preview and policy before any compacting tool is allowed to write.</p>
+              <p>Next: ask the Agent to author what mattered before any housekeeping is sent.</p>
               <button
                 className="quiet-action"
                 disabled={compileLoading}
                 onClick={onCompileProposal}
                 type="button"
               >
-                {compileLoading ? "Compiling" : "Compile Proposal"}
+                {compileLoading ? "Drafting" : "Draft Room Note"}
               </button>
               {compileError ? <p className="health-error">{compileError}</p> : null}
             </div>
@@ -1784,7 +1784,7 @@ function savedProposalLabel(proposal: CompactionCompile) {
   const updatedAt = formatMessageTime(proposal.generated_at);
 
   return [
-    `Loaded ${proposal.saved_proposal_status ?? "saved"} proposal ${shortId}`,
+    `Loaded ${proposal.saved_proposal_status ?? "saved"} note ${shortId}`,
     updatedAt ? `updated ${updatedAt}` : null
   ]
     .filter(Boolean)
