@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown compaction compile error" },
+      { error: error instanceof Error ? error.message : "Unknown Room Note compile error" },
       { status: 500 }
     );
   }

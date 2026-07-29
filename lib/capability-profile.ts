@@ -111,12 +111,12 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
   {
     surface: "compaction",
     access_level: "draft",
-    default_bias: "review before checkpoint",
+    default_bias: "review before Room Refresh",
     requires_operator_approval: false,
     notify_operator: "audit_only",
     max_actions_per_moment: null,
     quiet_mode: false,
-    notes: "Agents may draft and approve proposals; checkpoint creation remains Operator action."
+    notes: "Agents may draft and approve Room Notes; sending housekeeping remains Operator action."
   },
   {
     surface: "journal",

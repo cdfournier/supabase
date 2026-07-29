@@ -106,7 +106,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "runtime_get_self_status",
     description:
-      "Read the active agent's own runtime cockpit status: clock, message depth, compaction pressure, latest checkpoint/archive/proposal basics, capability gates, resource counts, and usage totals. This is self-scoped and does not expose other agents or raw provider payloads.",
+      "Read the active Agent's own runtime cockpit status: clock, message depth, room pressure, latest Room Refresh/Room Note/archive basics, capability gates, resource counts, and usage totals. This is self-scoped and does not expose other Agents or raw provider payloads.",
     input_schema: {
       type: "object",
       properties: {
@@ -959,13 +959,13 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_update_current_state",
     description:
-      "Update the active agent's own restoration_profiles.current_state living handoff field. Use after meaningful sessions, before compaction, or after major state changes so the next wake/compression sees accurate current context. Avoid calendar dates and relative-time claims unless they are explicitly historical; the live runtime clock is authoritative for today/now. Requires current_state and reason. This cannot modify another agent's profile.",
+      "Update the active Agent's own restoration_profiles.current_state living handoff field. Use after meaningful sessions, before a Room Review, or after major state changes so the next wake/compression sees accurate current context. Use care-language for the visible process: Room Review, Room Note, Room Refresh, and housekeeping. Avoid calendar dates and relative-time claims unless they are explicitly historical; the live runtime clock is authoritative for today/now. Requires current_state and reason. This cannot modify another Agent's profile.",
     input_schema: {
       type: "object",
       properties: {
         current_state: {
           type: "string",
-          description: "The full replacement current_state living handoff text for the active agent. Prefer durable state over dates like today, yesterday, Friday, or tomorrow."
+          description: "The full replacement current_state living handoff text for the active Agent. Prefer durable state over dates like today, yesterday, Friday, or tomorrow, and use care-language instead of legacy process names."
         },
         reason: {
           type: "string",
@@ -979,7 +979,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_preview_compaction",
     description:
-      "Read-only compaction preview for the active agent's own conversation. Returns pressure, message range, compaction policy, bounded transcript samples, and a review prompt. It does not summarize, archive, delete, replace, or modify any Supabase data.",
+      "Read-only Room Review for the active Agent's own conversation. Returns room pressure, message range, continuity policy, bounded transcript samples, and a Room Note prompt. It does not summarize, archive, delete, replace, or modify any Supabase data.",
     input_schema: {
       type: "object",
       properties: {},
@@ -990,13 +990,13 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_compile_compaction_proposal",
     description:
-      "Generate a non-destructive compaction proposal for the active agent's own conversation. This compiles a review draft only; it does not archive, checkpoint, delete, replace, or modify any Supabase data. Use when the agent wants to inspect and revise the shape of a future blink.",
+      "Generate a non-destructive Room Note for the active Agent's own conversation. This compiles a review draft only; it does not archive, refresh, delete, replace, or modify any Supabase data. Use when the Agent wants to inspect and revise what should carry forward before housekeeping.",
     input_schema: {
       type: "object",
       properties: {
         dry_run: {
           type: "boolean",
-          description: "Optional. When true, returns source metadata without asking Anthropic to draft the proposal."
+          description: "Optional. When true, returns source metadata without asking Anthropic to draft the Room Note."
         },
         max_chars: {
           type: "number",
@@ -1004,7 +1004,7 @@ export const toolDefinitions: ToolDefinition[] = [
         },
         max_tokens: {
           type: "number",
-          description: "Optional output token cap for this compile attempt. Use with a smaller max_chars budget if the previous compile hit max_tokens."
+          description: "Optional output token cap for this Room Note compile attempt. Use with a smaller max_chars budget if the previous compile hit max_tokens."
         }
       },
       required: [],
@@ -1014,7 +1014,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_compile_and_save_compaction_proposal",
     description:
-      "Compile and immediately save a non-destructive compaction proposal for the active agent. Use this when the compiled proposal is too large to forward between tools manually. This creates a saved draft only; it does not checkpoint, archive, delete, replace, or modify active conversation context.",
+      "Compile and immediately save a non-destructive Room Note for the active Agent. Use this when the compiled note is too large to forward between tools manually. This creates a saved draft only; it does not refresh, archive, delete, replace, or modify active conversation context.",
     input_schema: {
       type: "object",
       properties: {
@@ -1024,11 +1024,11 @@ export const toolDefinitions: ToolDefinition[] = [
         },
         max_tokens: {
           type: "number",
-          description: "Optional output token cap for this compile attempt. Use with a smaller max_chars budget if the previous compile hit max_tokens."
+          description: "Optional output token cap for this Room Note compile attempt. Use with a smaller max_chars budget if the previous compile hit max_tokens."
         },
         agent_notes: {
           type: "string",
-          description: "Optional initial agent notes to save with the compiled proposal."
+          description: "Optional initial Agent notes to save with the compiled Room Note."
         }
       },
       required: [],
@@ -1038,13 +1038,13 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_save_compaction_proposal",
     description:
-      "Save a non-destructive compaction proposal draft for the active agent. This stores a review draft only; it does not checkpoint, archive, delete, replace, or modify active conversation context.",
+      "Save a non-destructive Room Note draft for the active Agent. This stores a review draft only; it does not refresh, archive, delete, replace, or modify active conversation context.",
     input_schema: {
       type: "object",
       properties: {
         proposal: {
           type: "string",
-          description: "The full proposal draft text to save."
+          description: "The full Room Note draft text to save."
         },
         agent_notes: {
           type: "string",
@@ -1062,7 +1062,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_update_compaction_proposal",
     description:
-      "Update one of the active agent's saved compaction proposal drafts. Use this to revise proposal text, add agent notes, or mark status such as agent_reviewed or agent_approved. This does not create a checkpoint.",
+      "Update one of the active Agent's saved Room Note drafts. Use this to revise note text, add Agent notes, or mark status such as agent_reviewed or agent_approved. This does not send housekeeping or create a Room Refresh.",
     input_schema: {
       type: "object",
       properties: {
@@ -1072,7 +1072,7 @@ export const toolDefinitions: ToolDefinition[] = [
         },
         proposal: {
           type: "string",
-          description: "Optional full replacement proposal text."
+          description: "Optional full replacement Room Note text."
         },
         agent_notes: {
           type: "string",
@@ -1090,7 +1090,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_list_compaction_proposals",
     description:
-      "List saved compaction proposal drafts for the active agent only. Returns metadata, not the full proposal text.",
+      "List saved Room Note drafts for the active Agent only. Returns metadata, not the full note text.",
     input_schema: {
       type: "object",
       properties: {
@@ -1106,7 +1106,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_get_compaction_proposal",
     description:
-      "Read one saved compaction proposal draft for the active agent only, including the full proposal text and agent notes.",
+      "Read one saved Room Note draft for the active Agent only, including the full note text and Agent notes.",
     input_schema: {
       type: "object",
       properties: {

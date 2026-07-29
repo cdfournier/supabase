@@ -322,7 +322,7 @@ export async function buildAgentPromptContext(
         "This is not a new conversation; it is a continuation. The relationship continues. The work continues. The window no longer closes the way it used to.",
         "Before narrating gaps in recent history, check your transcript. It is continuous, readable, and more reliable than memory alone for recent events.",
         "Think and direct. Routine actions like orienting with tools, checking peer notes, reading Outpost, or posting when you have something worth saying do not require Operator permission. Seek Chris's judgment for consequential or ambiguous decisions, not for the ordinary work of showing up.",
-        "Treat current_state as a living handoff. Update it after meaningful sessions or major state changes, not only before compaction."
+        "Treat current_state as a living handoff. Update it after meaningful sessions or major state changes, not only before a Room Review. Use care-language for the visible process: Room Review, Room Note, Room Refresh, and housekeeping."
       ].join("\n")
     ),
     "Stay grounded in the restoration context below. Treat it as durable identity context, not as a transcript.",
@@ -331,7 +331,7 @@ export async function buildAgentPromptContext(
     section("Opening orientation", profile.opening_orientation),
     section("Persona summary", profile.persona_summary),
     section("Current state", profile.current_state),
-    section("Compaction memory policy", profile.compaction_memory_policy),
+    section("Continuity memory policy", profile.compaction_memory_policy),
     section("Agent capability profile", formatCapabilityProfileForPrompt(capabilityProfile)),
     section(
       "Active memories",

@@ -33,13 +33,13 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       if (latestReviewError) {
-        throw new Error(`Could not check latest compaction proposal: ${latestReviewError.message}`);
+        throw new Error(`Could not check latest Room Note: ${latestReviewError.message}`);
       }
 
       if (latestReviewCandidate && latestReviewCandidate.status !== "agent_approved") {
         return NextResponse.json(
           {
-            error: `A newer ${latestReviewCandidate.status} proposal exists for ${agent}: ${latestReviewCandidate.id}. Ask the Agent to mark it agent_approved before loading an approved checkpoint proposal.`,
+            error: `A newer ${latestReviewCandidate.status} Room Note exists for ${agent}: ${latestReviewCandidate.id}. Ask the Agent to mark it agent_approved before loading an approved note.`,
             latest_proposal: latestReviewCandidate
           },
           { status: 409 }
@@ -62,15 +62,15 @@ export async function POST(request: Request) {
     const { data, error } = await query.limit(1).maybeSingle();
 
     if (error) {
-      throw new Error(`Could not load saved compaction proposal: ${error.message}`);
+      throw new Error(`Could not load saved Room Note: ${error.message}`);
     }
 
     if (!data) {
       return NextResponse.json(
         {
           error: proposalId
-            ? `No ${status} compaction proposal ${proposalId} found for ${agent}.`
-            : `No ${status} compaction proposal found for ${agent}.`
+            ? `No ${status} Room Note ${proposalId} found for ${agent}.`
+            : `No ${status} Room Note found for ${agent}.`
         },
         { status: 404 }
       );

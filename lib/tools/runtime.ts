@@ -214,7 +214,7 @@ export async function getRuntimeSelfStatus(
     compaction: {
       destructive_compaction_enabled: false,
       pressure_basis:
-        "approximate active saved conversation character count after latest checkpoint; not tokenizer-accurate",
+        "approximate active saved conversation character count after latest Room Refresh; not tokenizer-accurate",
       pressure: compactionPressure(savedCharacters),
       latest_archive: latestArchive
         ? {

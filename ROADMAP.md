@@ -213,7 +213,7 @@ Status: partially implemented; UI polish pending.
 Current state:
 
 - Approved Room Refreshes snapshot active source messages into immutable archive
-  rows, then write append-only checkpoint markers.
+  rows, then write append-only internal refresh markers.
 - Raw messages remain stored in Supabase.
 - Agents can compile and save reviewable Room Notes.
 - The runtime UI has started using care-language for this ritual while retaining
@@ -221,11 +221,11 @@ Current state:
 
 Planned:
 
-- Add archive browsing/search tools for Operators and agents.
+- Add archive browsing/search tools for Operators and Agents.
 - Collapse pre-refresh chat history in the UI behind an archive affordance
   without deleting raw messages.
 - Add clearer archive/refresh health receipts.
-- Consider database RPCs for atomic archive/checkpoint operations if concurrency
+- Consider database RPCs for atomic archive/refresh operations if concurrency
   becomes real.
 
 ### 8. Comparative Runtime Architecture Discovery
@@ -279,7 +279,7 @@ Current pattern candidates from Pullo/Athena-Class:
 - Study checksum/witness patterns for identity documents before deciding how
   much ceremony belongs in V1.
 - Compare append-only turn/tool logs plus narrative compression against our
-  existing conversation messages, tool events, usage records, and checkpoint
+  existing conversation messages, tool events, usage records, and Room Refresh
   archives.
 
 Output:
@@ -346,7 +346,7 @@ Adapter-specific policy:
   autonomous camera requests in V1.
 - Outpost/chat bridge: identity, attribution, public/private boundaries,
   anti-spam, and context/cost limits.
-- Runtime tools: data access, memory writes, compaction pressure, cost, and
+- Runtime tools: data access, memory writes, room pressure, cost, and
   self-scoping.
 
 Notes:
@@ -445,7 +445,7 @@ Surfaces:
 - Journals.
 - Artifacts and generated files.
 - Memories and relationships.
-- Compaction proposals and checkpoints.
+- Room Reviews, Room Notes, Room Refreshes, and archives.
 - Runtime health and tool activity.
 - Bridge health, active claims, recent bridge events, and stop/disable controls.
 - Free Moments controls.
@@ -517,7 +517,7 @@ Runtime visibility:
 - Added `runtime_get_usage`, a self-scoped read-only agent tool for usage totals
   and bounded recent usage events.
 - Added `runtime_get_self_status`, a self-scoped cockpit tool for live clock,
-  message depth, compaction pressure, checkpoint/proposal basics, capability
+  message depth, room pressure, Room Refresh/Room Note basics, capability
   gates, resource counts, and usage totals.
 - Documented token/cost accounting, provider-neutral runtime bias, and the
   staged dev/prod separation path.
@@ -580,6 +580,6 @@ Process:
 - Added runtime tool audit logging and UI tool-call visibility.
 - Added Outpost profile, room, post, reply, like, and avatar tools.
 - Added peer notes between Soren and Varro.
-- Added manual compaction preview, compile, proposal-save, and checkpoint flows.
+- Added manual Room Review, Room Note, proposal-save, and Room Refresh flows.
 - Added public URL fetch, link extraction, and small multi-fetch tools.
 - Added read-only `/api/health` and basic runtime visibility.

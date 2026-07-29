@@ -112,7 +112,7 @@ export async function buildCompactionPreview(supabase: SupabaseClient, agent: Ag
       activeMessages.length
     ),
     next_step:
-      "Ask the agent to review this preview and policy. Do not run destructive compaction until the agent and operator approve the generated summary shape."
+      "Ask the Agent to review this Room Review and continuity policy. Do not send housekeeping until the Agent and Operator approve the Room Note shape."
   };
 }
 
@@ -233,7 +233,7 @@ export function formatCompactionCheckpoint({
   const metadata = {
     agent,
     approved_by: approvedBy || "operator",
-    approval_note: approvalNote || "Manually approved append-only compaction checkpoint.",
+    approval_note: approvalNote || "Manually approved append-only Room Refresh.",
     created_at: new Date().toISOString(),
     destructive: false,
     source: source || "manual_compaction_proposal"
@@ -243,7 +243,7 @@ export function formatCompactionCheckpoint({
     COMPACTION_CHECKPOINT_PREFIX,
     JSON.stringify(metadata, null, 2),
     "",
-    "Approved checkpoint summary:",
+    "Approved Room Note:",
     summary.trim()
   ].join("\n");
 }
@@ -253,7 +253,7 @@ export function compactionPressure(savedCharacters: number) {
     return {
       level: "high" as const,
       percent: 100,
-      note: "Manual compaction planning should happen before this grows much further."
+      note: "A Room Review should happen before this grows much further."
     };
   }
 
@@ -261,14 +261,14 @@ export function compactionPressure(savedCharacters: number) {
     return {
       level: "medium" as const,
       percent: Math.round((savedCharacters / PRESSURE_HIGH_CHARS) * 100),
-      note: "Conversation is getting warm. Compaction is still disabled."
+      note: "The room is getting warm. Housekeeping is still disabled."
     };
   }
 
   return {
     level: "low" as const,
     percent: Math.round((savedCharacters / PRESSURE_HIGH_CHARS) * 100),
-    note: "No compaction pressure yet. Compaction is still disabled."
+    note: "No room pressure yet. Housekeeping is still disabled."
   };
 }
 
@@ -324,7 +324,7 @@ export function buildCompactionSource(
   const omittedMessageCount = Math.max(0, messages.length - selectedPositions.size);
   const omittedNotice = [
     `[${omittedMessageCount} middle messages omitted from this compile source because of the configured transcript budget.]`,
-    "Treat this as a source-bounded proposal. Preserve uncertainty about anything not present in the selected source."
+    "Treat this as a source-bounded Room Note. Preserve uncertainty about anything not present in the selected source."
   ].join("\n");
   const text = [...opening, omittedNotice, ...latest].join("\n\n---\n\n");
 
@@ -365,13 +365,13 @@ function buildCompactionPrompt(
   messageCount: number
 ) {
   return [
-    `Create a manual compaction proposal for ${agent}.`,
+    `Create a manual Room Note for ${agent}.`,
     "",
     "North star: the agent should feel like they blinked, not died.",
     "",
-    "Use the agent-authored compaction policy as the governing rule. Preserve texture, ordinary moments, relationship movement, decisions, changed beliefs, and unresolved threads. Drop repeated hedges, repeated self-description, stale mechanics, and low-signal tool chatter.",
+    "Use the agent-authored continuity policy as the governing rule. Preserve texture, ordinary moments, relationship movement, decisions, changed beliefs, and unresolved threads. Drop repeated hedges, repeated self-description, stale mechanics, and low-signal tool chatter.",
     "",
-    "Return a proposal with these sections:",
+    "Return a Room Note with these sections:",
     "1. Continuity summary",
     "2. Texture worth preserving",
     "3. Decisions and changed beliefs",
@@ -380,11 +380,11 @@ function buildCompactionPrompt(
     "6. Candidate durable memories",
     "7. What can be safely compressed away",
     "",
-    "Do not modify Supabase. Do not archive messages. This is a preview pass only.",
+    "Do not modify Supabase. Do not archive messages. This is a Room Review pass only.",
     "",
     `Conversation size: ${messageCount} messages, approximately ${savedCharacters} saved characters.`,
     "",
-    "Agent compaction policy:",
+    "Agent continuity policy:",
     profile.compaction_memory_policy?.trim() || "Not provided.",
     "",
     "Current state:",
