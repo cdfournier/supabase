@@ -222,21 +222,43 @@ turns must check it before waking an agent.
 Check status:
 
 ```bash
-curl http://localhost:3001/api/free-time
+curl -s -b "$COOKIE_JAR" http://localhost:3001/api/free-time
 ```
 
 Start with the configured/default cadence:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"start"}'
+```
+
+When `OPERATOR_ACCESS_TOKEN` is configured, protected API curls need an
+Operator session cookie. From the runtime repo:
+
+```bash
+set -a
+source .env.local
+set +a
+
+COOKIE_JAR=$(mktemp)
+
+curl -s -c "$COOKIE_JAR" -X POST http://localhost:3001/api/operator/session \
+  -H "Content-Type: application/json" \
+  --data "{\"token\":\"$OPERATOR_ACCESS_TOKEN\"}"
+```
+
+Then add `-b "$COOKIE_JAR"` to the protected API curl. Remove the temporary
+cookie jar when finished:
+
+```bash
+rm "$COOKIE_JAR"
 ```
 
 Start with an explicit cadence:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"start","intervalMinutes":120}'
 ```
@@ -244,7 +266,7 @@ curl -s -X POST http://localhost:3001/api/free-time \
 Start paired Free Moments for Soren and Varro:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"start","intervalMinutes":120,"scheduleMode":"paired"}'
 ```
@@ -257,7 +279,7 @@ turns.
 Stop:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"stop"}'
 ```
@@ -265,7 +287,7 @@ curl -s -X POST http://localhost:3001/api/free-time \
 Manually wake the next round-robin agent if no turn is already in progress:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"tick"}'
 ```
@@ -273,7 +295,7 @@ curl -s -X POST http://localhost:3001/api/free-time \
 Manually wake a specific agent:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"tick","agent":"varro"}'
 ```

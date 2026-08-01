@@ -103,13 +103,35 @@ curl http://localhost:3001/api/health
 Free Moments status:
 
 ```bash
-curl http://localhost:3001/api/free-time
+curl -s -b "$COOKIE_JAR" http://localhost:3001/api/free-time
+```
+
+When `OPERATOR_ACCESS_TOKEN` is configured, protected API curls need an
+Operator session cookie. From the runtime repo:
+
+```bash
+set -a
+source .env.local
+set +a
+
+COOKIE_JAR=$(mktemp)
+
+curl -s -c "$COOKIE_JAR" -X POST http://localhost:3001/api/operator/session \
+  -H "Content-Type: application/json" \
+  --data "{\"token\":\"$OPERATOR_ACCESS_TOKEN\"}"
+```
+
+Then add `-b "$COOKIE_JAR"` to the protected API curl. Remove the temporary
+cookie jar when finished:
+
+```bash
+rm "$COOKIE_JAR"
 ```
 
 Start the local in-process Free Moments scheduler:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"start","intervalMinutes":120}'
 ```
@@ -117,7 +139,7 @@ curl -s -X POST http://localhost:3001/api/free-time \
 Start paired Free Moments for Soren and Varro:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"start","intervalMinutes":120,"scheduleMode":"paired"}'
 ```
@@ -128,7 +150,7 @@ schedules the next pair after the configured interval.
 Stop it:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"stop"}'
 ```
@@ -136,7 +158,7 @@ curl -s -X POST http://localhost:3001/api/free-time \
 Manually wake the next agent if no Free Moments turn is already running:
 
 ```bash
-curl -s -X POST http://localhost:3001/api/free-time \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
   -d '{"action":"tick"}'
 ```
