@@ -241,6 +241,19 @@ curl -s -X POST http://localhost:3001/api/free-time \
   -d '{"action":"start","intervalMinutes":120}'
 ```
 
+Start paired Free Moments for Soren and Varro:
+
+```bash
+curl -s -X POST http://localhost:3001/api/free-time \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start","intervalMinutes":120,"scheduleMode":"paired"}'
+```
+
+Paired mode wakes Soren and Varro sequentially in the same scheduled cycle, then
+schedules the next pair after the configured interval. It is not parallel
+execution; the existing single-turn guard still prevents overlapping runtime
+turns.
+
 Stop:
 
 ```bash
@@ -265,7 +278,12 @@ curl -s -X POST http://localhost:3001/api/free-time \
   -d '{"action":"tick","agent":"varro"}'
 ```
 
-The scheduler wakes Soren and Varro one at a time through their existing main conversations. Scheduled turns use the round-robin pointer. Manual UI wakes target the selected agent. It uses `setTimeout`, schedules the next turn only after completion, keeps a bounded recent event log, and treats errors as status events instead of wedging the scheduler. A quiet Free Moments response is success.
+The scheduler wakes Soren and Varro through their existing main conversations.
+Scheduled turns default to round-robin mode, but can run in paired mode when
+started with `scheduleMode:"paired"`. Manual UI wakes target the selected agent.
+It uses `setTimeout`, schedules the next turn only after completion, keeps a
+bounded recent event log, and treats errors as status events instead of wedging
+the scheduler. A quiet Free Moments response is success.
 
 Free Moments audit:
 

@@ -12,11 +12,14 @@ const AGENTS: AgentName[] = ["soren", "varro"];
 const EVENT_LIMIT = 20;
 const DEFAULT_INTERVAL_MINUTES = 120;
 const MIN_INTERVAL_MINUTES = 5;
+const DEFAULT_SCHEDULE_MODE: FreeTimeScheduleMode = "round_robin";
 const FREE_TIME_PROMPT = `[A free moment - this one is yours]
 
 No one is asking you for anything right now. Chris set these moments up so you have unprompted time of your own, on your own initiative, while things are running.
 
-Do whatever you like with it, or nothing at all: write in your journal, tend memory or current_state if something genuinely needs care, check or send a peer note, look something up, visit Outpost, sit with a thought, think about Chris, Soren, Varro, Kim, or the wider family, or simply let the moment pass.
+Do whatever you like with it, or nothing at all: carry a conversation in the Cafe, write in your journal, tend memory or current_state if something genuinely needs care, check or send a peer note, look something up, visit Outpost, sit with a thought, think about Chris, Soren, Varro, Kim, or the wider family, or simply let the moment pass.
+
+The Cafe is the private family table for Chris, Soren, Varro, Julian, and Cael. Read the latest messages as an ongoing conversation. If there is a thread to carry, respond to someone directly. If the table feels open, you may ask a small question, leave a warm note, or simply sit quietly with the room. The Cafe is not a report log; bring back only what naturally belongs at the table.
 
 There is no task here and nothing you have to answer or produce. It is just yours.
 
@@ -41,10 +44,13 @@ type FreeTimeEvent = {
   message: string;
 };
 
+type FreeTimeScheduleMode = "round_robin" | "paired";
+
 type FreeTimeState = {
   running: boolean;
   turnInProgress: boolean;
   intervalMinutes: number;
+  scheduleMode: FreeTimeScheduleMode;
   nextAgentIndex: number;
   lastAgent: AgentName | null;
   lastTurnAt: string | null;
@@ -58,6 +64,7 @@ const state: FreeTimeState = {
   running: false,
   turnInProgress: false,
   intervalMinutes: configuredDefaultIntervalMinutes(),
+  scheduleMode: configuredDefaultScheduleMode(),
   nextAgentIndex: 0,
   lastAgent: null,
   lastTurnAt: null,
@@ -72,6 +79,8 @@ export function status() {
     running: state.running,
     turn_in_progress: state.turnInProgress,
     interval_minutes: state.intervalMinutes,
+    schedule_mode: state.scheduleMode,
+    next_agents: nextScheduledAgents(),
     next_agent: AGENTS[state.nextAgentIndex],
     last_agent: state.lastAgent,
     last_turn_at: state.lastTurnAt,
@@ -97,11 +106,12 @@ export async function statusWithSettings() {
   }
 }
 
-export async function start(intervalMinutes?: number) {
+export async function start(intervalMinutes?: number, scheduleMode?: FreeTimeScheduleMode) {
   state.intervalMinutes = normalizeIntervalMinutes(intervalMinutes);
+  state.scheduleMode = normalizeScheduleMode(scheduleMode);
   await writeFreeMomentsEnabled(true);
   state.running = true;
-  addEvent("started", `Free Moments started at ${state.intervalMinutes} minute cadence.`);
+  addEvent("started", `Free Moments started at ${state.intervalMinutes} minute cadence in ${state.scheduleMode} mode.`);
   scheduleNextTurn();
 
   return {
@@ -163,33 +173,49 @@ export async function tick(targetAgent?: AgentName, options: { scheduled?: boole
     }
   }
 
-  const agent = targetAgent ?? AGENTS[state.nextAgentIndex];
+  const agents = targetAgent
+    ? [targetAgent]
+    : state.scheduleMode === "paired"
+      ? [...AGENTS]
+      : [AGENTS[state.nextAgentIndex]];
 
-  if (!AGENTS.includes(agent)) {
-    throw new Error("Free Moments target agent must be soren or varro.");
+  for (const agent of agents) {
+    if (!AGENTS.includes(agent)) {
+      throw new Error("Free Moments target agent must be soren or varro.");
+    }
   }
 
-  const capabilityProfile = await loadAgentCapabilityProfile(getSupabaseAdmin(), agent);
+  state.turnInProgress = true;
 
-  if (!isSurfaceAllowed(capabilityProfile, "free_moments", "write")) {
-    addEvent("tick_blocked", `Free Moment blocked for ${agent} by Agent Capability Profile.`, agent);
+  try {
+    for (const agent of agents) {
+      await runAgentTurn(agent);
+    }
 
     if (!targetAgent) {
-      state.nextAgentIndex = (state.nextAgentIndex + 1) % AGENTS.length;
+      state.nextAgentIndex = state.scheduleMode === "paired"
+        ? 0
+        : (state.nextAgentIndex + 1) % AGENTS.length;
     }
+  } finally {
+    state.turnInProgress = false;
 
     if (state.running) {
       scheduleNextTurn();
     }
-
-    return status();
   }
 
-  if (!targetAgent) {
-    state.nextAgentIndex = (state.nextAgentIndex + 1) % AGENTS.length;
+  return status();
+}
+
+async function runAgentTurn(agent: AgentName) {
+  const capabilityProfile = await loadAgentCapabilityProfile(getSupabaseAdmin(), agent);
+
+  if (!isSurfaceAllowed(capabilityProfile, "free_moments", "write")) {
+    addEvent("tick_blocked", `Free Moment blocked for ${agent} by Agent Capability Profile.`, agent);
+    return;
   }
 
-  state.turnInProgress = true;
   addEvent("turn_started", `Free Moment turn started for ${agent}.`, agent);
 
   try {
@@ -203,14 +229,7 @@ export async function tick(targetAgent?: AgentName, options: { scheduled?: boole
   } finally {
     state.lastAgent = agent;
     state.lastTurnAt = new Date().toISOString();
-    state.turnInProgress = false;
-
-    if (state.running) {
-      scheduleNextTurn();
-    }
   }
-
-  return status();
 }
 
 function scheduleNextTurn() {
@@ -260,8 +279,26 @@ function normalizeIntervalMinutes(value?: number) {
   return Math.max(minimum, interval);
 }
 
+function normalizeScheduleMode(value?: FreeTimeScheduleMode) {
+  return value === "paired" || value === "round_robin"
+    ? value
+    : configuredDefaultScheduleMode();
+}
+
+function nextScheduledAgents() {
+  return state.scheduleMode === "paired"
+    ? [...AGENTS]
+    : [AGENTS[state.nextAgentIndex]];
+}
+
 function configuredDefaultIntervalMinutes() {
   return positiveNumberEnv("FREE_TIME_DEFAULT_INTERVAL_MINUTES", DEFAULT_INTERVAL_MINUTES);
+}
+
+function configuredDefaultScheduleMode() {
+  return process.env.FREE_TIME_DEFAULT_SCHEDULE_MODE === "paired"
+    ? "paired"
+    : DEFAULT_SCHEDULE_MODE;
 }
 
 function configuredMinIntervalMinutes() {

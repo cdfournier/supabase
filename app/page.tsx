@@ -233,6 +233,8 @@ type FreeTimeStatus = {
   durable_error?: string | null;
   turn_in_progress: boolean;
   interval_minutes: number;
+  schedule_mode?: "round_robin" | "paired";
+  next_agents?: AgentName[];
   next_agent: AgentName;
   last_agent: AgentName | null;
   last_turn_at: string | null;
@@ -1438,8 +1440,12 @@ function FreeTimePanel({
               <dd>{status.turn_in_progress ? "in progress" : "idle"}</dd>
             </div>
             <div>
+              <dt>Mode</dt>
+              <dd>{status.schedule_mode ?? "round_robin"}</dd>
+            </div>
+            <div>
               <dt>Next agent</dt>
-              <dd>{status.next_agent}</dd>
+              <dd>{status.next_agents?.join(", ") ?? status.next_agent}</dd>
             </div>
             <div>
               <dt>Last agent</dt>

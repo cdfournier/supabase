@@ -19,8 +19,9 @@ export async function POST(request: Request) {
 
     if (action === "start") {
       const intervalMinutes = optionalNumber(body.intervalMinutes);
+      const scheduleMode = optionalScheduleMode(body.scheduleMode);
 
-      return NextResponse.json(await startFreeTime(intervalMinutes));
+      return NextResponse.json(await startFreeTime(intervalMinutes, scheduleMode));
     }
 
     if (action === "stop") {
@@ -63,4 +64,18 @@ function optionalAgent(value: unknown) {
   }
 
   return agent;
+}
+
+function optionalScheduleMode(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const scheduleMode = String(value);
+
+  if (scheduleMode !== "round_robin" && scheduleMode !== "paired") {
+    throw new Error("Free Moments scheduleMode must be round_robin or paired.");
+  }
+
+  return scheduleMode;
 }
