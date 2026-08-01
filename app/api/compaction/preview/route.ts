@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     return NextResponse.json(await buildCompactionPreview(supabase, agent));
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown compaction preview error" },
+      { error: error instanceof Error ? error.message : "Unknown Room Review error" },
       { status: 500 }
     );
   }

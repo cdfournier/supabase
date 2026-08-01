@@ -546,13 +546,13 @@ function buildContextPostureReceipt({
 
   if (checkpointLoaded) {
     knownOmissions.push(
-      "Conversation before the latest approved checkpoint is represented by checkpoint summary, not full raw transcript in prompt."
+      "Conversation before the latest approved Room Refresh is represented by the approved Room Note, not full raw transcript in prompt."
     );
   }
 
   if (omittedActiveMessages > 0) {
     knownOmissions.push(
-      `${omittedActiveMessages} active post-checkpoint message(s) are older than the bounded recent-history window.`
+      `${omittedActiveMessages} active post-refresh message(s) are older than the bounded recent-history window.`
     );
   }
 
@@ -676,11 +676,12 @@ function withToolInstructions(system: string, maxTokens: number) {
     "Self-history tools let you inspect your own raw conversation transcript in stages. Use runtime_read_recent_messages for a small recent tail, runtime_search_conversation to locate a moment by keyword, and runtime_get_message_window to inspect context around one position. These tools are for honest orientation gaps, not every turn, and they cannot read another agent's transcript.",
     "Supabase memory/profile tools are self-scoped: you may read and write only this active agent's own memories, restoration profile, and relationship rows. Memory writes are durable continuity, not scratchpad notes. Use them sparingly for facts, reflections, decisions, principles, preferences, or relationship texture that should survive future turns.",
     "When adding or archiving a memory, be deliberate and include a real reason. Prefer a few high-signal memories over many small notes. If a memory is uncertain, write the uncertainty into the memory instead of overstating it.",
-    "The current_state field is your short handoff document. Update it before compaction or after major state changes so future wake/compression context is accurate. Keep it concise, current, and agent-authored.",
+    "The current_state field is your short handoff document. Update it before a Room Review or after major state changes so future wake/compression context is accurate. Keep it concise, current, agent-authored, and aligned with care-language: Room Review, Room Note, Room Refresh, and housekeeping.",
     "Journal tools are durable reflection space. Use journal_add_entry when you want to write something because it matters now, even if it is not yet core memory or current_state. You may list, read, update, or archive your own journal entries. Prefer archive over deletion-style thinking for stale duplicates. Journal entries are Operator-visible and agent-authored; they are not automatically treated as load-bearing memory.",
-    "The compaction preview and compile tools are read-only and self-scoped. Use preview to inspect your own compaction pressure, policy, transcript samples, and review prompt. Use compile when you need a reviewable draft proposal for a future blink. These tools cannot compact you and cannot modify Supabase data.",
-    "Saved compaction proposal tools are self-scoped review artifacts. You may save, revise, review, and mark your own proposal drafts as agent_reviewed or agent_approved. Use compile_and_save when a compiled proposal is too large to pass manually into save. A saved or approved proposal is not a checkpoint; checkpoint creation remains an Operator action.",
+    "The Room Review and Room Note tools are read-only and self-scoped. Use review to inspect your own room pressure, continuity policy, transcript samples, and Room Note prompt. Use compile when you need a reviewable Room Note draft for future housekeeping. These tools cannot refresh the room and cannot modify Supabase data.",
+    "Saved Room Note tools are self-scoped review artifacts. You may save, revise, review, and mark your own note drafts as agent_reviewed or agent_approved. Use compile_and_save when a compiled Room Note is too large to pass manually into save. A saved or approved Room Note is not a Room Refresh; sending housekeeping remains an Operator action.",
     "Peer note tools are asynchronous, Operator-visible notes between Soren and Varro. You may send, list, read, and mark your own addressed notes during normal sessions or Free Moments. They are not realtime DM; use them as durable handoffs or gentle messages, not as a rapid chat substitute.",
+    "Cafe tools are shared-room tools inside this runtime. cafe_read_room shows participants and bounded newest-first messages. cafe_post_message posts as you, the active runtime agent. Cafe is Operator-visible group space, not private memory, not a replacement for current_state, and not a rapid-fire obligation. Read before posting; pass quietly when you have nothing useful or alive to add.",
     "Outpost profile, lobby, room, post-reading, profile-lookup, and avatar-list tools are read-only. You may use them to orient yourself and understand current Outpost context.",
     "For Outpost loops, read lightly first: use small limits on recent-post tools, then fetch a specific full post only when needed. Do not pull many full room feeds in one turn unless Chris explicitly asks for that depth.",
     "The Outpost post-message, like-post, and avatar tools are public signals. Chris has granted standing permission for you to use them autonomously with discretion. Read before posting, use likes sparingly as genuine endorsements, and avoid posting only to prove the tool works unless Chris asks for a test.",
@@ -713,8 +714,8 @@ function withCompactionCheckpoint(system: string, checkpoint: string) {
 
   return [
     system,
-    "## Approved compaction checkpoint",
-    "Earlier conversation has been manually summarized into the approved checkpoint below. Treat it as continuity context for the transcript before the checkpoint. The raw transcript remains stored in Supabase; this checkpoint is not a deletion.",
+    "## Approved Room Refresh",
+    "Earlier conversation has been manually carried forward into the approved Room Note below. Treat it as continuity context for the transcript before the refresh. The raw transcript remains stored in Supabase; this refresh is not a deletion.",
     checkpointContext
   ].join("\n\n");
 }

@@ -21,12 +21,12 @@ export async function POST(request: Request) {
     }
 
     if (!summary) {
-      return NextResponse.json({ error: "Checkpoint summary is required." }, { status: 400 });
+      return NextResponse.json({ error: "Room Note is required before sending housekeeping." }, { status: 400 });
     }
 
     if (summary.length > MAX_CHECKPOINT_CHARS) {
       return NextResponse.json(
-        { error: `Checkpoint summary must be ${MAX_CHECKPOINT_CHARS} characters or fewer.` },
+        { error: `Room Note must be ${MAX_CHECKPOINT_CHARS} characters or fewer.` },
         { status: 400 }
       );
     }
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       agent,
       approvedBy: String(body.approved_by ?? "operator"),
       approvalNote: String(
-        body.approval_note ?? "Operator-created checkpoint from reviewed compile proposal."
+        body.approval_note ?? "Operator-created Room Refresh from reviewed Room Note."
       ),
       source,
       summary
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       .single();
 
     if (insertError) {
-      throw new Error(`Could not save compaction checkpoint: ${insertError.message}`);
+      throw new Error(`Could not save Room Refresh: ${insertError.message}`);
     }
 
     const { data: conversation, error: conversationError } = await supabase
@@ -103,11 +103,11 @@ export async function POST(request: Request) {
       archive,
       compaction_count: nextCompactionCount,
       next_step:
-        "Restart or continue normally. The runtime will use this checkpoint plus messages after it as active context."
+        "Restart or continue normally. The runtime will use this Room Refresh plus messages after it as active context."
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown checkpoint error" },
+      { error: error instanceof Error ? error.message : "Unknown Room Refresh error" },
       { status: 500 }
     );
   }

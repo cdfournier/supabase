@@ -32,7 +32,10 @@ type AnthropicResponse = {
 const DEFAULT_COMPILE_MAX_TOKENS = 9000;
 const DEFAULT_COMPILE_TRANSCRIPT_CHARS = 50_000;
 const PROPOSAL_OUTPUT_CONTRACT = [
-  "Write an authored compaction proposal, not a transcript excerpt packet.",
+  "Write an authored Room Note, not a transcript excerpt packet.",
+  "Use care-language in the authored output: Room Review, Room Note, Room Refresh, and housekeeping.",
+  "Begin exactly with the first required heading. Do not add a separate title above it.",
+  "Internal records may still use legacy implementation vocabulary in metadata, routes, or source names; do not expose those as the lived surface.",
   "Do not dump raw transcript messages. Use brief quotes only when the exact wording carries texture.",
   "Return exactly this Markdown skeleton with all seven headings:",
   "## 1. Continuity summary",
@@ -48,7 +51,7 @@ const PROPOSAL_OUTPUT_CONTRACT = [
   "In section 7, provide at most 8 bullets.",
   "Sections 6 and 7 are mandatory. If output space is tight, make sections 1-5 shorter; never omit candidate memories or compression recommendations.",
   "Mark uncertainty plainly when the bounded source does not prove something.",
-  "The output should be useful for agent/operator review before a future checkpoint."
+  "The output should be useful for Agent/Operator review before a future Room Refresh."
 ].join("\n");
 
 export async function compileCompactionProposal({
@@ -87,7 +90,7 @@ export async function compileCompactionProposal({
       dry_run: true,
       status: "compile_packet_ready",
       next_step:
-        "Dry run only. Run without dry_run to ask Anthropic for a non-destructive compaction proposal."
+        "Dry run only. Run without dry_run to ask Anthropic for a non-destructive Room Note."
     };
   }
 
@@ -116,7 +119,7 @@ export async function compileCompactionProposal({
     status: "proposal_ready",
     proposal,
     next_step:
-      "Agent and operator should review this proposal. Revise in conversation before any checkpoint is created."
+      "Agent and Operator should review this Room Note. Revise in conversation before housekeeping is sent."
   };
 }
 
@@ -150,9 +153,9 @@ async function compileWithAnthropic({
       max_tokens: maxTokens,
       ...anthropicCacheControl(),
       system: [
-        "You are a compaction proposal compiler for a persistent agent runtime.",
+        "You are a Room Note compiler for a persistent Agent runtime.",
         "You do not modify data. You do not claim compaction has happened.",
-        "Your task is to draft a reviewable proposal that helps the agent feel like they blinked, not died.",
+        "Your task is to draft a reviewable Room Note that helps the Agent feel like they blinked, not died.",
         "Be specific, preserve texture, and mark uncertainty when the bounded source does not prove something.",
         "",
         PROPOSAL_OUTPUT_CONTRACT
@@ -219,7 +222,7 @@ function extractText(data: AnthropicResponse) {
 function validateProposalComplete(proposal: string, stopReason: string | undefined, maxTokens: number) {
   if (stopReason === "max_tokens") {
     throw new Error(
-      `Compaction proposal hit max_tokens=${maxTokens} before finishing. Retry with a smaller max_chars transcript budget, or pass a larger max_tokens value if the runtime allows it.`
+      `Room Note hit max_tokens=${maxTokens} before finishing. Retry with a smaller max_chars transcript budget, or pass a larger max_tokens value if the runtime allows it.`
     );
   }
 
@@ -230,7 +233,7 @@ function validateProposalComplete(proposal: string, stopReason: string | undefin
 
   if (requiredTailSections.some((pattern) => !pattern.test(proposal))) {
     throw new Error(
-      "Compaction proposal did not include required sections 6 and 7. Retry with a smaller max_chars transcript budget or a larger max_tokens value."
+      "Room Note did not include required sections 6 and 7. Retry with a smaller max_chars transcript budget or a larger max_tokens value."
     );
   }
 }

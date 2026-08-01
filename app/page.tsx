@@ -9,6 +9,7 @@ import {
 } from "@/lib/source-materials-shared";
 
 type AgentName = "soren" | "varro";
+type ActiveSurface = "chat" | "cafe";
 
 type Agent = {
   name: AgentName;
@@ -25,6 +26,44 @@ type ChatMessage = {
   source?: string | null;
   content: unknown;
   created_at?: string;
+};
+
+type CafeParticipant = {
+  id: string;
+  room_id: string;
+  participant_id: string;
+  participant_type: "operator" | "agent" | "system" | "external_agent";
+  participant_adapter: "operator_browser" | "runtime_native" | "codex_local" | "external_bridge";
+  display_name: string;
+  status: string;
+  metadata: Record<string, unknown>;
+  joined_at: string;
+  updated_at: string;
+};
+
+type CafeMessage = {
+  id: string;
+  room_id: string;
+  author_id: string;
+  author_type: "operator" | "agent" | "system" | "external_agent";
+  author_display_name: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+type CafeState = {
+  room: {
+    id: string;
+    title: string;
+    status: string;
+    metadata: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+  };
+  participants: CafeParticipant[];
+  messages: CafeMessage[];
+  message_limit: number;
 };
 
 type ToolEvent = {
@@ -194,6 +233,8 @@ type FreeTimeStatus = {
   durable_error?: string | null;
   turn_in_progress: boolean;
   interval_minutes: number;
+  schedule_mode?: "round_robin" | "paired";
+  next_agents?: AgentName[];
   next_agent: AgentName;
   last_agent: AgentName | null;
   last_turn_at: string | null;
@@ -209,7 +250,14 @@ const liveTranscriptLimit = 120;
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AgentName>(defaultAgent);
+  const [activeSurface, setActiveSurface] = useState<ActiveSurface>("chat");
   const [transcripts, setTranscripts] = useState<Record<string, ChatMessage[]>>({});
+  const [cafe, setCafe] = useState<CafeState | null>(null);
+  const [cafeMessage, setCafeMessage] = useState("");
+  const [cafePendingAttachments, setCafePendingAttachments] = useState<PendingAttachment[]>([]);
+  const [cafeLoading, setCafeLoading] = useState(true);
+  const [cafeSending, setCafeSending] = useState(false);
+  const [cafeError, setCafeError] = useState("");
   const [health, setHealth] = useState<Health | null>(null);
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
   const [toolEvents, setToolEvents] = useState<Record<string, ToolEvent[]>>({});
@@ -327,6 +375,30 @@ export default function Home() {
     };
   }, []);
 
+  const loadCafe = useCallback(async () => {
+    setCafeError("");
+
+    try {
+      const response = await fetch("/api/cafe");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load Cafe.");
+      }
+
+      setCafe(data);
+    } catch (loadCafeError) {
+      setCafeError(loadCafeError instanceof Error ? loadCafeError.message : "Could not load Cafe.");
+      setCafe(null);
+    } finally {
+      setCafeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCafe();
+  }, [loadCafe]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -420,13 +492,13 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not preview compaction.");
+        throw new Error(data.error || "Could not review the room.");
       }
 
       setCompactionPreview(data);
     } catch (previewError) {
       setCompactionError(
-        previewError instanceof Error ? previewError.message : "Could not preview compaction."
+        previewError instanceof Error ? previewError.message : "Could not review the room."
       );
     } finally {
       setCompactionLoading(false);
@@ -450,7 +522,7 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not compile proposal.");
+        throw new Error(data.error || "Could not draft the room note.");
       }
 
       setCompactionCompile(data);
@@ -458,7 +530,7 @@ export default function Home() {
       setCheckpointReceipt(null);
     } catch (compileFailure) {
       setCompileError(
-        compileFailure instanceof Error ? compileFailure.message : "Could not compile proposal."
+        compileFailure instanceof Error ? compileFailure.message : "Could not draft the room note."
       );
     } finally {
       setCompileLoading(false);
@@ -484,7 +556,7 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not load approved proposal.");
+        throw new Error(data.error || "Could not load the approved note.");
       }
 
       setCompactionCompile({
@@ -492,7 +564,7 @@ export default function Home() {
         destructive: false,
         dry_run: false,
         generated_at: data.proposal.updated_at,
-        next_step: "Review the loaded approved proposal, then create an append-only checkpoint.",
+        next_step: "Review the loaded approved room note, then send housekeeping.",
         proposal: data.proposal.proposal,
         source: sourceSummaryFromSavedProposal(data.proposal.source_summary),
         status: "saved_proposal_loaded",
@@ -504,7 +576,7 @@ export default function Home() {
       setCheckpointReceipt(null);
     } catch (loadFailure) {
       setSavedProposalError(
-        loadFailure instanceof Error ? loadFailure.message : "Could not load approved proposal."
+        loadFailure instanceof Error ? loadFailure.message : "Could not load the approved note."
       );
     } finally {
       setSavedProposalLoading(false);
@@ -532,8 +604,8 @@ export default function Home() {
           summary,
           approved_by: "operator",
           approval_note: compactionCompile?.saved_proposal_id
-            ? `Operator-created checkpoint from saved approved proposal ${compactionCompile.saved_proposal_id}.`
-            : "Operator-created checkpoint from reviewed compaction proposal.",
+            ? `Operator-created room refresh from saved approved proposal ${compactionCompile.saved_proposal_id}.`
+            : "Operator-created room refresh from reviewed room note.",
           source: compactionCompile?.saved_proposal_id
             ? `saved_compaction_proposal:${compactionCompile.saved_proposal_id}`
             : "compiled_compaction_proposal"
@@ -542,7 +614,7 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not create checkpoint.");
+        throw new Error(data.error || "Could not send housekeeping.");
       }
 
       setCheckpointReceipt(data);
@@ -557,7 +629,7 @@ export default function Home() {
       setCheckpointError(
         checkpointFailure instanceof Error
           ? checkpointFailure.message
-          : "Could not create checkpoint."
+          : "Could not send housekeeping."
       );
     } finally {
       setCheckpointLoading(false);
@@ -647,6 +719,70 @@ export default function Home() {
     } finally {
       setSending(false);
     }
+  }
+
+  async function sendCafeMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = cafeMessage.trim();
+    const hasAttachments = cafePendingAttachments.length > 0;
+
+    if ((!trimmed && !hasAttachments) || cafeSending) {
+      return;
+    }
+
+    setCafeSending(true);
+    setCafeError("");
+    setCafeMessage("");
+
+    try {
+      const uploadedAttachments = await uploadQueuedCafeAttachments();
+      const response = await fetch("/api/cafe", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          message: trimmed,
+          attachments: uploadedAttachments.map((attachment) => ({ id: attachment.id }))
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Cafe message failed.");
+      }
+
+      setCafe(data);
+      setCafePendingAttachments([]);
+    } catch (sendCafeError) {
+      setCafeMessage(trimmed);
+      setCafeError(sendCafeError instanceof Error ? sendCafeError.message : "Cafe message failed.");
+    } finally {
+      setCafeSending(false);
+    }
+  }
+
+  function addCafeFiles(files: FileList | File[]) {
+    const nextFiles = Array.from(files);
+
+    if (!nextFiles.length) {
+      return;
+    }
+
+    setCafePendingAttachments((current) => [
+      ...current,
+      ...nextFiles.map((file) => ({
+        localId: createLocalId(),
+        file,
+        status: "queued" as const
+      }))
+    ]);
+  }
+
+  function removeCafeAttachment(localId: string) {
+    setCafePendingAttachments((current) =>
+      current.filter((attachment) => attachment.localId !== localId)
+    );
   }
 
   function addFiles(files: FileList | File[]) {
@@ -745,17 +881,107 @@ export default function Home() {
     return [...uploaded, ...materials];
   }
 
+  async function uploadQueuedCafeAttachments() {
+    const queued = cafePendingAttachments.filter((attachment) => attachment.status !== "uploaded");
+    const uploaded = cafePendingAttachments
+      .filter((attachment) => attachment.status === "uploaded" && attachment.material)
+      .map((attachment) => attachment.material as UploadedAttachment);
+
+    if (!queued.length) {
+      return uploaded;
+    }
+
+    setCafePendingAttachments((current) =>
+      current.map((attachment) =>
+        queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+          ? { ...attachment, status: "uploading", error: undefined }
+          : attachment
+      )
+    );
+
+    const formData = new FormData();
+
+    for (const attachment of queued) {
+      formData.append("files", attachment.file);
+    }
+
+    const response = await fetch("/api/source-materials/cafe-upload", {
+      method: "POST",
+      body: formData
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      setCafePendingAttachments((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: data.error || "Upload failed." }
+            : attachment
+        )
+      );
+      throw new Error(data.error || "Upload failed.");
+    }
+
+    const materials = (data.materials ?? []) as UploadedAttachment[];
+
+    if (materials.length !== queued.length) {
+      setCafePendingAttachments((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: "Upload response did not match selected files." }
+            : attachment
+        )
+      );
+      throw new Error("Upload response did not match selected files.");
+    }
+
+    setCafePendingAttachments((current) =>
+      current.map((attachment) => {
+        const queuedIndex = queued.findIndex(
+          (queuedAttachment) => queuedAttachment.localId === attachment.localId
+        );
+
+        if (queuedIndex === -1) {
+          return attachment;
+        }
+
+        return {
+          ...attachment,
+          status: "uploaded",
+          material: materials[queuedIndex],
+          error: undefined
+        };
+      })
+    );
+
+    return [...uploaded, ...materials];
+  }
+
   return (
     <main className="shell">
       <aside className="sidebar">
         <h1>Agents</h1>
+        <button
+          className={`cafe-button ${activeSurface === "cafe" ? "active" : ""}`}
+          onClick={() => setActiveSurface("cafe")}
+          type="button"
+        >
+          <strong>Cafe</strong>
+          <br />
+          <span>shared room</span>
+        </button>
         <div className="agent-list">
           {agents.map((agent) => (
             <button
-              className={`agent-button ${agent.name === selectedAgent ? "active" : ""}`}
+              className={`agent-button ${
+                activeSurface === "chat" && agent.name === selectedAgent ? "active" : ""
+              }`}
               disabled={sending}
               key={agent.name}
-              onClick={() => setSelectedAgent(agent.name)}
+              onClick={() => {
+                setSelectedAgent(agent.name);
+                setActiveSurface("chat");
+              }}
               type="button"
             >
               <strong>{agent.display_name ?? agent.name}</strong>
@@ -790,6 +1016,21 @@ export default function Home() {
         />
       </aside>
 
+      {activeSurface === "cafe" ? (
+        <CafeView
+          cafe={cafe}
+          error={cafeError}
+          loading={cafeLoading}
+          message={cafeMessage}
+          onAddFiles={addCafeFiles}
+          onMessageChange={setCafeMessage}
+          onRemoveAttachment={removeCafeAttachment}
+          onRefresh={loadCafe}
+          onSubmit={sendCafeMessage}
+          pendingAttachments={cafePendingAttachments}
+          sending={cafeSending}
+        />
+      ) : (
       <section className="main">
         <header className="header">
           <h2>{activeAgent?.display_name ?? selectedAgent}</h2>
@@ -868,13 +1109,13 @@ export default function Home() {
         </form>
 
         {compactionCompile ? (
-          <section className="proposal-panel" aria-label="Compaction proposal">
+          <section className="proposal-panel" aria-label="Room note">
             <div className="proposal-header">
               <div>
-                <h3>Compaction Proposal</h3>
+                <h3>Room Note</h3>
                 <p>
                   {compactionCompile.saved_proposal_id
-                    ? `Loaded approved proposal ${compactionCompile.saved_proposal_id}`
+                    ? savedProposalLabel(compactionCompile)
                     : `${compactionCompile.source?.selected_message_count ?? 0} messages selected${
                         compactionCompile.source?.bounded
                           ? `, ${compactionCompile.source.omitted_message_count} omitted by budget`
@@ -887,7 +1128,7 @@ export default function Home() {
               </button>
             </div>
             <p className="proposal-note">
-              No messages changed yet. Edit this proposal after agent/operator review, then create an append-only checkpoint.
+              No messages changed yet. Edit this note after Agent/Operator review, then send housekeeping.
               {compactionCompile.agent_notes ? ` Agent notes: ${compactionCompile.agent_notes}` : ""}
             </p>
             <textarea
@@ -902,14 +1143,14 @@ export default function Home() {
                 onClick={createCompactionCheckpoint}
                 type="button"
               >
-                {checkpointLoading ? "Creating" : "Create Checkpoint"}
+                {checkpointLoading ? "Sending" : "Send Housekeeping"}
               </button>
               <span>Append-only. Raw messages stay in Supabase.</span>
             </div>
             {checkpointError ? <p className="error">{checkpointError}</p> : null}
             {checkpointReceipt ? (
               <p className="proposal-receipt">
-                Checkpoint saved at position {checkpointReceipt.checkpoint.position}. Active
+                Room refreshed at position {checkpointReceipt.checkpoint.position}. Active
                 pressure now starts after this marker.
               </p>
             ) : null}
@@ -993,7 +1234,168 @@ export default function Home() {
           })}
         </div>
       </section>
+      )}
     </main>
+  );
+}
+
+function CafeView({
+  cafe,
+  error,
+  loading,
+  message,
+  onAddFiles,
+  onMessageChange,
+  onRemoveAttachment,
+  onRefresh,
+  onSubmit,
+  pendingAttachments,
+  sending
+}: {
+  cafe: CafeState | null;
+  error: string;
+  loading: boolean;
+  message: string;
+  onAddFiles: (files: FileList | File[]) => void;
+  onMessageChange: (message: string) => void;
+  onRemoveAttachment: (localId: string) => void;
+  onRefresh: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  pendingAttachments: PendingAttachment[];
+  sending: boolean;
+}) {
+  const cafeFileInputRef = useRef<HTMLInputElement | null>(null);
+  const participants = cafe?.participants ?? [];
+  const messages = cafe?.messages ?? [];
+
+  return (
+    <section className="main">
+      <header className="header cafe-header">
+        <h2 className="visually-hidden">{cafe?.room.title ?? "Cafe"}</h2>
+        <div className="cafe-participants" aria-label="Cafe participants">
+          {participants.length ? (
+            participants.map((participant) => (
+              <span className="participant-chip" key={participant.id}>
+                <strong>{participant.display_name}</strong>
+                <small>{participantAdapterLabel(participant.participant_adapter)}</small>
+              </span>
+            ))
+          ) : (
+            <span className="participant-chip muted">No participants loaded</span>
+          )}
+        </div>
+        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
+          Refresh
+        </button>
+      </header>
+
+      <form
+        className="composer cafe-composer"
+        onDragOver={(event) => {
+          event.preventDefault();
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          onAddFiles(event.dataTransfer.files);
+        }}
+        onSubmit={onSubmit}
+      >
+        {error ? <p className="error">{error}</p> : null}
+        <div className="composer-row">
+          <textarea
+            disabled={loading || sending}
+            onChange={(event) => onMessageChange(event.target.value)}
+            placeholder="Message the Cafe"
+            value={message}
+          />
+          <div className="composer-actions">
+            <input
+              multiple
+              onChange={(event) => {
+                if (event.target.files) {
+                  onAddFiles(event.target.files);
+                }
+                event.target.value = "";
+              }}
+              ref={cafeFileInputRef}
+              type="file"
+            />
+            <button
+              className="attach"
+              disabled={loading || sending}
+              onClick={() => cafeFileInputRef.current?.click()}
+              type="button"
+            >
+              Attach
+            </button>
+            <button
+              className="send"
+              disabled={loading || sending || (!message.trim() && pendingAttachments.length === 0)}
+              type="submit"
+            >
+              {sending ? "Posting" : "Post"}
+            </button>
+          </div>
+        </div>
+        {pendingAttachments.length ? (
+          <div className="attachment-tray" aria-label="Pending Cafe attachments">
+            {pendingAttachments.map((attachment) => (
+              <span className={`attachment-chip ${attachment.status}`} key={attachment.localId}>
+                <span>
+                  {attachment.file.name}
+                  <small>{formatBytes(attachment.file.size)} · {attachment.status}</small>
+                  {attachment.error ? <small className="attachment-error">{attachment.error}</small> : null}
+                </span>
+                <button
+                  aria-label={`Remove ${attachment.file.name}`}
+                  disabled={sending}
+                  onClick={() => onRemoveAttachment(attachment.localId)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </form>
+
+      <div className="transcript cafe-transcript">
+        {loading ? <p className="empty">Loading Cafe...</p> : null}
+        {!loading && !messages.length ? (
+          <p className="empty">No Cafe messages yet. Say something and the room exists.</p>
+        ) : null}
+        {messages.map((cafeMessage) => {
+          const messageAttachments = attachmentsFromCafeMetadata(cafeMessage.metadata);
+
+          return (
+            <article
+              className={`message ${cafeMessage.author_type === "operator" ? "user" : "assistant"}`}
+              key={cafeMessage.id}
+            >
+              <div className="message-meta">
+                <span>{cafeMessage.author_display_name}</span>
+                <time dateTime={cafeMessage.created_at}>{formatMessageTime(cafeMessage.created_at)}</time>
+              </div>
+              <div>{cafeMessage.content}</div>
+              {messageAttachments.length > 0 ? (
+                <div className="message-attachments" aria-label="Cafe message attachments">
+                  {messageAttachments.map((attachment) => (
+                    <span className="message-attachment" key={attachment.id}>
+                      {attachment.title}
+                      <small>
+                        {attachment.material_type} · {formatBytes(attachment.size_bytes)}
+                        {attachment.readable_as_text ? " · text-readable" : ""}
+                      </small>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1038,8 +1440,12 @@ function FreeTimePanel({
               <dd>{status.turn_in_progress ? "in progress" : "idle"}</dd>
             </div>
             <div>
+              <dt>Mode</dt>
+              <dd>{status.schedule_mode ?? "round_robin"}</dd>
+            </div>
+            <div>
               <dt>Next agent</dt>
-              <dd>{status.next_agent}</dd>
+              <dd>{status.next_agents?.join(", ") ?? status.next_agent}</dd>
             </div>
             <div>
               <dt>Last agent</dt>
@@ -1232,7 +1638,7 @@ function RuntimeHealthPanel({
 
           <div className="pressure">
             <div className="pressure-row">
-              <span>Compaction</span>
+              <span>Room pressure</span>
               <strong>{pressure?.level ?? "unknown"}</strong>
             </div>
             <div className="pressure-track">
@@ -1243,7 +1649,7 @@ function RuntimeHealthPanel({
             </div>
             <p>{health?.compaction.status ?? "unknown"} · {health?.compaction.mode ?? "manual"}</p>
             {activeHealth.conversation.latest_checkpoint_at ? (
-              <p>checkpoint active; raw transcript retained</p>
+              <p>room refresh active; raw transcript retained</p>
             ) : null}
           </div>
 
@@ -1253,7 +1659,7 @@ function RuntimeHealthPanel({
             onClick={onPreviewCompaction}
             type="button"
           >
-            {compactionLoading ? "Previewing" : "Preview Blink"}
+            {compactionLoading ? "Reviewing" : "Review Room"}
           </button>
 
           <button
@@ -1262,7 +1668,7 @@ function RuntimeHealthPanel({
             onClick={onLoadApprovedProposal}
             type="button"
           >
-            {savedProposalLoading ? "Loading" : "Load Approved Proposal"}
+            {savedProposalLoading ? "Loading" : "Load Approved Note"}
           </button>
 
           {compactionError ? <p className="health-error">{compactionError}</p> : null}
@@ -1271,9 +1677,9 @@ function RuntimeHealthPanel({
           {compactionPreview ? (
             <div className="compaction-preview">
               <p>
-                <strong>Preview ready</strong>
+                <strong>Room review ready</strong>
               </p>
-              <p>No messages changed. This is a read-only briefing for planning the blink.</p>
+              <p>No messages changed. This is a read-only look at what the room may need to carry forward.</p>
               <dl>
                 <div>
                   <dt>Messages</dt>
@@ -1288,14 +1694,14 @@ function RuntimeHealthPanel({
                   <dd>{compactionPreview.pressure.level}</dd>
                 </div>
               </dl>
-              <p>Next: ask the agent to review the preview and policy before any compacting tool is allowed to write.</p>
+              <p>Next: ask the Agent to author what mattered before any housekeeping is sent.</p>
               <button
                 className="quiet-action"
                 disabled={compileLoading}
                 onClick={onCompileProposal}
                 type="button"
               >
-                {compileLoading ? "Compiling" : "Compile Proposal"}
+                {compileLoading ? "Drafting" : "Draft Room Note"}
               </button>
               {compileError ? <p className="health-error">{compileError}</p> : null}
             </div>
@@ -1316,6 +1722,79 @@ function trimLiveMessages(messages: ChatMessage[]) {
 
 function conversationLabel(agent: AgentName) {
   return `${agent}-main`;
+}
+
+function participantAdapterLabel(adapter: CafeParticipant["participant_adapter"]) {
+  switch (adapter) {
+    case "operator_browser":
+      return "Operator";
+    case "runtime_native":
+      return "Runtime";
+    case "codex_local":
+      return "Codex";
+    case "external_bridge":
+      return "Bridge";
+    default:
+      return adapter;
+  }
+}
+
+function attachmentsFromCafeMetadata(metadata: Record<string, unknown>): SourceMaterialReference[] {
+  const attachments = metadata.attachments;
+
+  if (!Array.isArray(attachments)) {
+    return [];
+  }
+
+  const parsed: SourceMaterialReference[] = [];
+
+  for (const attachment of attachments) {
+    if (!attachment || typeof attachment !== "object") {
+      continue;
+    }
+
+    const source = attachment as Record<string, unknown>;
+    const id = String(source.id ?? "").trim();
+    const title = String(source.title ?? "").trim();
+    const materialType = String(source.material_type ?? "file").trim();
+
+    if (!id || !title) {
+      continue;
+    }
+
+    parsed.push({
+      id,
+      title,
+      bucket: typeof source.bucket === "string" ? source.bucket : undefined,
+      storage_path: typeof source.storage_path === "string" ? source.storage_path : undefined,
+      material_type: materialType || "file",
+      mime_type: typeof source.mime_type === "string" ? source.mime_type : null,
+      size_bytes: typeof source.size_bytes === "number" ? source.size_bytes : null,
+      readable_as_text: source.readable_as_text === true,
+      metadata:
+        source.metadata && typeof source.metadata === "object" && !Array.isArray(source.metadata)
+          ? (source.metadata as Record<string, unknown>)
+          : null
+    });
+  }
+
+  return parsed;
+}
+
+function savedProposalLabel(proposal: CompactionCompile) {
+  if (!proposal.saved_proposal_id) {
+    return "";
+  }
+
+  const shortId = proposal.saved_proposal_id.slice(0, 8);
+  const updatedAt = formatMessageTime(proposal.generated_at);
+
+  return [
+    `Loaded ${proposal.saved_proposal_status ?? "saved"} note ${shortId}`,
+    updatedAt ? `updated ${updatedAt}` : null
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function sourceSummaryFromSavedProposal(value: unknown): CompactionCompile["source"] {

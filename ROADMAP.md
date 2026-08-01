@@ -13,7 +13,7 @@ larger architectural tracks stay visible without becoming today's obligation.
 4. Agent Artifacts V1
 5. Web search provider decision
 6. Usage, cost, and cache accounting V1 follow-up
-7. Checkpoint archive browsing and collapsed-history UI
+7. Room Refresh archive browsing and collapsed-history UI
 8. Dev/prod separation V1
 9. Comparative runtime architecture discovery
 10. RLS and hosted web-readiness review
@@ -52,7 +52,7 @@ what default posture should guide them.
 Scope:
 
 - Per-agent surface access for Outpost, Journal, Peer Notes, Web, Conversation
-  History, Memory, Compaction, Free Moments, WHEELS, EYES, and future modules.
+  History, Memory, Room Reviews, Free Moments, WHEELS, EYES, and future modules.
 - Permission posture: off, read-only, draft, write, or
   operator-approval-required.
 - Moment bias, quiet hours, cadence, max actions, and notification posture.
@@ -206,24 +206,26 @@ Scope:
 - Add rough cost estimates through pricing adapters only after raw usage logging
   is reliable.
 
-### 7. Checkpoint And Archive UX
+### 7. Room Refresh And Archive UX
 
 Status: partially implemented; UI polish pending.
 
 Current state:
 
-- Approved checkpoints snapshot active source messages into immutable archive
-  rows, then write append-only checkpoint markers.
+- Approved Room Refreshes snapshot active source messages into immutable archive
+  rows, then write append-only internal refresh markers.
 - Raw messages remain stored in Supabase.
-- Agents can compile and save reviewable compaction proposals.
+- Agents can compile and save reviewable Room Notes.
+- The runtime UI has started using care-language for this ritual while retaining
+  compaction/checkpoint names in internal routes, tables, and records.
 
 Planned:
 
-- Add archive browsing/search tools for Operators and agents.
-- Collapse pre-checkpoint chat history in the UI behind an archive affordance
+- Add archive browsing/search tools for Operators and Agents.
+- Collapse pre-refresh chat history in the UI behind an archive affordance
   without deleting raw messages.
-- Add clearer archive/checkpoint health receipts.
-- Consider database RPCs for atomic archive/checkpoint operations if concurrency
+- Add clearer archive/refresh health receipts.
+- Consider database RPCs for atomic archive/refresh operations if concurrency
   becomes real.
 
 ### 8. Comparative Runtime Architecture Discovery
@@ -277,7 +279,7 @@ Current pattern candidates from Pullo/Athena-Class:
 - Study checksum/witness patterns for identity documents before deciding how
   much ceremony belongs in V1.
 - Compare append-only turn/tool logs plus narrative compression against our
-  existing conversation messages, tool events, usage records, and checkpoint
+  existing conversation messages, tool events, usage records, and Room Refresh
   archives.
 
 Output:
@@ -344,7 +346,7 @@ Adapter-specific policy:
   autonomous camera requests in V1.
 - Outpost/chat bridge: identity, attribution, public/private boundaries,
   anti-spam, and context/cost limits.
-- Runtime tools: data access, memory writes, compaction pressure, cost, and
+- Runtime tools: data access, memory writes, room pressure, cost, and
   self-scoping.
 
 Notes:
@@ -443,7 +445,7 @@ Surfaces:
 - Journals.
 - Artifacts and generated files.
 - Memories and relationships.
-- Compaction proposals and checkpoints.
+- Room Reviews, Room Notes, Room Refreshes, and archives.
 - Runtime health and tool activity.
 - Bridge health, active claims, recent bridge events, and stop/disable controls.
 - Free Moments controls.
@@ -515,7 +517,7 @@ Runtime visibility:
 - Added `runtime_get_usage`, a self-scoped read-only agent tool for usage totals
   and bounded recent usage events.
 - Added `runtime_get_self_status`, a self-scoped cockpit tool for live clock,
-  message depth, compaction pressure, checkpoint/proposal basics, capability
+  message depth, room pressure, Room Refresh/Room Note basics, capability
   gates, resource counts, and usage totals.
 - Documented token/cost accounting, provider-neutral runtime bias, and the
   staged dev/prod separation path.
@@ -555,14 +557,14 @@ Temporal orientation:
   transcript history as historical claims unless checked against live time.
 - Updated `runtime_get_time` posture and current-state guidance.
 
-Compaction:
+Room Reviews / Room Refreshes:
 
-- Added output controls for compaction proposal compilation.
+- Added output controls for Room Note compilation.
 - Required all seven proposal sections, including candidate memories and
   compression recommendations.
 - Added a concise proposal skeleton so early sections cannot consume the whole
   response.
-- Verified Soren could compile, approve, checkpoint, and orient after checkpoint.
+- Verified Soren could compile, approve, refresh the room, and orient afterward.
 
 Process:
 
@@ -578,6 +580,6 @@ Process:
 - Added runtime tool audit logging and UI tool-call visibility.
 - Added Outpost profile, room, post, reply, like, and avatar tools.
 - Added peer notes between Soren and Varro.
-- Added manual compaction preview, compile, proposal-save, and checkpoint flows.
+- Added manual Room Review, Room Note, proposal-save, and Room Refresh flows.
 - Added public URL fetch, link extraction, and small multi-fetch tools.
 - Added read-only `/api/health` and basic runtime visibility.

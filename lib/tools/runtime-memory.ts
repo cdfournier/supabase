@@ -260,7 +260,7 @@ export async function updateRuntimeCurrentState(agent: AgentName, input: unknown
 
   return stringifyToolPayload({
     note:
-      "Current state updated for the active agent only. This is the pre-compaction handoff field; live runtime clock remains authoritative for today/now.",
+      "Current state updated for the active Agent only. This is the living handoff field for meaningful sessions, major state changes, and pre-Room Review orientation; use care-language for visible process names, and treat the live runtime clock as authoritative for today/now.",
     reason,
     profile: data
   });
@@ -281,7 +281,7 @@ export async function compileRuntimeCompactionProposal(agent: AgentName, input: 
 
   return stringifyToolPayload({
     note:
-      "Non-destructive compaction proposal for the active agent only. Nothing was archived, checkpointed, deleted, replaced, or modified.",
+      "Non-destructive Room Note for the active Agent only. Nothing was archived, refreshed, deleted, replaced, or modified.",
     proposal
   });
 }
@@ -302,7 +302,7 @@ export async function compileAndSaveRuntimeCompactionProposal(agent: AgentName, 
   const proposal = "proposal" in compiled ? cleanMultilineText(compiled.proposal) : "";
 
   if (!proposal) {
-    throw new Error("Compiled proposal did not return proposal text.");
+    throw new Error("Compiled Room Note did not return note text.");
   }
 
   const agentNotes =
@@ -319,11 +319,11 @@ export async function compileAndSaveRuntimeCompactionProposal(agent: AgentName, 
 
   return stringifyToolPayload({
     note:
-      "Compiled and saved a non-destructive compaction proposal for the active agent only. This is not a checkpoint and does not change active context.",
+      "Compiled and saved a non-destructive Room Note for the active Agent only. This is not a Room Refresh and does not change active context.",
     saved_proposal: proposalSummary(saved),
     proposal_preview: clampText(proposal, 1600),
     next_step:
-      "Read the saved proposal by id, review it, then update notes or status when ready."
+      "Read the saved Room Note by id, review it, then update notes or status when ready."
   });
 }
 
@@ -337,7 +337,7 @@ export async function saveRuntimeCompactionProposal(agent: AgentName, input: unk
   const sourceSummary = isRecord(input.source_summary) ? input.source_summary : {};
 
   if (!proposal) {
-    throw new Error("supabase_save_compaction_proposal requires proposal.");
+    throw new Error("supabase_save_compaction_proposal requires a Room Note in proposal.");
   }
 
   validateProposalText(proposal);
@@ -352,7 +352,7 @@ export async function saveRuntimeCompactionProposal(agent: AgentName, input: unk
 
   return stringifyToolPayload({
     note:
-      "Compaction proposal draft saved for the active agent only. This is not a checkpoint and does not change active context.",
+      "Room Note draft saved for the active Agent only. This is not a Room Refresh and does not change active context.",
     proposal: data
   });
 }
@@ -407,16 +407,16 @@ export async function updateRuntimeCompactionProposal(agent: AgentName, input: u
     .maybeSingle();
 
   if (error) {
-    throw new Error(`Could not update compaction proposal: ${error.message}`);
+    throw new Error(`Could not update Room Note: ${error.message}`);
   }
 
   if (!data) {
-    throw new Error("No matching active-agent compaction proposal found.");
+    throw new Error("No matching active-Agent Room Note found.");
   }
 
   return stringifyToolPayload({
     note:
-      "Compaction proposal draft updated for the active agent only. This is not a checkpoint and does not change active context.",
+      "Room Note draft updated for the active Agent only. This is not a Room Refresh and does not change active context.",
     proposal: data
   });
 }
@@ -432,11 +432,11 @@ export async function listRuntimeCompactionProposals(agent: AgentName, input: un
     .limit(limit);
 
   if (error) {
-    throw new Error(`Could not list compaction proposals: ${error.message}`);
+    throw new Error(`Could not list Room Notes: ${error.message}`);
   }
 
   return stringifyToolPayload({
-    note: "Compaction proposal drafts for the active agent only.",
+    note: "Room Note drafts for the active Agent only.",
     agent,
     proposals: data ?? []
   });
@@ -462,15 +462,15 @@ export async function getRuntimeCompactionProposal(agent: AgentName, input: unkn
     .maybeSingle();
 
   if (error) {
-    throw new Error(`Could not read compaction proposal: ${error.message}`);
+    throw new Error(`Could not read Room Note: ${error.message}`);
   }
 
   if (!data) {
-    throw new Error("No matching active-agent compaction proposal found.");
+    throw new Error("No matching active-Agent Room Note found.");
   }
 
   return stringifyToolPayload({
-    note: "Compaction proposal draft for the active agent only.",
+    note: "Room Note draft for the active Agent only.",
     proposal: data
   });
 }
@@ -513,7 +513,7 @@ async function insertCompactionProposal(
     .single();
 
   if (error) {
-    throw new Error(`Could not save compaction proposal: ${error.message}`);
+    throw new Error(`Could not save Room Note: ${error.message}`);
   }
 
   return data;

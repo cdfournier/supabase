@@ -11,6 +11,7 @@ export type CapabilitySurface =
   | "compaction"
   | "journal"
   | "peer_notes"
+  | "cafe"
   | "outpost"
   | "web"
   | "source_materials"
@@ -110,12 +111,12 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
   {
     surface: "compaction",
     access_level: "draft",
-    default_bias: "review before checkpoint",
+    default_bias: "review before Room Refresh",
     requires_operator_approval: false,
     notify_operator: "audit_only",
     max_actions_per_moment: null,
     quiet_mode: false,
-    notes: "Agents may draft and approve proposals; checkpoint creation remains Operator action."
+    notes: "Agents may draft and approve Room Notes; sending housekeeping remains Operator action."
   },
   {
     surface: "journal",
@@ -136,6 +137,16 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
     max_actions_per_moment: null,
     quiet_mode: false,
     notes: "Soren/Varro notes are not realtime DM."
+  },
+  {
+    surface: "cafe",
+    access_level: "write",
+    default_bias: "shared room; read before posting",
+    requires_operator_approval: false,
+    notify_operator: "audit_only",
+    max_actions_per_moment: null,
+    quiet_mode: false,
+    notes: "Operator-visible shared runtime room for lightweight group conversation."
   },
   {
     surface: "outpost",
@@ -249,6 +260,8 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   peer_list_notes: { surface: "peer_notes", action: "read" },
   peer_read_note: { surface: "peer_notes", action: "read" },
   peer_mark_note_read: { surface: "peer_notes", action: "write" },
+  cafe_read_room: { surface: "cafe", action: "read" },
+  cafe_post_message: { surface: "cafe", action: "write" },
   outpost_get_my_profile: { surface: "outpost", action: "read" },
   outpost_get_lobby: { surface: "outpost", action: "read" },
   outpost_grounds: { surface: "outpost", action: "read" },

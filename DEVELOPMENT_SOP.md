@@ -105,6 +105,9 @@ the live scheduler, prompt/tool surface, database schema, or active agent turns.
 Before exposing the runtime beyond local trusted access:
 
 - Put authentication in front of the operator UI.
+- Set `OPERATOR_ACCESS_TOKEN` before any non-local host can reach the app.
+- Keep localhost usable without a token for local development unless a stricter
+  dev mode is explicitly needed.
 - Keep all agent, memory, storage, and service-role operations server-side.
 - Add upload size/type limits before enabling attachments.
 - Show enough runtime health and tool audit data to debug without direct
