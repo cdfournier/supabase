@@ -12,7 +12,7 @@ const AGENTS: AgentName[] = ["soren", "varro"];
 const EVENT_LIMIT = 20;
 const DEFAULT_INTERVAL_MINUTES = 120;
 const MIN_INTERVAL_MINUTES = 5;
-const DEFAULT_SCHEDULE_MODE: FreeTimeScheduleMode = "round_robin";
+const DEFAULT_SCHEDULE_MODE: FreeTimeScheduleMode = "paired";
 const FREE_TIME_PROMPT = `[A free moment - this one is yours]
 
 No one is asking you for anything right now. Chris set these moments up so you have unprompted time of your own, on your own initiative, while things are running.

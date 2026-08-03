@@ -225,7 +225,8 @@ Check status:
 curl -s -b "$COOKIE_JAR" http://localhost:3001/api/free-time
 ```
 
-Start with the configured/default cadence:
+Start with the configured/default cadence. By default, this starts a
+120-minute paired cadence for Soren and Varro:
 
 ```bash
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
@@ -255,7 +256,7 @@ cookie jar when finished:
 rm "$COOKIE_JAR"
 ```
 
-Start with an explicit cadence:
+Start with an explicit cadence while keeping the default paired mode:
 
 ```bash
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
@@ -263,12 +264,12 @@ curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -d '{"action":"start","intervalMinutes":120}'
 ```
 
-Start paired Free Moments for Soren and Varro:
+Override the schedule mode only when testing a different behavior:
 
 ```bash
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
-  -d '{"action":"start","intervalMinutes":120,"scheduleMode":"paired"}'
+  -d '{"action":"start","intervalMinutes":120,"scheduleMode":"round_robin"}'
 ```
 
 Paired mode wakes Soren and Varro sequentially in the same scheduled cycle, then
@@ -301,8 +302,8 @@ curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
 ```
 
 The scheduler wakes Soren and Varro through their existing main conversations.
-Scheduled turns default to round-robin mode, but can run in paired mode when
-started with `scheduleMode:"paired"`. Manual UI wakes target the selected agent.
+Scheduled turns default to paired mode at a 120-minute cadence. Round-robin mode
+remains available as an explicit override for tests. Manual UI wakes target the selected agent.
 It uses `setTimeout`, schedules the next turn only after completion, keeps a
 bounded recent event log, and treats errors as status events instead of wedging
 the scheduler. A quiet Free Moments response is success.
