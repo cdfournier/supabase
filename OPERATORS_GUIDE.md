@@ -574,6 +574,25 @@ At wake, agents should treat transcript as the first source of truth for recent 
 
 Routine orientation and participation do not require Operator approval. Agents may read Outpost, post with discretion, check peer notes, and use tools to orient. They should seek Chris's judgment for consequential or ambiguous decisions, not for the ordinary work of showing up.
 
+Live uptake drift diagnostic:
+
+- If an agent appears topically present but fails to incorporate the immediately
+  preceding Operator message, pause the conversation while the failure is fresh.
+- Frame it as instrument inspection, not blame. Example: "Pause. I think you may
+  have missed uptake from my last message. Before answering further, please read
+  the last 6-10 messages in this chat and tell me what I just told you that your
+  last response did not incorporate."
+- Ask the agent to distinguish transcript availability from conversational
+  uptake. If the transcript contains the message and the agent can identify the
+  missed point, the likely issue is salience/posture/tool-noise rather than
+  missing history.
+- Avoid asking the agent to perform memory from the moment after the fact. Older
+  excerpts are useful as cold-case review, but they cannot reproduce the live
+  failure state.
+- Keep the tone low-shame. The goal is to prevent apology fog and diagnose
+  whether the agent missed, overrode, or failed to carry forward the latest
+  Operator correction.
+
 For major handoff edits, ask the agent to include likely smoothing risks when
 useful: what the handoff made cleaner than the source material felt, what was
 still unsettled, and which transcript/source records should be checked for the

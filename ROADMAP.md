@@ -549,6 +549,10 @@ Free Moments and runtime control:
 - Added derived context posture receipts to Free Moment wakes so agents can see
   computed context bounds, loaded/available memory counts, transcript window
   limits, known omissions, and recovery tools before reasoning from absence.
+- Reliability backlog: add Anthropic fetch timeouts, one retry for
+  infrastructure-shaped scheduled wake failures such as `fetch failed`, durable
+  Supabase scheduler-event logging, and an always-on runtime host option
+  (Raspberry Pi or Mac mini) to reduce laptop sleep/wake misses.
 
 Temporal orientation:
 

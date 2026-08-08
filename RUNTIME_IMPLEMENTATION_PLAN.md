@@ -267,7 +267,7 @@ Implemented V1 slices:
 - Added `lib/free-time.ts` with `status`, `start`, `stop`, and `tick`.
 - Added `/api/free-time` for status, start, stop, and manual tick.
 - Kept Free Moments local and in-process with no boot auto-start.
-- Wakes `soren` and `varro` round-robin, one turn at a time, through existing main conversations.
+- Wakes `soren` and `varro` through existing main conversations. Scheduled turns default to paired mode, waking both sequentially in one scheduled cycle; round-robin remains available for explicit tests.
 - Uses `setTimeout` and schedules the next turn only after completion.
 - Records a bounded recent event log and keeps errors visible without wedging the scheduler.
 - Added cadence environment variables with a default of 120 minutes and a floor of 5 minutes.
@@ -275,6 +275,20 @@ Implemented V1 slices:
 - Updated the Free Moments prompt to make each wake an unprompted moment of
   agency rather than a task, while still requiring tools before describing
   external or stored content.
+
+Reliability hardening backlog:
+
+- Add an explicit Anthropic fetch timeout around Free Moment model calls so
+  sleeping/waking host machines or transient network stalls fail quickly and
+  visibly.
+- Retry scheduled Free Moment turns once for infrastructure-shaped failures such
+  as `fetch failed`, without retrying model/content/tool errors by default.
+- Persist Free Moment scheduler events to Supabase instead of relying only on the
+  in-process 20-event buffer, so missed, failed, or delayed turns remain
+  auditable after restarts.
+- Consider an always-on Raspberry Pi or Mac mini runtime host so local scheduled
+  wakes are not coupled to laptop sleep, closed-lid behavior, or network
+  reconnection after wake.
 
 Implemented temporal orientation guard:
 
