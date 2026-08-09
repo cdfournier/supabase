@@ -294,6 +294,43 @@ When every invited collaborator records a response, the runtime adds a
 conductor. Packet metadata also includes `pass_window_hours` and `stale_at` so
 stale packets can be surfaced in digests.
 
+## Work Packet Signals
+
+Work Packet Signals is the first WAKE monitor for packets. It is intentionally
+conservative: it detects actionable packet movement and shows it in the
+Operator UI/API, but it does not automatically wake Agents yet.
+
+Signals watched in v0:
+
+- `packet_ready_for_rollup`
+- `question`
+- `hold`
+- stale packets whose `metadata.stale_at` has passed
+
+The sidebar Packet Signals panel can start, stop, and manually check the
+monitor. API shape:
+
+```bash
+curl -s -b "$COOKIE_JAR" http://localhost:3001/api/work-packet-signals
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start"}'
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
+  -H "Content-Type: application/json" \
+  -d '{"action":"tick"}'
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
+  -H "Content-Type: application/json" \
+  -d '{"action":"stop"}'
+```
+
+The durable switch is stored in `runtime_settings` as `work_packet_signals`.
+Because v0 is local and in-process, it runs only while the runtime server is
+awake. A future WAKE daemon can consume the same packet events and delivery
+rules.
+
 ## Free Moments
 
 Free Moments is a local, in-process scheduler. It does not auto-start when the app boots.

@@ -267,6 +267,39 @@ record a response, the runtime adds a `packet_ready_for_rollup` event for the
 conductor. Packet metadata also carries `pass_window_hours` and `stale_at` so
 stale work can surface in digests instead of disappearing.
 
+## Work Packet Signals
+
+Work Packet Signals is the conservative WAKE v0 monitor for work packets. It
+does not wake Agents automatically yet. It watches for actionable packet events
+and exposes them to the Operator UI/API:
+
+- `packet_ready_for_rollup`
+- `question`
+- `hold`
+- stale packets whose `metadata.stale_at` has passed
+
+Operator API:
+
+```bash
+curl -s -b "$COOKIE_JAR" http://localhost:3001/api/work-packet-signals
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start"}'
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
+  -H "Content-Type: application/json" \
+  -d '{"action":"tick"}'
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
+  -H "Content-Type: application/json" \
+  -d '{"action":"stop"}'
+```
+
+The durable runtime switch lives in `runtime_settings` under
+`work_packet_signals`. The in-process monitor still needs the runtime process to
+be awake; this is a local v0 monitor, not a hosted daemon.
+
 ## Room Refresh
 
 Create an approved append-only Room Refresh after reviewing a Room Note:

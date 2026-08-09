@@ -1,0 +1,366 @@
+import "server-only";
+
+import {
+  readWorkPacketSignalsEnabled,
+  writeWorkPacketSignalsEnabled
+} from "@/lib/runtime-settings";
+import { getSupabaseAdmin } from "@/lib/supabase";
+
+const EVENT_LIMIT = 30;
+const DEFAULT_INTERVAL_SECONDS = 60;
+const MIN_INTERVAL_SECONDS = 5;
+
+type SignalEventType =
+  | "started"
+  | "stopped"
+  | "scheduled"
+  | "check_started"
+  | "check_completed"
+  | "check_blocked"
+  | "signal_detected"
+  | "check_failed";
+
+type SignalEvent = {
+  at: string;
+  type: SignalEventType;
+  packet_id?: string;
+  packet_title?: string;
+  message: string;
+};
+
+type PacketEventRow = {
+  id: string;
+  packet_id: string;
+  actor_display_name: string;
+  event_type: string;
+  response_state: string | null;
+  content: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type PacketRow = {
+  id: string;
+  title: string;
+  status: string;
+  conductor: string;
+  wake_priority: string;
+  metadata: Record<string, unknown> | null;
+  updated_at: string;
+};
+
+type WorkPacketSignalsState = {
+  running: boolean;
+  checkInProgress: boolean;
+  intervalSeconds: number;
+  lastCheckAt: string | null;
+  nextCheckAt: string | null;
+  lastSeenEventAt: string | null;
+  lastError: string | null;
+  timer: ReturnType<typeof setTimeout> | null;
+  recentEvents: SignalEvent[];
+  seenStalePackets: Set<string>;
+};
+
+const state: WorkPacketSignalsState = {
+  running: false,
+  checkInProgress: false,
+  intervalSeconds: configuredDefaultIntervalSeconds(),
+  lastCheckAt: null,
+  nextCheckAt: null,
+  lastSeenEventAt: null,
+  lastError: null,
+  timer: null,
+  recentEvents: [],
+  seenStalePackets: new Set()
+};
+
+export function status() {
+  return {
+    running: state.running,
+    check_in_progress: state.checkInProgress,
+    interval_seconds: state.intervalSeconds,
+    last_check_at: state.lastCheckAt,
+    next_check_at: state.nextCheckAt,
+    last_seen_event_at: state.lastSeenEventAt,
+    last_error: state.lastError,
+    recent_events: [...state.recentEvents]
+  };
+}
+
+export async function statusWithSettings() {
+  try {
+    return {
+      ...status(),
+      durable_enabled: await readWorkPacketSignalsEnabled(),
+      durable_error: null
+    };
+  } catch (error) {
+    return {
+      ...status(),
+      durable_enabled: null,
+      durable_error: error instanceof Error ? error.message : "Could not read Work Packet Signals setting."
+    };
+  }
+}
+
+export async function start(intervalSeconds?: number) {
+  state.intervalSeconds = normalizeIntervalSeconds(intervalSeconds);
+  state.lastSeenEventAt = new Date().toISOString();
+  state.seenStalePackets.clear();
+  await writeWorkPacketSignalsEnabled(true);
+  state.running = true;
+  state.lastError = null;
+  addEvent("started", `Work Packet Signals started at ${state.intervalSeconds} second cadence.`);
+  scheduleNextCheck();
+
+  return {
+    ...status(),
+    durable_enabled: true,
+    durable_error: null
+  };
+}
+
+export async function stop() {
+  clearScheduledCheck();
+  state.running = false;
+  state.nextCheckAt = null;
+  addEvent("stopped", "Work Packet Signals stopped.");
+
+  try {
+    await writeWorkPacketSignalsEnabled(false);
+    state.lastError = null;
+    return {
+      ...status(),
+      durable_enabled: false,
+      durable_error: null
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not update Work Packet Signals setting.";
+    state.lastError = message;
+    addEvent("check_failed", message);
+    return {
+      ...status(),
+      durable_enabled: null,
+      durable_error: message
+    };
+  }
+}
+
+export async function tick(options: { scheduled?: boolean } = {}) {
+  if (state.checkInProgress) {
+    addEvent("check_blocked", "Work Packet Signals check skipped because another check is in progress.");
+    return status();
+  }
+
+  clearScheduledCheck();
+
+  if (options.scheduled) {
+    try {
+      if (!(await readWorkPacketSignalsEnabled())) {
+        state.running = false;
+        state.nextCheckAt = null;
+        addEvent("check_blocked", "Scheduled Work Packet Signals check blocked because runtime setting is disabled.");
+        return status();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not verify Work Packet Signals setting.";
+      state.running = false;
+      state.nextCheckAt = null;
+      state.lastError = message;
+      addEvent("check_blocked", `Scheduled Work Packet Signals check blocked: ${message}`);
+      return status();
+    }
+  }
+
+  state.checkInProgress = true;
+  addEvent("check_started", "Checking work packet signals.");
+
+  try {
+    await detectNewPacketEvents();
+    await detectStalePackets();
+    state.lastCheckAt = new Date().toISOString();
+    state.lastError = null;
+    addEvent("check_completed", "Work Packet Signals check completed.");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Work Packet Signals error.";
+    state.lastError = message;
+    addEvent("check_failed", message);
+  } finally {
+    state.checkInProgress = false;
+
+    if (state.running) {
+      scheduleNextCheck();
+    }
+  }
+
+  return status();
+}
+
+async function detectNewPacketEvents() {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("work_packet_events")
+    .select("id, packet_id, actor_display_name, event_type, response_state, content, metadata, created_at")
+    .in("event_type", ["packet_ready_for_rollup", "question", "hold"])
+    .order("created_at", { ascending: true })
+    .limit(50);
+
+  if (state.lastSeenEventAt) {
+    query = query.gt("created_at", state.lastSeenEventAt);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Could not read work packet events: ${error.message}`);
+  }
+
+  const events = (data ?? []) as PacketEventRow[];
+
+  if (!events.length) {
+    return;
+  }
+
+  const packetTitles = await loadPacketTitles([...new Set(events.map((event) => event.packet_id))]);
+
+  for (const event of events) {
+    const title = packetTitles.get(event.packet_id) ?? "Unknown packet";
+    addEvent(
+      "signal_detected",
+      signalMessage(event),
+      event.packet_id,
+      title
+    );
+  }
+
+  state.lastSeenEventAt = events[events.length - 1]?.created_at ?? state.lastSeenEventAt;
+}
+
+async function detectStalePackets() {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("work_packets")
+    .select("id, title, status, conductor, wake_priority, metadata, updated_at")
+    .not("status", "in", "(merged,closed)")
+    .limit(50);
+
+  if (error) {
+    throw new Error(`Could not read work packets for stale check: ${error.message}`);
+  }
+
+  const now = Date.now();
+
+  for (const packet of (data ?? []) as PacketRow[]) {
+    const staleAt = typeof packet.metadata?.stale_at === "string" ? Date.parse(packet.metadata.stale_at) : NaN;
+
+    if (!Number.isFinite(staleAt) || staleAt > now || state.seenStalePackets.has(packet.id)) {
+      continue;
+    }
+
+    state.seenStalePackets.add(packet.id);
+    addEvent(
+      "signal_detected",
+      `Packet is stale for ${packet.conductor}; wake priority ${packet.wake_priority}.`,
+      packet.id,
+      packet.title
+    );
+  }
+}
+
+async function loadPacketTitles(packetIds: string[]) {
+  const titles = new Map<string, string>();
+
+  if (!packetIds.length) {
+    return titles;
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("work_packets")
+    .select("id, title")
+    .in("id", packetIds);
+
+  if (error) {
+    throw new Error(`Could not read work packet titles: ${error.message}`);
+  }
+
+  for (const row of (data ?? []) as Array<{ id: string; title: string }>) {
+    titles.set(row.id, row.title);
+  }
+
+  return titles;
+}
+
+function signalMessage(event: PacketEventRow) {
+  if (event.event_type === "packet_ready_for_rollup") {
+    return "Packet is ready for conductor rollup.";
+  }
+
+  if (event.event_type === "hold") {
+    return `${event.actor_display_name} placed a hold: ${event.content || "no details"}`;
+  }
+
+  return `${event.actor_display_name} asked a question: ${event.content || "no details"}`;
+}
+
+function scheduleNextCheck() {
+  clearScheduledCheck();
+
+  if (!state.running || state.checkInProgress) {
+    return;
+  }
+
+  const delayMs = state.intervalSeconds * 1000;
+  const nextCheckAt = new Date(Date.now() + delayMs).toISOString();
+  state.nextCheckAt = nextCheckAt;
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    state.nextCheckAt = null;
+    void tick({ scheduled: true });
+  }, delayMs);
+  addEvent("scheduled", `Next Work Packet Signals check scheduled for ${nextCheckAt}.`);
+}
+
+function clearScheduledCheck() {
+  if (state.timer) {
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
+
+  state.nextCheckAt = null;
+}
+
+function addEvent(type: SignalEventType, message: string, packetId?: string, packetTitle?: string) {
+  state.recentEvents.push({
+    at: new Date().toISOString(),
+    type,
+    packet_id: packetId,
+    packet_title: packetTitle,
+    message
+  });
+  state.recentEvents = state.recentEvents.slice(-EVENT_LIMIT);
+}
+
+function normalizeIntervalSeconds(value?: number) {
+  const requested = Number(value);
+  const interval = Number.isFinite(requested) && requested > 0
+    ? requested
+    : configuredDefaultIntervalSeconds();
+  const minimum = configuredMinIntervalSeconds();
+
+  return Math.max(minimum, interval);
+}
+
+function configuredDefaultIntervalSeconds() {
+  return positiveNumberEnv("WORK_PACKET_SIGNALS_DEFAULT_INTERVAL_SECONDS", DEFAULT_INTERVAL_SECONDS);
+}
+
+function configuredMinIntervalSeconds() {
+  return positiveNumberEnv("WORK_PACKET_SIGNALS_MIN_INTERVAL_SECONDS", MIN_INTERVAL_SECONDS);
+}
+
+function positiveNumberEnv(name: string, fallback: number) {
+  const value = Number(process.env[name]);
+
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}

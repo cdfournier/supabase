@@ -243,8 +243,30 @@ type FreeTimeStatus = {
   recent_events: FreeTimeEvent[];
 };
 
+type WorkPacketSignalEvent = {
+  at: string;
+  type: string;
+  packet_id?: string;
+  packet_title?: string;
+  message: string;
+};
+
+type WorkPacketSignalsStatus = {
+  running: boolean;
+  durable_enabled?: boolean | null;
+  durable_error?: string | null;
+  check_in_progress: boolean;
+  interval_seconds: number;
+  last_check_at: string | null;
+  next_check_at: string | null;
+  last_seen_event_at: string | null;
+  last_error: string | null;
+  recent_events: WorkPacketSignalEvent[];
+};
+
 const defaultAgent: AgentName = "soren";
 const freeTimePollMs = 30_000;
+const workPacketSignalsPollMs = 15_000;
 const liveTranscriptLimit = 120;
 
 export default function Home() {
@@ -264,6 +286,10 @@ export default function Home() {
   const [freeTimeLoading, setFreeTimeLoading] = useState(true);
   const [freeTimeRequestInProgress, setFreeTimeRequestInProgress] = useState(false);
   const [freeTimeError, setFreeTimeError] = useState("");
+  const [workPacketSignals, setWorkPacketSignals] = useState<WorkPacketSignalsStatus | null>(null);
+  const [workPacketSignalsLoading, setWorkPacketSignalsLoading] = useState(true);
+  const [workPacketSignalsRequestInProgress, setWorkPacketSignalsRequestInProgress] = useState(false);
+  const [workPacketSignalsError, setWorkPacketSignalsError] = useState("");
   const [compactionPreview, setCompactionPreview] = useState<CompactionPreview | null>(null);
   const [compactionLoading, setCompactionLoading] = useState(false);
   const [compactionError, setCompactionError] = useState("");
@@ -284,6 +310,7 @@ export default function Home() {
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const freeTimeStatusLoadedRef = useRef(false);
+  const workPacketSignalsStatusLoadedRef = useRef(false);
 
   const activeAgent = useMemo(
     () => agents.find((agent) => agent.name === selectedAgent),
@@ -328,6 +355,28 @@ export default function Home() {
       );
     } finally {
       setFreeTimeLoading(false);
+    }
+  }, []);
+
+  const loadWorkPacketSignalsStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/work-packet-signals");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load Work Packet Signals status.");
+      }
+
+      setWorkPacketSignals(data);
+      setWorkPacketSignalsError("");
+    } catch (statusError) {
+      setWorkPacketSignalsError(
+        statusError instanceof Error
+          ? statusError.message
+          : "Could not load Work Packet Signals status."
+      );
+    } finally {
+      setWorkPacketSignalsLoading(false);
     }
   }, []);
 
@@ -450,6 +499,36 @@ export default function Home() {
       window.clearInterval(interval);
     };
   }, [freeTime?.running, freeTime?.turn_in_progress, freeTimeRequestInProgress, loadFreeTimeStatus]);
+
+  useEffect(() => {
+    const shouldPoll = Boolean(
+      workPacketSignals?.running ||
+      workPacketSignals?.check_in_progress ||
+      workPacketSignalsRequestInProgress
+    );
+
+    if (!workPacketSignalsStatusLoadedRef.current) {
+      workPacketSignalsStatusLoadedRef.current = true;
+      void loadWorkPacketSignalsStatus();
+    }
+
+    if (!shouldPoll) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadWorkPacketSignalsStatus();
+    }, workPacketSignalsPollMs);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [
+    workPacketSignals?.running,
+    workPacketSignals?.check_in_progress,
+    workPacketSignalsRequestInProgress,
+    loadWorkPacketSignalsStatus
+  ]);
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({
@@ -666,6 +745,41 @@ export default function Home() {
     } finally {
       setFreeTimeRequestInProgress(false);
       setFreeTimeLoading(false);
+    }
+  }
+
+  async function runWorkPacketSignalsAction(action: "start" | "stop" | "tick") {
+    if (workPacketSignalsRequestInProgress) {
+      return;
+    }
+
+    setWorkPacketSignalsRequestInProgress(true);
+    setWorkPacketSignalsError("");
+
+    try {
+      const response = await fetch("/api/work-packet-signals", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ action })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Work Packet Signals request failed.");
+      }
+
+      setWorkPacketSignals(data);
+    } catch (actionError) {
+      setWorkPacketSignalsError(
+        actionError instanceof Error
+          ? actionError.message
+          : "Work Packet Signals request failed."
+      );
+    } finally {
+      setWorkPacketSignalsRequestInProgress(false);
+      setWorkPacketSignalsLoading(false);
     }
   }
 
@@ -1013,6 +1127,14 @@ export default function Home() {
           onAction={runFreeTimeAction}
           requestInProgress={freeTimeRequestInProgress}
           status={freeTime}
+        />
+
+        <WorkPacketSignalsPanel
+          error={workPacketSignalsError}
+          loading={workPacketSignalsLoading}
+          onAction={runWorkPacketSignalsAction}
+          requestInProgress={workPacketSignalsRequestInProgress}
+          status={workPacketSignals}
         />
       </aside>
 
@@ -1517,6 +1639,124 @@ function FreeTimePanel({
         </>
       ) : (
         <p className="health-empty">{loading ? "Loading Free Moments..." : "Free Moments unavailable."}</p>
+      )}
+
+      {error ? <p className="health-error">{error}</p> : null}
+    </section>
+  );
+}
+
+function WorkPacketSignalsPanel({
+  error,
+  loading,
+  onAction,
+  requestInProgress,
+  status
+}: {
+  error: string;
+  loading: boolean;
+  onAction: (action: "start" | "stop" | "tick") => void;
+  requestInProgress: boolean;
+  status: WorkPacketSignalsStatus | null;
+}) {
+  const disabled = loading || requestInProgress;
+  const recentEvents = status?.recent_events ?? [];
+
+  return (
+    <section className="health-panel signal-panel" aria-label="Work Packet Signals">
+      <div className="health-heading">
+        <h2>Packet Signals</h2>
+        <span className={`status-dot ${status?.running ? "ok" : "warn"}`} />
+      </div>
+
+      {status ? (
+        <>
+          <dl className="health-list free-time-list">
+            <div>
+              <dt>Status</dt>
+              <dd>{status.running ? "running" : "stopped"}</dd>
+            </div>
+            <div>
+              <dt>DB switch</dt>
+              <dd>{status.durable_enabled === undefined ? "unknown" : status.durable_enabled ? "enabled" : "disabled"}</dd>
+            </div>
+            <div>
+              <dt>Check</dt>
+              <dd>{status.check_in_progress ? "in progress" : "idle"}</dd>
+            </div>
+            <div>
+              <dt>Cadence</dt>
+              <dd>{status.interval_seconds}s</dd>
+            </div>
+            <div>
+              <dt>Next check</dt>
+              <dd>{formatStatusTime(status.next_check_at)}</dd>
+            </div>
+            <div>
+              <dt>Last check</dt>
+              <dd>{formatStatusTime(status.last_check_at)}</dd>
+            </div>
+            <div>
+              <dt>Last signal</dt>
+              <dd>{formatStatusTime(status.last_seen_event_at)}</dd>
+            </div>
+            <div>
+              <dt>Last error</dt>
+              <dd>{status.last_error ?? "none"}</dd>
+            </div>
+          </dl>
+
+          <div className="free-time-actions">
+            <button
+              className="quiet-action"
+              disabled={disabled || status.running}
+              onClick={() => onAction("start")}
+              type="button"
+            >
+              {requestInProgress ? "Working" : "Start"}
+            </button>
+            <button
+              className="quiet-action"
+              disabled={disabled || !status.running}
+              onClick={() => onAction("stop")}
+              type="button"
+            >
+              Stop
+            </button>
+            <button
+              className="quiet-action"
+              disabled={disabled || status.check_in_progress}
+              onClick={() => onAction("tick")}
+              type="button"
+            >
+              Check Now
+            </button>
+          </div>
+
+          <div className="free-time-events">
+            <div className="pressure-row">
+              <span>Recent signals</span>
+              <strong>{recentEvents.length}</strong>
+            </div>
+            {recentEvents.length > 0 ? (
+              <ol>
+                {recentEvents.map((event) => (
+                  <li key={`${event.at}-${event.type}-${event.message}`}>
+                    <time dateTime={event.at}>{formatShortTime(event.at)}</time>
+                    <span>
+                      {event.packet_title ? `${event.packet_title}: ` : ""}
+                      {event.message}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p>No packet signals yet.</p>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="health-empty">{loading ? "Loading Packet Signals..." : "Packet Signals unavailable."}</p>
       )}
 
       {error ? <p className="health-error">{error}</p> : null}
