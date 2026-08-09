@@ -354,6 +354,17 @@ tools. Soren and Varro can read pending signals with `work_packet_signal_list`
 and acknowledge one or all with `work_packet_signal_ack`. Bridge users cannot
 start, stop, or tick the monitor.
 
+Signal inbox reads refresh before returning. If the event monitor has not yet
+noticed a packet-created event, the inbox derives an invitation from open
+packets where that participant has not responded. Successful packet responses
+acknowledge pending signals for that participant. Duplicate responses from the
+same participant are rejected; use packet comments for follow-up notes.
+
+Conductor fallback is still manual in v0. If the conductor cannot complete a
+rollup, the Operator can create the rollup through the protected API or
+reassign/close the packet manually. Automated conductor reassignment belongs to
+a later WAKE pass.
+
 ## Free Moments
 
 Free Moments is a local, in-process scheduler. It does not auto-start when the app boots.

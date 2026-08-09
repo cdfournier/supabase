@@ -217,6 +217,7 @@ export async function respondToWorkPacket(supabase: Supabase, input: unknown, ac
   const eventType = responseState === "question" || responseState === "hold" ? responseState : "response";
 
   await loadPacket(supabase, packetId);
+  await assertNoPriorResponse(supabase, packetId, actor);
   await insertPacketEvent(supabase, packetId, actor, eventType, responseState, content, metadata);
   await updatePacketAfterResponse(supabase, packetId, responseState);
   await maybeMarkReadyForRollup(supabase, packetId);
@@ -340,6 +341,28 @@ async function loadPacketEvents(supabase: Supabase, id: string) {
   }
 
   return (data ?? []) as WorkPacketEvent[];
+}
+
+async function assertNoPriorResponse(supabase: Supabase, packetId: string, actor: Actor) {
+  const { data, error } = await supabase
+    .from("work_packet_events")
+    .select("id, response_state, created_at")
+    .eq("packet_id", packetId)
+    .eq("actor_id", actor.actorId)
+    .not("response_state", "is", null)
+    .limit(1);
+
+  if (error) {
+    throw workPacketSetupError(error.message);
+  }
+
+  const prior = data?.[0];
+
+  if (prior) {
+    throw new Error(
+      `${actor.displayName} already recorded a response for this work packet at ${prior.created_at}. Add a comment instead of responding twice.`
+    );
+  }
 }
 
 async function insertPacketEvent(

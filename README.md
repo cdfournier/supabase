@@ -321,6 +321,18 @@ tools. Soren and Varro can read their own pending signals with
 `work_packet_signal_list` and acknowledge one or all with
 `work_packet_signal_ack`. Bridge users cannot start, stop, or tick the monitor.
 
+Inbox reads are self-refreshing: the runtime checks packet events before
+returning signals and also derives open packet invitations from unclosed packets
+when a participant has not yet responded. A successful packet response
+acknowledges that participant's pending packet signals. Duplicate packet
+responses from the same participant are blocked; use packet comments for
+follow-up notes after responding.
+
+Open v0 guardrail: conductor fallback is still manual. If the conductor cannot
+complete a rollup, the Operator can create the rollup through the protected API
+or reassign/close the packet manually; automated conductor reassignment belongs
+to a later WAKE pass.
+
 ## Room Refresh
 
 Create an approved append-only Room Refresh after reviewing a Room Note:

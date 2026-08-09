@@ -4,6 +4,7 @@ import {
   cafeBridgeTokenMatches
 } from "@/lib/cafe";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { acknowledgeSignals } from "@/lib/work-packet-signals";
 import {
   actorFromId,
   commentOnWorkPacket,
@@ -69,7 +70,13 @@ export async function POST(request: Request) {
     const actor = actorFromId(participantId);
 
     if (action === "respond") {
-      return NextResponse.json(await respondToWorkPacket(supabase, body, actor));
+      const packet = await respondToWorkPacket(supabase, body, actor);
+      const signalAcknowledgement = acknowledgeSignals(participantId);
+
+      return NextResponse.json({
+        ...packet,
+        signal_acknowledgement: signalAcknowledgement
+      });
     }
 
     if (action === "comment") {

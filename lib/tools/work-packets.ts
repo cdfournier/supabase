@@ -2,7 +2,7 @@ import "server-only";
 
 import type { AgentName } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
-import { acknowledgeSignals, signalsForParticipant } from "@/lib/work-packet-signals";
+import { acknowledgeSignals, refreshSignalsForParticipant } from "@/lib/work-packet-signals";
 import {
   actorFromId,
   commentOnWorkPacket,
@@ -54,12 +54,15 @@ export async function getRuntimeWorkPacket(agent: AgentName, input: unknown) {
 }
 
 export async function respondToRuntimeWorkPacket(agent: AgentName, input: unknown) {
+  const participantId = `agent:${agent}`;
   const packet = await respondToWorkPacket(getSupabaseAdmin(), input, actorFromId(`agent:${agent}`));
+  const signalAcknowledgement = acknowledgeSignals(participantId);
 
   return stringifyToolPayload({
     note:
       "Work packet response recorded. Pass, defer, no_comment, question, and hold are all first-class response states.",
     active_agent: agent,
+    signal_acknowledgement: signalAcknowledgement,
     ...packet
   });
 }
@@ -76,12 +79,13 @@ export async function commentOnRuntimeWorkPacket(agent: AgentName, input: unknow
 
 export async function listRuntimeWorkPacketSignals(agent: AgentName) {
   const participantId = `agent:${agent}`;
+  const signals = await refreshSignalsForParticipant(participantId);
 
   return stringifyToolPayload({
     note:
       "Work Packet Signals addressed to the active agent. These are transient runtime notifications; acknowledge them after noticing or handling them.",
     active_agent: agent,
-    ...signalsForParticipant(participantId)
+    ...signals
   });
 }
 

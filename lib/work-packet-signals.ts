@@ -6,7 +6,7 @@ import {
 } from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
-const EVENT_LIMIT = 30;
+const EVENT_LIMIT = 80;
 const DEFAULT_INTERVAL_SECONDS = 60;
 const MIN_INTERVAL_SECONDS = 5;
 
@@ -22,6 +22,7 @@ type SignalEventType =
 
 type SignalEvent = {
   id: string;
+  source_key?: string;
   at: string;
   type: SignalEventType;
   packet_id?: string;
@@ -123,6 +124,13 @@ export function signalsForParticipant(participantId: string) {
     pending_signals: signals.filter((event) => !event.acknowledged_by.includes(participantId)),
     recent_signals: signals
   };
+}
+
+export async function refreshSignalsForParticipant(participantId: string) {
+  await tick();
+  await detectOpenPacketsForParticipant(participantId);
+
+  return signalsForParticipant(participantId);
 }
 
 export function acknowledgeSignals(participantId: string, signalId?: string) {
@@ -276,7 +284,8 @@ async function detectNewPacketEvents() {
       signalMessage(event, context),
       event.packet_id,
       context?.title ?? "Unknown packet",
-      signalTargets(event, context)
+      signalTargets(event, context),
+      `event:${event.id}`
     );
   }
 
@@ -310,7 +319,61 @@ async function detectStalePackets() {
       `Packet is stale for ${packet.conductor}; wake priority ${packet.wake_priority}.`,
       packet.id,
       packet.title,
-      [packet.conductor]
+      [packet.conductor],
+      `stale:${packet.id}`
+    );
+  }
+}
+
+async function detectOpenPacketsForParticipant(participantId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("work_packets")
+    .select("id, title, status, owner_agent, conductor, collaborators, wake_priority, metadata, updated_at")
+    .not("status", "in", "(merged,closed)")
+    .order("updated_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    throw new Error(`Could not read work packets for participant signals: ${error.message}`);
+  }
+
+  const packets = ((data ?? []) as PacketRow[]).filter((packet) =>
+    packet.collaborators.includes(participantId) || packet.owner_agent === participantId
+  );
+
+  if (!packets.length) {
+    return;
+  }
+
+  const packetIds = packets.map((packet) => packet.id);
+  const { data: responses, error: responseError } = await supabase
+    .from("work_packet_events")
+    .select("packet_id, actor_id, response_state")
+    .eq("actor_id", participantId)
+    .not("response_state", "is", null)
+    .in("packet_id", packetIds);
+
+  if (responseError) {
+    throw new Error(`Could not read work packet responses for participant signals: ${responseError.message}`);
+  }
+
+  const respondedPacketIds = new Set(
+    (responses ?? []).map((response) => String(response.packet_id))
+  );
+
+  for (const packet of packets) {
+    if (respondedPacketIds.has(packet.id)) {
+      continue;
+    }
+
+    addEvent(
+      "signal_detected",
+      `Packet is available for review; conductor ${packet.conductor}.`,
+      packet.id,
+      packet.title,
+      [participantId],
+      `participant:${participantId}:packet:${packet.id}:open`
     );
   }
 }
@@ -401,10 +464,16 @@ function addEvent(
   message: string,
   packetId?: string,
   packetTitle?: string,
-  targetIds: string[] = []
+  targetIds: string[] = [],
+  sourceKey?: string
 ) {
+  if (sourceKey && state.recentEvents.some((event) => event.source_key === sourceKey)) {
+    return;
+  }
+
   state.recentEvents.push({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    source_key: sourceKey,
     at: new Date().toISOString(),
     type,
     packet_id: packetId,

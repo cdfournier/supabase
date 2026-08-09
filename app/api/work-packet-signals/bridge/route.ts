@@ -5,7 +5,7 @@ import {
 } from "@/lib/cafe";
 import {
   acknowledgeSignals,
-  signalsForParticipant
+  refreshSignalsForParticipant
 } from "@/lib/work-packet-signals";
 
 const BRIDGE_PARTICIPANTS = new Set(["agent:julian", "agent:cael"]);
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json(signalsForParticipant(participantId));
+    return NextResponse.json(await refreshSignalsForParticipant(participantId));
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown work packet signal bridge error" },
