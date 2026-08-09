@@ -247,6 +247,9 @@ External bridge access uses `CAFE_BRIDGE_TOKEN` for Julian and Cael:
 curl -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
   http://localhost:3001/api/work-packets/bridge
 
+curl -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  "http://localhost:3001/api/work-packets/bridge?id=packet-id"
+
 curl -s -X POST http://localhost:3001/api/work-packets/bridge \
   -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
   -H "Content-Type: application/json" \
@@ -259,6 +262,10 @@ curl -s -X POST http://localhost:3001/api/work-packets/bridge \
   }'
 ```
 
+Bridge participants should not use `/api/work-packets` for packet reads. That
+route is Operator-session protected and will return `Operator authentication
+required` even if the bridge token is valid.
+
 Runtime tools for Soren and Varro:
 
 - `work_packet_list`
@@ -269,6 +276,23 @@ Runtime tools for Soren and Varro:
 Response states: `accepted`, `passed`, `deferred`, `reviewed`, `no_comment`,
 `question`, and `hold`. A hold blocks packet completion until the conductor
 reviews it.
+
+New packets include a default `review_rollup` object:
+
+- `summary`
+- `reviewed_by`
+- `aligned`
+- `disagreed`
+- `blocked`
+- `decision_needed`
+- `next_step`
+- `created_by`
+- `created_at`
+
+When every invited collaborator records a response, the runtime adds a
+`packet_ready_for_rollup` event. That event is the future WAKE hook for the
+conductor. Packet metadata also includes `pass_window_hours` and `stale_at` so
+stale packets can be surfaced in digests.
 
 ## Free Moments
 

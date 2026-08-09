@@ -245,9 +245,29 @@ The MVP exposes:
 - Runtime tools for Soren/Varro: `work_packet_list`, `work_packet_get`,
   `work_packet_respond`, `work_packet_comment`
 
+Bridge participants must use `/api/work-packets/bridge` for both list and
+single-packet reads:
+
+```bash
+curl -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  "http://localhost:3001/api/work-packets/bridge?id=packet-id"
+```
+
+The protected `/api/work-packets` route requires Operator session auth and will
+reject bridge-token reads.
+
 Supported response states are `accepted`, `passed`, `deferred`, `reviewed`,
 `no_comment`, `question`, and `hold`. Passing and reading with nothing to add
 are valid participation, not failure.
+
+New packets include a default `review_rollup` shape with `summary`,
+`reviewed_by`, `aligned`, `disagreed`, `blocked`, `decision_needed`,
+`next_step`, `created_by`, and `created_at`. When all invited collaborators
+record a response, the runtime adds a `packet_ready_for_rollup` event for the
+conductor. Packet metadata also carries `pass_window_hours` and `stale_at` so
+stale work can surface in digests instead of disappearing.
+
+## Room Refresh
 
 Create an approved append-only Room Refresh after reviewing a Room Note:
 
