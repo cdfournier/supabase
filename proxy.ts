@@ -6,7 +6,12 @@ import {
   operatorSessionCookieValid
 } from "@/lib/operator-auth";
 
-const PUBLIC_PATHS = new Set(["/operator-login", "/api/operator/session", "/api/cafe/bridge"]);
+const PUBLIC_PATHS = new Set([
+  "/operator-login",
+  "/api/operator/session",
+  "/api/cafe/bridge",
+  "/api/work-packets/bridge"
+]);
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

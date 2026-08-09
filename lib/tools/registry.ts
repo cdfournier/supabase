@@ -58,6 +58,12 @@ import {
 } from "@/lib/tools/runtime-journal";
 import { postCafeMessage, readCafeRoom } from "@/lib/tools/cafe";
 import {
+  commentOnRuntimeWorkPacket,
+  getRuntimeWorkPacket,
+  listRuntimeWorkPackets,
+  respondToRuntimeWorkPacket
+} from "@/lib/tools/work-packets";
+import {
   getSourceMaterial,
   listSourceMaterials,
   readSourceMaterialText
@@ -220,6 +226,108 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "work_packet_list",
+    description:
+      "List Operator-visible work packets. Packets are invitations, not assignments; use this to discover available review or collaboration work.",
+    input_schema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["queued", "active", "blocked", "review", "merged", "closed"],
+          description: "Optional packet status filter."
+        },
+        participant: {
+          type: "string",
+          description: "Optional participant id filter, such as agent:soren or agent:varro."
+        },
+        limit: {
+          type: "number",
+          description: "Optional number of packets. Defaults to 12 and caps at 12."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "work_packet_get",
+    description:
+      "Read one work packet with its event trail. Use before responding or commenting so the context and done criteria are clear.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The work packet id."
+        }
+      },
+      required: ["id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "work_packet_respond",
+    description:
+      "Record your response to a work packet. Passing, deferring, reviewing with nothing to add, asking a question, or placing a hold are valid responses.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The work packet id."
+        },
+        response_state: {
+          type: "string",
+          enum: ["accepted", "passed", "deferred", "reviewed", "no_comment", "question", "hold"],
+          description: "Your response state."
+        },
+        content: {
+          type: "string",
+          description: "Optional explanation, question, or review note."
+        },
+        metadata: {
+          type: "object",
+          description: "Optional structured receipt metadata."
+        }
+      },
+      required: ["id", "response_state"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "work_packet_comment",
+    description:
+      "Add a comment, question, or hold to a work packet. Use hold=true only when the packet should wait for conductor attention.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The work packet id."
+        },
+        content: {
+          type: "string",
+          description: "The comment or question to add."
+        },
+        question: {
+          type: "boolean",
+          description: "Set true when the comment is a question."
+        },
+        hold: {
+          type: "boolean",
+          description: "Set true when this question should block packet completion until answered."
+        },
+        metadata: {
+          type: "object",
+          description: "Optional structured receipt metadata."
+        }
+      },
+      required: ["id", "content"],
       additionalProperties: false
     }
   },
@@ -1254,6 +1362,26 @@ export async function runTool(
         return {
           ok: true,
           content: await postCafeMessage(agent, input)
+        };
+      case "work_packet_list":
+        return {
+          ok: true,
+          content: await listRuntimeWorkPackets(agent, input)
+        };
+      case "work_packet_get":
+        return {
+          ok: true,
+          content: await getRuntimeWorkPacket(agent, input)
+        };
+      case "work_packet_respond":
+        return {
+          ok: true,
+          content: await respondToRuntimeWorkPacket(agent, input)
+        };
+      case "work_packet_comment":
+        return {
+          ok: true,
+          content: await commentOnRuntimeWorkPacket(agent, input)
         };
       case "eyes_join_session":
         return {

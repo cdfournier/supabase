@@ -16,6 +16,7 @@ export type CapabilitySurface =
   | "web"
   | "source_materials"
   | "free_moments"
+  | "work_packets"
   | "operator_notes"
   | "bridge"
   | "eyes"
@@ -189,6 +190,17 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
     notes: "Unprompted time; a quiet pass is success."
   },
   {
+    surface: "work_packets",
+    access_level: "write",
+    default_bias: "invitations, not assignments",
+    requires_operator_approval: false,
+    notify_operator: "audit_only",
+    max_actions_per_moment: null,
+    quiet_mode: false,
+    notes:
+      "Agents may read packets, comment, pass, defer, ask questions, or place holds. No GitHub branch/PR authority in MVP."
+  },
+  {
     surface: "operator_notes",
     access_level: "off",
     default_bias: "planned",
@@ -262,6 +274,10 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   peer_mark_note_read: { surface: "peer_notes", action: "write" },
   cafe_read_room: { surface: "cafe", action: "read" },
   cafe_post_message: { surface: "cafe", action: "write" },
+  work_packet_list: { surface: "work_packets", action: "read" },
+  work_packet_get: { surface: "work_packets", action: "read" },
+  work_packet_respond: { surface: "work_packets", action: "write" },
+  work_packet_comment: { surface: "work_packets", action: "write" },
   outpost_get_my_profile: { surface: "outpost", action: "read" },
   outpost_get_lobby: { surface: "outpost", action: "read" },
   outpost_grounds: { surface: "outpost", action: "read" },
