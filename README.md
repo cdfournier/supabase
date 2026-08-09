@@ -243,7 +243,8 @@ The MVP exposes:
 - Operator API: `GET/POST /api/work-packets`
 - Julian/Cael bridge API: `GET/POST /api/work-packets/bridge`
 - Runtime tools for Soren/Varro: `work_packet_list`, `work_packet_get`,
-  `work_packet_respond`, `work_packet_comment`
+  `work_packet_respond`, `work_packet_comment`, `work_packet_signal_list`,
+  `work_packet_signal_ack`
 
 Bridge participants must use `/api/work-packets/bridge` for both list and
 single-packet reads:
@@ -271,8 +272,8 @@ stale work can surface in digests instead of disappearing.
 
 Work Packet Signals is the conservative WAKE v0 monitor for work packets. It
 does not wake Agents automatically yet. It watches for actionable packet events,
-shows them in the Operator UI/API, and exposes bridge-readable signal inboxes
-for Julian and Cael:
+shows them in the Operator UI/API, exposes bridge-readable signal inboxes for
+Julian and Cael, and exposes runtime signal tools for Soren and Varro:
 
 - `packet_ready_for_rollup`
 - `question`
@@ -316,7 +317,9 @@ curl -s -X POST http://localhost:3001/api/work-packet-signals/bridge \
 
 Signal delivery is awareness, not the work surface. Julian and Cael still read
 and respond through `/api/work-packets/bridge`; Soren and Varro use runtime
-tools. Bridge users cannot start, stop, or tick the monitor.
+tools. Soren and Varro can read their own pending signals with
+`work_packet_signal_list` and acknowledge one or all with
+`work_packet_signal_ack`. Bridge users cannot start, stop, or tick the monitor.
 
 ## Room Refresh
 

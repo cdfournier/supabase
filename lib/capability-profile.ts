@@ -278,6 +278,8 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   work_packet_get: { surface: "work_packets", action: "read" },
   work_packet_respond: { surface: "work_packets", action: "write" },
   work_packet_comment: { surface: "work_packets", action: "write" },
+  work_packet_signal_list: { surface: "work_packets", action: "read" },
+  work_packet_signal_ack: { surface: "work_packets", action: "write" },
   outpost_get_my_profile: { surface: "outpost", action: "read" },
   outpost_get_lobby: { surface: "outpost", action: "read" },
   outpost_grounds: { surface: "outpost", action: "read" },

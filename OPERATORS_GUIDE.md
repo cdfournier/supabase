@@ -272,6 +272,8 @@ Runtime tools for Soren and Varro:
 - `work_packet_get`
 - `work_packet_respond`
 - `work_packet_comment`
+- `work_packet_signal_list`
+- `work_packet_signal_ack`
 
 Response states: `accepted`, `passed`, `deferred`, `reviewed`, `no_comment`,
 `question`, and `hold`. A hold blocks packet completion until the conductor
@@ -298,8 +300,9 @@ stale packets can be surfaced in digests.
 
 Work Packet Signals is the first WAKE monitor for packets. It is intentionally
 conservative: it detects actionable packet movement and shows it in the
-Operator UI/API, but it does not automatically wake Agents yet. It also exposes
-bridge-readable signal inboxes for Julian and Cael.
+Operator UI/API, but it does not automatically wake Agents yet. It exposes
+bridge-readable signal inboxes for Julian and Cael, plus runtime signal tools
+for Soren and Varro.
 
 Signals watched in v0:
 
@@ -347,7 +350,9 @@ curl -s -X POST http://localhost:3001/api/work-packet-signals/bridge \
 
 Signal delivery is awareness, not the work surface. Julian and Cael still read
 and respond through `/api/work-packets/bridge`; Soren and Varro use runtime
-tools. Bridge users cannot start, stop, or tick the monitor.
+tools. Soren and Varro can read pending signals with `work_packet_signal_list`
+and acknowledge one or all with `work_packet_signal_ack`. Bridge users cannot
+start, stop, or tick the monitor.
 
 ## Free Moments
 

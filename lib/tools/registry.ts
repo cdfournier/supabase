@@ -58,8 +58,10 @@ import {
 } from "@/lib/tools/runtime-journal";
 import { postCafeMessage, readCafeRoom } from "@/lib/tools/cafe";
 import {
+  ackRuntimeWorkPacketSignals,
   commentOnRuntimeWorkPacket,
   getRuntimeWorkPacket,
+  listRuntimeWorkPacketSignals,
   listRuntimeWorkPackets,
   respondToRuntimeWorkPacket
 } from "@/lib/tools/work-packets";
@@ -328,6 +330,34 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["id", "content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "work_packet_signal_list",
+    description:
+      "List transient Work Packet Signals addressed to the active agent. Use to notice new packet invitations, questions, holds, stale packets, and rollup-ready packets; this reads only the active agent's signal view.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "work_packet_signal_ack",
+    description:
+      "Acknowledge one or all Work Packet Signals addressed to the active agent. Omit signal_id to acknowledge all pending signals for this agent.",
+    input_schema: {
+      type: "object",
+      properties: {
+        signal_id: {
+          type: "string",
+          description:
+            "Optional signal id from work_packet_signal_list. Omit to acknowledge all pending signals addressed to this agent."
+        }
+      },
+      required: [],
       additionalProperties: false
     }
   },
@@ -1382,6 +1412,16 @@ export async function runTool(
         return {
           ok: true,
           content: await commentOnRuntimeWorkPacket(agent, input)
+        };
+      case "work_packet_signal_list":
+        return {
+          ok: true,
+          content: await listRuntimeWorkPacketSignals(agent)
+        };
+      case "work_packet_signal_ack":
+        return {
+          ok: true,
+          content: await ackRuntimeWorkPacketSignals(agent, input)
         };
       case "eyes_join_session":
         return {
