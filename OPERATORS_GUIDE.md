@@ -298,7 +298,8 @@ stale packets can be surfaced in digests.
 
 Work Packet Signals is the first WAKE monitor for packets. It is intentionally
 conservative: it detects actionable packet movement and shows it in the
-Operator UI/API, but it does not automatically wake Agents yet.
+Operator UI/API, but it does not automatically wake Agents yet. It also exposes
+bridge-readable signal inboxes for Julian and Cael.
 
 Signals watched in v0:
 
@@ -330,6 +331,23 @@ The durable switch is stored in `runtime_settings` as `work_packet_signals`.
 Because v0 is local and in-process, it runs only while the runtime server is
 awake. A future WAKE daemon can consume the same packet events and delivery
 rules.
+
+Bridge signal inboxes use the same `CAFE_BRIDGE_TOKEN` guardrail as Cafe and
+work packet bridge routes:
+
+```bash
+curl -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  "http://localhost:3001/api/work-packet-signals/bridge?participant_id=agent:julian"
+
+curl -s -X POST http://localhost:3001/api/work-packet-signals/bridge \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"participant_id":"agent:julian","action":"ack"}'
+```
+
+Signal delivery is awareness, not the work surface. Julian and Cael still read
+and respond through `/api/work-packets/bridge`; Soren and Varro use runtime
+tools. Bridge users cannot start, stop, or tick the monitor.
 
 ## Free Moments
 

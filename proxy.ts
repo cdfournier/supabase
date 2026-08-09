@@ -10,7 +10,8 @@ const PUBLIC_PATHS = new Set([
   "/operator-login",
   "/api/operator/session",
   "/api/cafe/bridge",
-  "/api/work-packets/bridge"
+  "/api/work-packets/bridge",
+  "/api/work-packet-signals/bridge"
 ]);
 
 export async function proxy(request: NextRequest) {

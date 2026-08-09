@@ -1668,6 +1668,7 @@ function WorkPacketSignalsPanel({
         <h2>Packet Signals</h2>
         <span className={`status-dot ${status?.running ? "ok" : "warn"}`} />
       </div>
+      <p className="health-empty">Operator awareness and bridge inboxes. No auto-wakes yet.</p>
 
       {status ? (
         <>

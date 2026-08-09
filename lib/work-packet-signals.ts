@@ -21,10 +21,13 @@ type SignalEventType =
   | "check_failed";
 
 type SignalEvent = {
+  id: string;
   at: string;
   type: SignalEventType;
   packet_id?: string;
   packet_title?: string;
+  target_ids: string[];
+  acknowledged_by: string[];
   message: string;
 };
 
@@ -43,7 +46,9 @@ type PacketRow = {
   id: string;
   title: string;
   status: string;
+  owner_agent: string | null;
   conductor: string;
+  collaborators: string[];
   wake_priority: string;
   metadata: Record<string, unknown> | null;
   updated_at: string;
@@ -102,6 +107,46 @@ export async function statusWithSettings() {
       durable_error: error instanceof Error ? error.message : "Could not read Work Packet Signals setting."
     };
   }
+}
+
+export function signalsForParticipant(participantId: string) {
+  const signals = state.recentEvents.filter((event) =>
+    event.target_ids.includes(participantId)
+  );
+
+  return {
+    participant_id: participantId,
+    running: state.running,
+    check_in_progress: state.checkInProgress,
+    last_check_at: state.lastCheckAt,
+    next_check_at: state.nextCheckAt,
+    pending_signals: signals.filter((event) => !event.acknowledged_by.includes(participantId)),
+    recent_signals: signals
+  };
+}
+
+export function acknowledgeSignals(participantId: string, signalId?: string) {
+  let acknowledged = 0;
+
+  for (const event of state.recentEvents) {
+    if (!event.target_ids.includes(participantId)) {
+      continue;
+    }
+
+    if (signalId && event.id !== signalId) {
+      continue;
+    }
+
+    if (!event.acknowledged_by.includes(participantId)) {
+      event.acknowledged_by.push(participantId);
+      acknowledged += 1;
+    }
+  }
+
+  return {
+    ...signalsForParticipant(participantId),
+    acknowledged,
+  };
 }
 
 export async function start(intervalSeconds?: number) {
@@ -202,7 +247,7 @@ async function detectNewPacketEvents() {
   let query = supabase
     .from("work_packet_events")
     .select("id, packet_id, actor_display_name, event_type, response_state, content, metadata, created_at")
-    .in("event_type", ["packet_ready_for_rollup", "question", "hold"])
+    .in("event_type", ["created", "packet_ready_for_rollup", "question", "hold"])
     .order("created_at", { ascending: true })
     .limit(50);
 
@@ -222,15 +267,16 @@ async function detectNewPacketEvents() {
     return;
   }
 
-  const packetTitles = await loadPacketTitles([...new Set(events.map((event) => event.packet_id))]);
+  const packetContexts = await loadPacketContexts([...new Set(events.map((event) => event.packet_id))]);
 
   for (const event of events) {
-    const title = packetTitles.get(event.packet_id) ?? "Unknown packet";
+    const context = packetContexts.get(event.packet_id);
     addEvent(
       "signal_detected",
-      signalMessage(event),
+      signalMessage(event, context),
       event.packet_id,
-      title
+      context?.title ?? "Unknown packet",
+      signalTargets(event, context)
     );
   }
 
@@ -241,7 +287,7 @@ async function detectStalePackets() {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("work_packets")
-    .select("id, title, status, conductor, wake_priority, metadata, updated_at")
+    .select("id, title, status, owner_agent, conductor, collaborators, wake_priority, metadata, updated_at")
     .not("status", "in", "(merged,closed)")
     .limit(50);
 
@@ -263,35 +309,40 @@ async function detectStalePackets() {
       "signal_detected",
       `Packet is stale for ${packet.conductor}; wake priority ${packet.wake_priority}.`,
       packet.id,
-      packet.title
+      packet.title,
+      [packet.conductor]
     );
   }
 }
 
-async function loadPacketTitles(packetIds: string[]) {
-  const titles = new Map<string, string>();
+async function loadPacketContexts(packetIds: string[]) {
+  const contexts = new Map<string, PacketRow>();
 
   if (!packetIds.length) {
-    return titles;
+    return contexts;
   }
 
   const { data, error } = await getSupabaseAdmin()
     .from("work_packets")
-    .select("id, title")
+    .select("id, title, status, owner_agent, conductor, collaborators, wake_priority, metadata, updated_at")
     .in("id", packetIds);
 
   if (error) {
     throw new Error(`Could not read work packet titles: ${error.message}`);
   }
 
-  for (const row of (data ?? []) as Array<{ id: string; title: string }>) {
-    titles.set(row.id, row.title);
+  for (const row of (data ?? []) as PacketRow[]) {
+    contexts.set(row.id, row);
   }
 
-  return titles;
+  return contexts;
 }
 
-function signalMessage(event: PacketEventRow) {
+function signalMessage(event: PacketEventRow, packet?: PacketRow) {
+  if (event.event_type === "created") {
+    return `Packet is available for review; conductor ${packet?.conductor ?? "unknown"}.`;
+  }
+
   if (event.event_type === "packet_ready_for_rollup") {
     return "Packet is ready for conductor rollup.";
   }
@@ -301,6 +352,21 @@ function signalMessage(event: PacketEventRow) {
   }
 
   return `${event.actor_display_name} asked a question: ${event.content || "no details"}`;
+}
+
+function signalTargets(event: PacketEventRow, packet?: PacketRow) {
+  if (!packet) {
+    return [];
+  }
+
+  if (event.event_type === "created") {
+    return uniqueTargets([
+      ...packet.collaborators,
+      packet.owner_agent
+    ]);
+  }
+
+  return uniqueTargets([packet.conductor]);
 }
 
 function scheduleNextCheck() {
@@ -330,15 +396,28 @@ function clearScheduledCheck() {
   state.nextCheckAt = null;
 }
 
-function addEvent(type: SignalEventType, message: string, packetId?: string, packetTitle?: string) {
+function addEvent(
+  type: SignalEventType,
+  message: string,
+  packetId?: string,
+  packetTitle?: string,
+  targetIds: string[] = []
+) {
   state.recentEvents.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     at: new Date().toISOString(),
     type,
     packet_id: packetId,
     packet_title: packetTitle,
+    target_ids: targetIds,
+    acknowledged_by: [],
     message
   });
   state.recentEvents = state.recentEvents.slice(-EVENT_LIMIT);
+}
+
+function uniqueTargets(targets: Array<string | null | undefined>) {
+  return [...new Set(targets.filter((target): target is string => Boolean(target)))];
 }
 
 function normalizeIntervalSeconds(value?: number) {
