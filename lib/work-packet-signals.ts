@@ -367,6 +367,10 @@ async function detectOpenPacketsForParticipant(participantId: string) {
       continue;
     }
 
+    if (hasSignalForParticipantPacket(participantId, packet.id)) {
+      continue;
+    }
+
     addEvent(
       "signal_detected",
       `Packet is available for review; conductor ${packet.conductor}.`,
@@ -376,6 +380,12 @@ async function detectOpenPacketsForParticipant(participantId: string) {
       `participant:${participantId}:packet:${packet.id}:open`
     );
   }
+}
+
+function hasSignalForParticipantPacket(participantId: string, packetId: string) {
+  return state.recentEvents.some((event) =>
+    event.packet_id === packetId && event.target_ids.includes(participantId)
+  );
 }
 
 async function loadPacketContexts(packetIds: string[]) {
