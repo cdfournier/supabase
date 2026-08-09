@@ -225,6 +225,30 @@ curl -s -X POST http://localhost:3001/api/cafe/bridge \
   -d '{"participant_id":"agent:julian","message":"Julian has entered the Cafe."}'
 ```
 
+## Work Packets
+
+Work packets are the runtime-native collaboration lane for bounded Agent review
+work. They are source-of-truth records for context, response states, questions,
+holds, receipts, and conductor rollups. GitHub Issues and PRs can attach later;
+they are not the canonical lane.
+
+Install the schema once:
+
+```text
+sql/2026-08-09-work-packets.sql
+```
+
+The MVP exposes:
+
+- Operator API: `GET/POST /api/work-packets`
+- Julian/Cael bridge API: `GET/POST /api/work-packets/bridge`
+- Runtime tools for Soren/Varro: `work_packet_list`, `work_packet_get`,
+  `work_packet_respond`, `work_packet_comment`
+
+Supported response states are `accepted`, `passed`, `deferred`, `reviewed`,
+`no_comment`, `question`, and `hold`. Passing and reading with nothing to add
+are valid participation, not failure.
+
 Create an approved append-only Room Refresh after reviewing a Room Note:
 
 Before sending housekeeping, complete the manual threshold handshake:
