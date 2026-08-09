@@ -57,7 +57,14 @@ export type WorkPacketResponseState =
   | "no_comment"
   | "question"
   | "hold";
-export type WorkPacketEventType = "created" | "response" | "comment" | "question" | "hold" | "rollup";
+export type WorkPacketEventType =
+  | "created"
+  | "response"
+  | "comment"
+  | "question"
+  | "hold"
+  | "packet_ready_for_rollup"
+  | "rollup";
 
 type Supabase = SupabaseClient;
 
@@ -100,6 +107,7 @@ const RESPONSE_STATES: WorkPacketResponseState[] = [
 ];
 
 const PARTICIPANT_NAMES: Record<string, string> = {
+  "system:work_packets": "Work Packets",
   "operator:chris": "Chris",
   "agent:soren": "Soren",
   "agent:varro": "Varro",
@@ -175,10 +183,11 @@ export async function createWorkPacket(supabase: Supabase, input: unknown, actor
       allowed_tools: stringList(input.allowed_tools),
       done_criteria: stringList(input.done_criteria),
       review_path: optionalString(input.review_path, MAX_TEXT) ?? "",
+      review_rollup: emptyReviewRollup(),
       merge_authority: optionalString(input.merge_authority, MAX_SHORT_TEXT) ?? "",
       rollback_note: optionalString(input.rollback_note, MAX_TEXT) ?? "",
       wake_priority: optionalEnum(input.wake_priority, WAKE_PRIORITIES) ?? "digest_only",
-      metadata: optionalRecord(input.metadata),
+      metadata: metadataWithStaleness(input.metadata),
       created_by: actor.actorId
     })
     .select(packetColumns())
@@ -210,6 +219,7 @@ export async function respondToWorkPacket(supabase: Supabase, input: unknown, ac
   await loadPacket(supabase, packetId);
   await insertPacketEvent(supabase, packetId, actor, eventType, responseState, content, metadata);
   await updatePacketAfterResponse(supabase, packetId, responseState);
+  await maybeMarkReadyForRollup(supabase, packetId);
 
   return getWorkPacket(supabase, { id: packetId });
 }
@@ -290,6 +300,20 @@ export function actorFromId(actorId: string): Actor {
   };
 }
 
+function emptyReviewRollup() {
+  return {
+    summary: "",
+    reviewed_by: [],
+    aligned: [],
+    disagreed: [],
+    blocked: [],
+    decision_needed: "",
+    next_step: "",
+    created_by: "",
+    created_at: ""
+  };
+}
+
 async function loadPacket(supabase: Supabase, id: string) {
   const { data, error } = await supabase
     .from("work_packets")
@@ -351,6 +375,47 @@ async function updatePacketAfterResponse(
     responseState === "hold" ? "blocked" : responseState === "accepted" ? "active" : undefined;
 
   await touchPacket(supabase, packetId, status ? { status } : undefined);
+}
+
+async function maybeMarkReadyForRollup(supabase: Supabase, packetId: string) {
+  const [packet, events] = await Promise.all([
+    loadPacket(supabase, packetId),
+    loadPacketEvents(supabase, packetId)
+  ]);
+
+  if (!packet.collaborators.length || packet.status === "blocked") {
+    return;
+  }
+
+  if (events.some((event) => event.event_type === "packet_ready_for_rollup")) {
+    return;
+  }
+
+  const respondedActors = new Set(
+    events.filter((event) => event.response_state).map((event) => event.actor_id)
+  );
+  const allCollaboratorsResponded = packet.collaborators.every((collaborator) =>
+    respondedActors.has(collaborator)
+  );
+
+  if (!allCollaboratorsResponded) {
+    return;
+  }
+
+  await insertPacketEvent(
+    supabase,
+    packetId,
+    actorFromId("system:work_packets"),
+    "packet_ready_for_rollup",
+    null,
+    "All invited collaborators have recorded a response. Conductor rollup is ready.",
+    {
+      conductor: packet.conductor,
+      collaborators: packet.collaborators,
+      wake_priority: packet.wake_priority
+    }
+  );
+  await touchPacket(supabase, packetId, { status: "review" });
 }
 
 async function touchPacket(supabase: Supabase, packetId: string, patch: Partial<WorkPacket> = {}) {
@@ -462,6 +527,20 @@ function stringList(value: unknown) {
     .map((item) => optionalString(item, MAX_SHORT_TEXT))
     .filter((item): item is string => Boolean(item))
     .slice(0, MAX_ITEMS);
+}
+
+function metadataWithStaleness(value: unknown) {
+  const metadata = optionalRecord(value);
+  const passWindowHours = clampNumber(metadata.pass_window_hours, 72, 1, 24 * 14);
+
+  return {
+    ...metadata,
+    pass_window_hours: passWindowHours,
+    stale_at:
+      typeof metadata.stale_at === "string" && metadata.stale_at.trim()
+        ? metadata.stale_at
+        : new Date(Date.now() + passWindowHours * 60 * 60 * 1000).toISOString()
+  };
 }
 
 function optionalRecord(value: unknown) {

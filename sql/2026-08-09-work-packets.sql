@@ -14,7 +14,7 @@ create table if not exists public.work_packets (
   allowed_tools text[] not null default '{}'::text[],
   done_criteria text[] not null default '{}'::text[],
   review_path text not null default '',
-  review_rollup jsonb not null default '{}'::jsonb,
+  review_rollup jsonb not null default '{"summary":"","reviewed_by":[],"aligned":[],"disagreed":[],"blocked":[],"decision_needed":"","next_step":"","created_by":"","created_at":""}'::jsonb,
   merge_authority text not null default '',
   rollback_note text not null default '',
   status text not null default 'queued',
