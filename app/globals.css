@@ -159,6 +159,10 @@ button {
   padding: 12px;
 }
 
+.health-panel.collapsed {
+  padding-bottom: 12px;
+}
+
 .health-heading {
   align-items: center;
   display: flex;
@@ -167,12 +171,58 @@ button {
   margin-bottom: 10px;
 }
 
+.health-panel.collapsed .health-heading {
+  margin-bottom: 0;
+}
+
 .health-heading h2 {
   font-size: 13px;
   letter-spacing: 0.08em;
   line-height: 1.2;
   margin: 0;
   text-transform: uppercase;
+}
+
+.health-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 8px;
+  letter-spacing: inherit;
+  padding: 0;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.health-toggle:hover,
+.health-toggle:focus-visible {
+  color: var(--accent-strong);
+}
+
+.health-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.health-toggle-icon {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  height: 18px;
+  justify-content: center;
+  letter-spacing: 0;
+  line-height: 1;
+  width: 18px;
+}
+
+.health-panel-body[hidden] {
+  display: none;
 }
 
 .status-dot {

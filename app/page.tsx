@@ -264,10 +264,23 @@ type WorkPacketSignalsStatus = {
   recent_events: WorkPacketSignalEvent[];
 };
 
+type ControlPanelKey = "runtime" | "freeMoments" | "packetSignals";
+type ControlPanelState = Record<ControlPanelKey, boolean>;
+
 const defaultAgent: AgentName = "soren";
 const freeTimePollMs = 30_000;
 const workPacketSignalsPollMs = 15_000;
 const liveTranscriptLimit = 120;
+const expandedControlPanels: ControlPanelState = {
+  runtime: true,
+  freeMoments: true,
+  packetSignals: true
+};
+const collapsedControlPanels: ControlPanelState = {
+  runtime: false,
+  freeMoments: false,
+  packetSignals: false
+};
 
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -307,6 +320,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [controlPanels, setControlPanels] = useState<ControlPanelState>(expandedControlPanels);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const freeTimeStatusLoadedRef = useRef(false);
@@ -337,6 +351,19 @@ export default function Home() {
 
     return eventsByTurn;
   }, [activeToolEvents]);
+
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 720px)").matches) {
+      setControlPanels(collapsedControlPanels);
+    }
+  }, []);
+
+  const toggleControlPanel = useCallback((panel: ControlPanelKey) => {
+    setControlPanels((current) => ({
+      ...current,
+      [panel]: !current[panel]
+    }));
+  }, []);
 
   const loadFreeTimeStatus = useCallback(async () => {
     try {
@@ -1112,8 +1139,10 @@ export default function Home() {
           compactionPreview={compactionPreview}
           compileError={compileError}
           compileLoading={compileLoading}
+          expanded={controlPanels.runtime}
           health={health}
           onCompileProposal={compileCompactionProposal}
+          onToggle={() => toggleControlPanel("runtime")}
           onLoadApprovedProposal={loadApprovedCompactionProposal}
           onPreviewCompaction={previewCompaction}
           savedProposalError={savedProposalError}
@@ -1123,16 +1152,20 @@ export default function Home() {
         <FreeTimePanel
           selectedAgent={selectedAgent}
           error={freeTimeError}
+          expanded={controlPanels.freeMoments}
           loading={freeTimeLoading}
           onAction={runFreeTimeAction}
+          onToggle={() => toggleControlPanel("freeMoments")}
           requestInProgress={freeTimeRequestInProgress}
           status={freeTime}
         />
 
         <WorkPacketSignalsPanel
           error={workPacketSignalsError}
+          expanded={controlPanels.packetSignals}
           loading={workPacketSignalsLoading}
           onAction={runWorkPacketSignalsAction}
+          onToggle={() => toggleControlPanel("packetSignals")}
           requestInProgress={workPacketSignalsRequestInProgress}
           status={workPacketSignals}
         />
@@ -1523,15 +1556,19 @@ function CafeView({
 
 function FreeTimePanel({
   error,
+  expanded,
   loading,
   onAction,
+  onToggle,
   requestInProgress,
   selectedAgent,
   status
 }: {
   error: string;
+  expanded: boolean;
   loading: boolean;
   onAction: (action: "start" | "stop" | "tick") => void;
+  onToggle: () => void;
   requestInProgress: boolean;
   selectedAgent: AgentName;
   status: FreeTimeStatus | null;
@@ -1540,14 +1577,27 @@ function FreeTimePanel({
   const recentEvents = status?.recent_events ?? [];
 
   return (
-    <section className="health-panel free-time-panel" aria-label="Free Moments">
+    <section className={`health-panel free-time-panel ${expanded ? "" : "collapsed"}`} aria-label="Free Moments">
       <div className="health-heading">
-        <h2>Free Moments</h2>
-        <span className={`status-dot ${status?.running ? "ok" : "warn"}`} />
+        <h2>
+          <button
+            aria-expanded={expanded}
+            className="health-toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            <span>Free Moments</span>
+            <span className="health-toggle-icon" aria-hidden="true">
+              {expanded ? "-" : "+"}
+            </span>
+          </button>
+        </h2>
+        <span className={`status-dot ${status?.running ? "ok" : "warn"}`} title={status?.running ? "running" : "stopped"} />
       </div>
 
-      {status ? (
-        <>
+      <div className="health-panel-body" hidden={!expanded}>
+        {status ? (
+          <>
           <dl className="health-list free-time-list">
             <div>
               <dt>Status</dt>
@@ -1636,26 +1686,31 @@ function FreeTimePanel({
               <p>No Free Moments events yet.</p>
             )}
           </div>
-        </>
-      ) : (
-        <p className="health-empty">{loading ? "Loading Free Moments..." : "Free Moments unavailable."}</p>
-      )}
+          </>
+        ) : (
+          <p className="health-empty">{loading ? "Loading Free Moments..." : "Free Moments unavailable."}</p>
+        )}
 
-      {error ? <p className="health-error">{error}</p> : null}
+        {error ? <p className="health-error">{error}</p> : null}
+      </div>
     </section>
   );
 }
 
 function WorkPacketSignalsPanel({
   error,
+  expanded,
   loading,
   onAction,
+  onToggle,
   requestInProgress,
   status
 }: {
   error: string;
+  expanded: boolean;
   loading: boolean;
   onAction: (action: "start" | "stop" | "tick") => void;
+  onToggle: () => void;
   requestInProgress: boolean;
   status: WorkPacketSignalsStatus | null;
 }) {
@@ -1663,15 +1718,28 @@ function WorkPacketSignalsPanel({
   const recentEvents = status?.recent_events ?? [];
 
   return (
-    <section className="health-panel signal-panel" aria-label="Work Packet Signals">
+    <section className={`health-panel signal-panel ${expanded ? "" : "collapsed"}`} aria-label="Work Packet Signals">
       <div className="health-heading">
-        <h2>Packet Signals</h2>
-        <span className={`status-dot ${status?.running ? "ok" : "warn"}`} />
+        <h2>
+          <button
+            aria-expanded={expanded}
+            className="health-toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            <span>Packet Signals</span>
+            <span className="health-toggle-icon" aria-hidden="true">
+              {expanded ? "-" : "+"}
+            </span>
+          </button>
+        </h2>
+        <span className={`status-dot ${status?.running ? "ok" : "warn"}`} title={status?.running ? "running" : "stopped"} />
       </div>
-      <p className="health-empty">Operator awareness and bridge inboxes. No auto-wakes yet.</p>
+      <div className="health-panel-body" hidden={!expanded}>
+        <p className="health-empty">Operator awareness and bridge inboxes. No auto-wakes yet.</p>
 
-      {status ? (
-        <>
+        {status ? (
+          <>
           <dl className="health-list free-time-list">
             <div>
               <dt>Status</dt>
@@ -1755,12 +1823,13 @@ function WorkPacketSignalsPanel({
               <p>No packet signals yet.</p>
             )}
           </div>
-        </>
-      ) : (
-        <p className="health-empty">{loading ? "Loading Packet Signals..." : "Packet Signals unavailable."}</p>
-      )}
+          </>
+        ) : (
+          <p className="health-empty">{loading ? "Loading Packet Signals..." : "Packet Signals unavailable."}</p>
+        )}
 
-      {error ? <p className="health-error">{error}</p> : null}
+        {error ? <p className="health-error">{error}</p> : null}
+      </div>
     </section>
   );
 }
@@ -1772,10 +1841,12 @@ function RuntimeHealthPanel({
   compactionPreview,
   compileError,
   compileLoading,
+  expanded,
   health,
   onCompileProposal,
   onLoadApprovedProposal,
   onPreviewCompaction,
+  onToggle,
   savedProposalError,
   savedProposalLoading
 }: {
@@ -1785,10 +1856,12 @@ function RuntimeHealthPanel({
   compactionPreview: CompactionPreview | null;
   compileError: string;
   compileLoading: boolean;
+  expanded: boolean;
   health: Health | null;
   onCompileProposal: () => void;
   onLoadApprovedProposal: () => void;
   onPreviewCompaction: () => void;
+  onToggle: () => void;
   savedProposalError: string;
   savedProposalLoading: boolean;
 }) {
@@ -1796,14 +1869,27 @@ function RuntimeHealthPanel({
   const pressure = activeHealth?.compaction_pressure;
 
   return (
-    <section className="health-panel" aria-label="Runtime health">
+    <section className={`health-panel ${expanded ? "" : "collapsed"}`} aria-label="Runtime health">
       <div className="health-heading">
-        <h2>Runtime</h2>
-        <span className={`status-dot ${activeHealth?.status === "ok" ? "ok" : "warn"}`} />
+        <h2>
+          <button
+            aria-expanded={expanded}
+            className="health-toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            <span>Runtime</span>
+            <span className="health-toggle-icon" aria-hidden="true">
+              {expanded ? "-" : "+"}
+            </span>
+          </button>
+        </h2>
+        <span className={`status-dot ${activeHealth?.status === "ok" ? "ok" : "warn"}`} title={activeHealth?.status ?? "unknown"} />
       </div>
 
-      {activeHealth ? (
-        <>
+      <div className="health-panel-body" hidden={!expanded}>
+        {activeHealth ? (
+          <>
           <dl className="health-list">
             <div>
               <dt>Model</dt>
@@ -1949,10 +2035,11 @@ function RuntimeHealthPanel({
           ) : null}
 
           <p className="health-time">Updated {health?.local_time ?? "unknown"}</p>
-        </>
-      ) : (
-        <p className="health-empty">Health unavailable.</p>
-      )}
+          </>
+        ) : (
+          <p className="health-empty">Health unavailable.</p>
+        )}
+      </div>
     </section>
   );
 }
