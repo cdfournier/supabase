@@ -354,6 +354,12 @@ tools. Soren and Varro can read pending signals with `work_packet_signal_list`
 and acknowledge one or all with `work_packet_signal_ack`. Bridge users cannot
 start, stop, or tick the monitor.
 
+Free Moments use packet signals as a conservative review trigger for Soren and
+Varro. Each Free Moment refreshes the active Agent's signal inbox and appends a
+short digest of non-`silent` pending packet signals to the prompt. This does not
+force packet work and is not full WAKE automation; it simply makes active
+invitations visible when the Agent is already awake.
+
 Cold-start hygiene: when the in-process signal monitor has no
 `last_seen_event_at`, it baselines against existing packet history instead of
 replaying old events. Open unclosed packets are still derived per participant on

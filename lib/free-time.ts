@@ -7,6 +7,7 @@ import {
 import { sendAgentMessage } from "@/lib/chat-runtime";
 import { readFreeMomentsEnabled, writeFreeMomentsEnabled } from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { refreshSignalsForParticipant } from "@/lib/work-packet-signals";
 
 const AGENTS: AgentName[] = ["soren", "varro"];
 const EVENT_LIMIT = 20;
@@ -34,6 +35,7 @@ type FreeTimeEventType =
   | "tick_skipped"
   | "tick_blocked"
   | "turn_started"
+  | "turn_context_failed"
   | "turn_completed"
   | "turn_failed";
 
@@ -45,6 +47,17 @@ type FreeTimeEvent = {
 };
 
 type FreeTimeScheduleMode = "round_robin" | "paired";
+
+type PendingWorkPacketSignal = {
+  id: string;
+  at: string;
+  packet_event_type?: string;
+  packet_id?: string;
+  packet_title?: string;
+  packet_status?: string;
+  wake_priority?: string;
+  message: string;
+};
 
 type FreeTimeState = {
   running: boolean;
@@ -219,7 +232,7 @@ async function runAgentTurn(agent: AgentName) {
   addEvent("turn_started", `Free Moment turn started for ${agent}.`, agent);
 
   try {
-    await sendAgentMessage(agent, FREE_TIME_PROMPT, { source: "free_time" });
+    await sendAgentMessage(agent, await buildFreeTimePrompt(agent, capabilityProfile), { source: "free_time" });
     state.lastError = null;
     addEvent("turn_completed", `Free Moment turn completed for ${agent}.`, agent);
   } catch (error) {
@@ -230,6 +243,50 @@ async function runAgentTurn(agent: AgentName) {
     state.lastAgent = agent;
     state.lastTurnAt = new Date().toISOString();
   }
+}
+
+async function buildFreeTimePrompt(agent: AgentName, capabilityProfile: Awaited<ReturnType<typeof loadAgentCapabilityProfile>>) {
+  if (!isSurfaceAllowed(capabilityProfile, "work_packets", "read")) {
+    return FREE_TIME_PROMPT;
+  }
+
+  try {
+    const inbox = await refreshSignalsForParticipant(`agent:${agent}`);
+    const digest = workPacketSignalDigest(inbox.pending_signals as PendingWorkPacketSignal[]);
+
+    return digest ? `${FREE_TIME_PROMPT}\n\n${digest}` : FREE_TIME_PROMPT;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not refresh Work Packet Signals.";
+    addEvent("turn_context_failed", `Could not add Work Packet Signals context for ${agent}: ${message}`, agent);
+    return FREE_TIME_PROMPT;
+  }
+}
+
+function workPacketSignalDigest(signals: PendingWorkPacketSignal[]) {
+  const visibleSignals = signals
+    .filter((signal) => (signal.wake_priority ?? "digest_only") !== "silent")
+    .slice(0, 5);
+
+  if (!visibleSignals.length) {
+    return "";
+  }
+
+  const lines = visibleSignals.map((signal) => {
+    const title = signal.packet_title || "Untitled packet";
+    const id = signal.packet_id ? `packet ${signal.packet_id}` : "packet id unavailable";
+    const type = signal.packet_event_type || "signal";
+    const status = signal.packet_status || "status unknown";
+    const priority = signal.wake_priority || "digest_only";
+
+    return `- ${title} (${id}) — ${type}, ${status}, ${priority}: ${signal.message}`;
+  });
+
+  return [
+    "## Work Packet Signals",
+    "Your packet inbox has pending signals. These are invitations, not assignments: you may read and respond now, defer, pass/no_comment, ask a question, place a hold, or simply acknowledge after noticing.",
+    "Use work_packet_signal_list for exact signal ids, work_packet_get before any packet response, and work_packet_signal_ack after you have noticed or handled a signal.",
+    ...lines
+  ].join("\n");
 }
 
 function scheduleNextTurn() {

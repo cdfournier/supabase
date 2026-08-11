@@ -29,6 +29,7 @@ type SignalEvent = {
   packet_id?: string;
   packet_title?: string;
   packet_status?: string;
+  wake_priority?: string;
   target_ids: string[];
   acknowledged_by: string[];
   message: string;
@@ -311,7 +312,8 @@ async function detectNewPacketEvents() {
       signalTargets(event, context),
       `event:${event.id}`,
       event.event_type,
-      context?.status
+      context?.status,
+      context?.wake_priority
     );
   }
 
@@ -348,7 +350,8 @@ async function detectStalePackets() {
       [packet.conductor],
       `stale:${packet.id}`,
       "stale",
-      packet.status
+      packet.status,
+      packet.wake_priority
     );
   }
 }
@@ -407,7 +410,8 @@ async function detectOpenPacketsForParticipant(participantId: string) {
       [participantId],
       `participant:${participantId}:packet:${packet.id}:open`,
       "open_packet",
-      packet.status
+      packet.status,
+      packet.wake_priority
     );
   }
 }
@@ -593,7 +597,8 @@ function addEvent(
   targetIds: string[] = [],
   sourceKey?: string,
   packetEventType?: string,
-  packetStatus?: string
+  packetStatus?: string,
+  wakePriority?: string
 ) {
   if (sourceKey && state.recentEvents.some((event) => event.source_key === sourceKey)) {
     return;
@@ -612,6 +617,7 @@ function addEvent(
     packet_id: packetId,
     packet_title: packetTitle,
     packet_status: packetStatus,
+    wake_priority: wakePriority,
     target_ids: targetIds,
     acknowledged_by: [],
     message
