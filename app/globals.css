@@ -398,7 +398,7 @@ button {
 .free-time-actions {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 12px;
 }
 
@@ -412,6 +412,34 @@ button {
   border-top: 1px solid var(--line);
   margin-top: 12px;
   padding-top: 12px;
+}
+
+.free-time-preview {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.free-time-preview pre {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 9px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
+.free-time-preview p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 8px 0 0;
 }
 
 .free-time-events ol {
