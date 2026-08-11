@@ -6,6 +6,7 @@ import {
   createWorkPacket,
   getWorkPacket,
   listWorkPackets,
+  reviewWorkPacketRollup,
   respondToWorkPacket,
   rollupWorkPacket
 } from "@/lib/work-packets";
@@ -58,8 +59,12 @@ export async function POST(request: Request) {
       return NextResponse.json(await rollupWorkPacket(supabase, body, actor));
     }
 
+    if (action === "review_rollup") {
+      return NextResponse.json(await reviewWorkPacketRollup(supabase, body, actor));
+    }
+
     return NextResponse.json(
-      { error: 'Choose action "create", "respond", "comment", or "rollup".' },
+      { error: 'Choose action "create", "respond", "comment", "rollup", or "review_rollup".' },
       { status: 400 }
     );
   } catch (error) {

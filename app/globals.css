@@ -480,6 +480,137 @@ button {
   padding: 14px 24px;
 }
 
+.inbox-header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.inbox-header .quiet-action {
+  flex: 0 0 auto;
+  margin-top: 0;
+  width: auto;
+}
+
+.inbox-list {
+  display: grid;
+  gap: 16px;
+  overflow: auto;
+  padding: 24px;
+}
+
+.inbox-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  max-width: 980px;
+  padding: 18px;
+}
+
+.inbox-card-header {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.inbox-card-header h3 {
+  font-size: 20px;
+  line-height: 1.2;
+  margin: 4px 0;
+}
+
+.inbox-card-header p,
+.inbox-rollup p,
+.rollup-list p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.inbox-eyebrow,
+.inbox-note span,
+.inbox-rollup h4,
+.rollup-list h4 {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.inbox-status {
+  background: #fffaf2;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 9px;
+}
+
+.inbox-rollup {
+  display: grid;
+  gap: 12px;
+}
+
+.inbox-rollup p {
+  color: var(--text);
+}
+
+.inbox-rollup-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rollup-list {
+  background: rgba(247, 244, 239, 0.58);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.rollup-list ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.rollup-list li {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.inbox-note {
+  display: grid;
+  gap: 6px;
+}
+
+.inbox-note textarea {
+  min-height: 70px;
+}
+
+.inbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.inbox-actions .quiet-action,
+.inbox-actions .checkpoint-action {
+  margin-top: 0;
+  width: auto;
+}
+
 .cafe-header .quiet-action {
   flex: 0 0 auto;
   margin-top: 0;
@@ -885,5 +1016,25 @@ textarea {
 
   .composer-actions {
     grid-template-columns: repeat(2, minmax(96px, 1fr));
+  }
+
+  .inbox-header,
+  .inbox-card-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inbox-rollup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inbox-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .inbox-actions .quiet-action,
+  .inbox-actions .checkpoint-action {
+    width: 100%;
   }
 }

@@ -9,7 +9,7 @@ import {
 } from "@/lib/source-materials-shared";
 
 type AgentName = "soren" | "varro";
-type ActiveSurface = "chat" | "cafe";
+type ActiveSurface = "chat" | "cafe" | "inbox";
 
 type Agent = {
   name: AgentName;
@@ -264,6 +264,41 @@ type WorkPacketSignalsStatus = {
   recent_events: WorkPacketSignalEvent[];
 };
 
+type WorkPacketRollup = {
+  summary?: string;
+  reviewed_by?: string[];
+  aligned?: string[];
+  disagreed?: string[];
+  blocked?: string[];
+  decision_needed?: string;
+  next_step?: string;
+  created_by?: string;
+  created_at?: string;
+  operator_review?: {
+    state?: "pending" | "approved" | "changes_requested" | "hold";
+    note?: string;
+    reviewed_by?: string;
+    reviewed_at?: string;
+    requested_at?: string;
+  };
+};
+
+type WorkPacket = {
+  id: string;
+  packet_key: string | null;
+  title: string;
+  objective: string;
+  context: string;
+  repo: string | null;
+  conductor: string;
+  collaborators: string[];
+  review_rollup: WorkPacketRollup;
+  status: "queued" | "active" | "blocked" | "review" | "merged" | "closed";
+  wake_priority: string;
+  updated_at: string;
+  created_at: string;
+};
+
 type ControlPanelKey = "runtime" | "freeMoments" | "packetSignals";
 type ControlPanelState = Record<ControlPanelKey, boolean>;
 
@@ -303,6 +338,11 @@ export default function Home() {
   const [workPacketSignalsLoading, setWorkPacketSignalsLoading] = useState(true);
   const [workPacketSignalsRequestInProgress, setWorkPacketSignalsRequestInProgress] = useState(false);
   const [workPacketSignalsError, setWorkPacketSignalsError] = useState("");
+  const [operatorInboxPackets, setOperatorInboxPackets] = useState<WorkPacket[]>([]);
+  const [operatorInboxLoading, setOperatorInboxLoading] = useState(true);
+  const [operatorInboxError, setOperatorInboxError] = useState("");
+  const [operatorInboxNotes, setOperatorInboxNotes] = useState<Record<string, string>>({});
+  const [operatorInboxActionInProgress, setOperatorInboxActionInProgress] = useState<string | null>(null);
   const [compactionPreview, setCompactionPreview] = useState<CompactionPreview | null>(null);
   const [compactionLoading, setCompactionLoading] = useState(false);
   const [compactionError, setCompactionError] = useState("");
@@ -332,6 +372,7 @@ export default function Home() {
   );
   const activeMessages = transcripts[selectedAgent] ?? [];
   const activeToolEvents = toolEvents[selectedAgent] ?? [];
+  const pendingOperatorRollups = operatorInboxPackets.filter(isPendingOperatorRollup);
   const activeHealth = health?.agents.find((agent) => agent.agent === selectedAgent);
   const activeMessageCount = activeHealth?.conversation.message_count ?? activeMessages.length;
   const hiddenOlderMessageCount = activeHealth
@@ -407,6 +448,27 @@ export default function Home() {
     }
   }, []);
 
+  const loadOperatorInbox = useCallback(async () => {
+    setOperatorInboxError("");
+
+    try {
+      const response = await fetch("/api/work-packets?status=review&limit=12");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load Operator Inbox.");
+      }
+
+      setOperatorInboxPackets(data.packets ?? []);
+    } catch (inboxError) {
+      setOperatorInboxError(
+        inboxError instanceof Error ? inboxError.message : "Could not load Operator Inbox."
+      );
+    } finally {
+      setOperatorInboxLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -474,6 +536,10 @@ export default function Home() {
   useEffect(() => {
     void loadCafe();
   }, [loadCafe]);
+
+  useEffect(() => {
+    void loadOperatorInbox();
+  }, [loadOperatorInbox]);
 
   useEffect(() => {
     let cancelled = false;
@@ -810,6 +876,49 @@ export default function Home() {
     }
   }
 
+  async function reviewOperatorRollup(packetId: string, reviewState: "approved" | "request_changes" | "hold") {
+    if (operatorInboxActionInProgress) {
+      return;
+    }
+
+    setOperatorInboxActionInProgress(`${packetId}:${reviewState}`);
+    setOperatorInboxError("");
+
+    try {
+      const response = await fetch("/api/work-packets", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "review_rollup",
+          id: packetId,
+          review_state: reviewState,
+          note: operatorInboxNotes[packetId] ?? ""
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not review rollup.");
+      }
+
+      setOperatorInboxNotes((current) => {
+        const next = { ...current };
+        delete next[packetId];
+        return next;
+      });
+      await loadOperatorInbox();
+      void loadWorkPacketSignalsStatus();
+    } catch (reviewError) {
+      setOperatorInboxError(
+        reviewError instanceof Error ? reviewError.message : "Could not review rollup."
+      );
+    } finally {
+      setOperatorInboxActionInProgress(null);
+    }
+  }
+
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = message.trim();
@@ -1111,6 +1220,18 @@ export default function Home() {
           <br />
           <span>shared room</span>
         </button>
+        <button
+          className={`cafe-button ${activeSurface === "inbox" ? "active" : ""}`}
+          onClick={() => {
+            setActiveSurface("inbox");
+            void loadOperatorInbox();
+          }}
+          type="button"
+        >
+          <strong>Inbox</strong>
+          <br />
+          <span>{pendingOperatorRollups.length} rollup{pendingOperatorRollups.length === 1 ? "" : "s"}</span>
+        </button>
         <div className="agent-list">
           {agents.map((agent) => (
             <button
@@ -1184,6 +1305,19 @@ export default function Home() {
           onSubmit={sendCafeMessage}
           pendingAttachments={cafePendingAttachments}
           sending={cafeSending}
+        />
+      ) : activeSurface === "inbox" ? (
+        <OperatorInboxView
+          actionInProgress={operatorInboxActionInProgress}
+          error={operatorInboxError}
+          loading={operatorInboxLoading}
+          notes={operatorInboxNotes}
+          onNoteChange={(packetId, note) =>
+            setOperatorInboxNotes((current) => ({ ...current, [packetId]: note }))
+          }
+          onRefresh={loadOperatorInbox}
+          onReview={reviewOperatorRollup}
+          packets={pendingOperatorRollups}
         />
       ) : (
       <section className="main">
@@ -1551,6 +1685,151 @@ function CafeView({
         })}
       </div>
     </section>
+  );
+}
+
+function OperatorInboxView({
+  actionInProgress,
+  error,
+  loading,
+  notes,
+  onNoteChange,
+  onRefresh,
+  onReview,
+  packets
+}: {
+  actionInProgress: string | null;
+  error: string;
+  loading: boolean;
+  notes: Record<string, string>;
+  onNoteChange: (packetId: string, note: string) => void;
+  onRefresh: () => void;
+  onReview: (packetId: string, reviewState: "approved" | "request_changes" | "hold") => void;
+  packets: WorkPacket[];
+}) {
+  return (
+    <section className="main inbox-main">
+      <header className="header inbox-header">
+        <div>
+          <h2>Operator Inbox</h2>
+          <p>Rollups awaiting review. The packet remains the source trail.</p>
+        </div>
+        <button className="quiet-action" disabled={loading || Boolean(actionInProgress)} onClick={onRefresh} type="button">
+          Refresh
+        </button>
+      </header>
+
+      <div className="inbox-list">
+        {error ? <p className="error">{error}</p> : null}
+        {loading ? <p className="empty">Loading Operator Inbox...</p> : null}
+        {!loading && !packets.length ? (
+          <p className="empty">No rollups are waiting for Operator review.</p>
+        ) : null}
+
+        {packets.map((packet) => {
+          const rollup = packet.review_rollup ?? {};
+          const note = notes[packet.id] ?? "";
+          const actionDisabled = Boolean(actionInProgress);
+
+          return (
+            <article className="inbox-card" key={packet.id}>
+              <div className="inbox-card-header">
+                <div>
+                  <p className="inbox-eyebrow">Work Packet Rollup</p>
+                  <h3>{packet.title}</h3>
+                  <p>
+                    Conductor {participantDisplayName(packet.conductor)} · Updated{" "}
+                    {formatMessageTime(packet.updated_at)}
+                  </p>
+                </div>
+                <span className="inbox-status">Review</span>
+              </div>
+
+              <div className="inbox-rollup">
+                <div>
+                  <h4>Summary</h4>
+                  <p>{rollup.summary || "No summary provided."}</p>
+                </div>
+                {rollup.decision_needed ? (
+                  <div>
+                    <h4>Decision Needed</h4>
+                    <p>{rollup.decision_needed}</p>
+                  </div>
+                ) : null}
+                {rollup.next_step ? (
+                  <div>
+                    <h4>Next Step</h4>
+                    <p>{rollup.next_step}</p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="inbox-rollup-grid">
+                <RollupList title="Reviewed By" items={rollup.reviewed_by} />
+                <RollupList title="Aligned" items={rollup.aligned} />
+                <RollupList title="Open / Blocked" items={[...(rollup.disagreed ?? []), ...(rollup.blocked ?? [])]} />
+              </div>
+
+              <label className="inbox-note">
+                <span>Operator note</span>
+                <textarea
+                  disabled={actionDisabled}
+                  onChange={(event) => onNoteChange(packet.id, event.target.value)}
+                  placeholder="Optional note for the packet trail"
+                  value={note}
+                />
+              </label>
+
+              <div className="inbox-actions">
+                <button
+                  className="checkpoint-action"
+                  disabled={actionDisabled}
+                  onClick={() => onReview(packet.id, "approved")}
+                  type="button"
+                >
+                  {actionInProgress === `${packet.id}:approved` ? "Approving" : "Approve"}
+                </button>
+                <button
+                  className="quiet-action"
+                  disabled={actionDisabled}
+                  onClick={() => onReview(packet.id, "request_changes")}
+                  type="button"
+                >
+                  Request Changes
+                </button>
+                <button
+                  className="quiet-action"
+                  disabled={actionDisabled}
+                  onClick={() => onReview(packet.id, "hold")}
+                  type="button"
+                >
+                  Hold
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function RollupList({ items, title }: { items?: string[]; title: string }) {
+  const visibleItems = (items ?? []).filter(Boolean);
+
+  return (
+    <div className="rollup-list">
+      <h4>{title}</h4>
+      {visibleItems.length ? (
+        <ul>
+          {visibleItems.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>None noted.</p>
+      )}
+    </div>
   );
 }
 
@@ -2065,6 +2344,35 @@ function participantAdapterLabel(adapter: CafeParticipant["participant_adapter"]
     default:
       return adapter;
   }
+}
+
+function participantDisplayName(participantId: string) {
+  switch (participantId) {
+    case "operator:chris":
+      return "Chris";
+    case "agent:soren":
+      return "Soren";
+    case "agent:varro":
+      return "Varro";
+    case "agent:julian":
+      return "Julian";
+    case "agent:cael":
+      return "Cael";
+    default:
+      return participantId;
+  }
+}
+
+function isPendingOperatorRollup(packet: WorkPacket) {
+  const rollup = packet.review_rollup ?? {};
+
+  return (
+    packet.status === "review" &&
+    Boolean(rollup.summary?.trim()) &&
+    rollup.operator_review?.state !== "approved" &&
+    rollup.operator_review?.state !== "changes_requested" &&
+    rollup.operator_review?.state !== "hold"
+  );
 }
 
 function attachmentsFromCafeMetadata(metadata: Record<string, unknown>): SourceMaterialReference[] {

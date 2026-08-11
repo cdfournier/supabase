@@ -255,7 +255,7 @@ async function detectNewPacketEvents() {
   let query = supabase
     .from("work_packet_events")
     .select("id, packet_id, actor_display_name, event_type, response_state, content, metadata, created_at")
-    .in("event_type", ["created", "packet_ready_for_rollup", "question", "hold"])
+    .in("event_type", ["created", "packet_ready_for_rollup", "question", "hold", "rollup"])
     .order("created_at", { ascending: true })
     .limit(50);
 
@@ -420,6 +420,10 @@ function signalMessage(event: PacketEventRow, packet?: PacketRow) {
     return "Packet is ready for conductor rollup.";
   }
 
+  if (event.event_type === "rollup") {
+    return "Conductor rollup is ready for Operator review.";
+  }
+
   if (event.event_type === "hold") {
     return `${event.actor_display_name} placed a hold: ${event.content || "no details"}`;
   }
@@ -437,6 +441,10 @@ function signalTargets(event: PacketEventRow, packet?: PacketRow) {
       ...packet.collaborators,
       packet.owner_agent
     ]);
+  }
+
+  if (event.event_type === "rollup") {
+    return uniqueTargets(["operator:chris"]);
   }
 
   return uniqueTargets([packet.conductor]);

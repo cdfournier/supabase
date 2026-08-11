@@ -64,7 +64,9 @@ export type WorkPacketEventType =
   | "question"
   | "hold"
   | "packet_ready_for_rollup"
-  | "rollup";
+  | "rollup"
+  | "rollup_review";
+export type WorkPacketRollupReviewState = "approved" | "request_changes" | "hold";
 
 type Supabase = SupabaseClient;
 
@@ -105,6 +107,7 @@ const RESPONSE_STATES: WorkPacketResponseState[] = [
   "question",
   "hold"
 ];
+const ROLLUP_REVIEW_STATES: WorkPacketRollupReviewState[] = ["approved", "request_changes", "hold"];
 
 const PARTICIPANT_NAMES: Record<string, string> = {
   "system:work_packets": "Work Packets",
@@ -257,7 +260,13 @@ export async function rollupWorkPacket(supabase: Supabase, input: unknown, actor
   const packetId = requireId(input);
   const summary = requiredString(input.summary, "summary", MAX_TEXT);
   const decisionNeeded = optionalString(input.decision_needed, MAX_TEXT) ?? "";
-  const status = optionalEnum(input.status, STATUSES) ?? "review";
+  const packet = await loadPacket(supabase, packetId);
+  const createdAt = new Date().toISOString();
+
+  if (actor.actorId.startsWith("agent:") && actor.actorId !== packet.conductor) {
+    throw new Error("Only the named conductor may submit the conductor rollup.");
+  }
+
   const rollup = {
     summary,
     reviewed_by: stringList(input.reviewed_by),
@@ -267,18 +276,20 @@ export async function rollupWorkPacket(supabase: Supabase, input: unknown, actor
     decision_needed: decisionNeeded,
     next_step: optionalString(input.next_step, MAX_TEXT) ?? "",
     created_by: actor.actorId,
-    created_at: new Date().toISOString()
+    created_at: createdAt,
+    operator_review: {
+      state: "pending",
+      requested_at: createdAt
+    }
   };
-
-  await loadPacket(supabase, packetId);
 
   const { error } = await supabase
     .from("work_packets")
     .update({
       review_rollup: rollup,
-      status,
+      status: "review",
       updated_at: new Date().toISOString(),
-      closed_at: status === "closed" || status === "merged" ? new Date().toISOString() : null
+      closed_at: null
     })
     .eq("id", packetId);
 
@@ -288,8 +299,90 @@ export async function rollupWorkPacket(supabase: Supabase, input: unknown, actor
 
   await insertPacketEvent(supabase, packetId, actor, "rollup", null, summary, {
     decision_needed: decisionNeeded,
-    status
+    status: "review",
+    operator_review_state: "pending"
   });
+
+  return getWorkPacket(supabase, { id: packetId });
+}
+
+export async function reviewWorkPacketRollup(supabase: Supabase, input: unknown, actor: Actor) {
+  if (!isRecord(input)) {
+    throw new Error("work_packet_review_rollup requires an object input.");
+  }
+
+  const packetId = requireId(input);
+  const reviewState = requiredEnum(input.review_state, "review_state", ROLLUP_REVIEW_STATES);
+  const note = optionalString(input.note, MAX_TEXT) ?? "";
+  const packet = await loadPacket(supabase, packetId);
+  const existingReview = isRecord(packet.review_rollup.operator_review)
+    ? packet.review_rollup.operator_review
+    : {};
+  const existingReviewState = optionalString(existingReview.state, MAX_SHORT_TEXT);
+
+  if (!optionalString(packet.review_rollup.summary, MAX_TEXT)) {
+    throw new Error("Cannot review a packet before the conductor rollup exists.");
+  }
+
+  if (existingReviewState && existingReviewState !== "pending") {
+    throw new Error(`This rollup has already been reviewed as ${existingReviewState}.`);
+  }
+
+  if (packet.status !== "review") {
+    throw new Error(`Cannot review a rollup while packet status is ${packet.status}.`);
+  }
+
+  const storedReviewState = reviewState === "request_changes" ? "changes_requested" : reviewState;
+  const review = {
+    state: storedReviewState,
+    note,
+    reviewed_by: actor.actorId,
+    reviewed_at: new Date().toISOString()
+  };
+  const reviewRollup = {
+    ...packet.review_rollup,
+    operator_review: review
+  };
+  const metadata = {
+    ...packet.metadata,
+    operator_review: review
+  };
+  const nextStatus: WorkPacketStatus = reviewState === "approved" ? "closed" : "blocked";
+  const content =
+    note ||
+    (reviewState === "approved"
+      ? "Operator approved the rollup."
+      : reviewState === "request_changes"
+        ? "Operator requested changes to the rollup."
+        : "Operator placed the rollup on hold.");
+
+  const { error } = await supabase
+    .from("work_packets")
+    .update({
+      review_rollup: reviewRollup,
+      metadata,
+      status: nextStatus,
+      updated_at: new Date().toISOString(),
+      closed_at: reviewState === "approved" ? new Date().toISOString() : null
+    })
+    .eq("id", packetId);
+
+  if (error) {
+    throw workPacketSetupError(error.message);
+  }
+
+  await insertPacketEvent(
+    supabase,
+    packetId,
+    actor,
+    reviewState === "approved" ? "rollup_review" : "hold",
+    null,
+    content,
+    {
+      review_state: reviewState,
+      note
+    }
+  );
 
   return getWorkPacket(supabase, { id: packetId });
 }
