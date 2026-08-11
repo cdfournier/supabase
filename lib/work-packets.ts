@@ -375,11 +375,11 @@ export async function reviewWorkPacketRollup(supabase: Supabase, input: unknown,
     supabase,
     packetId,
     actor,
-    reviewState === "approved" ? "rollup_review" : "hold",
+    "rollup_review",
     null,
     content,
     {
-      review_state: reviewState,
+      review_state: storedReviewState,
       note
     }
   );

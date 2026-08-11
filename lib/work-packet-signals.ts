@@ -255,7 +255,7 @@ async function detectNewPacketEvents() {
   let query = supabase
     .from("work_packet_events")
     .select("id, packet_id, actor_display_name, event_type, response_state, content, metadata, created_at")
-    .in("event_type", ["created", "packet_ready_for_rollup", "question", "hold", "rollup"])
+    .in("event_type", ["created", "packet_ready_for_rollup", "question", "hold", "rollup", "rollup_review"])
     .order("created_at", { ascending: true })
     .limit(50);
 
@@ -422,6 +422,24 @@ function signalMessage(event: PacketEventRow, packet?: PacketRow) {
 
   if (event.event_type === "rollup") {
     return "Conductor rollup is ready for Operator review.";
+  }
+
+  if (event.event_type === "rollup_review") {
+    const reviewState = String(event.metadata?.review_state ?? "");
+
+    if (reviewState === "approved") {
+      return "Operator approved the conductor rollup.";
+    }
+
+    if (reviewState === "changes_requested") {
+      return `${event.actor_display_name} requested rollup changes: ${event.content || "no details"}`;
+    }
+
+    if (reviewState === "hold") {
+      return `${event.actor_display_name} placed the rollup on hold: ${event.content || "no details"}`;
+    }
+
+    return `${event.actor_display_name} reviewed the conductor rollup.`;
   }
 
   if (event.event_type === "hold") {
