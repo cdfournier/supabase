@@ -308,6 +308,7 @@ type GitHubEvidenceHandle = {
   ref: string;
   path: string;
   purpose: string;
+  authored_by: string;
   citation_label: string;
 };
 
@@ -1865,6 +1866,10 @@ function GitHubEvidenceList({ handles }: { handles: GitHubEvidenceHandle[] }) {
                   <dt>Purpose</dt>
                   <dd>{handle.purpose}</dd>
                 </div>
+                <div>
+                  <dt>Authorized By</dt>
+                  <dd>{participantDisplayName(handle.authored_by)}</dd>
+                </div>
               </dl>
               {refNotice ? <p className="github-evidence-warning">{refNotice}</p> : null}
             </article>
@@ -1917,6 +1922,7 @@ function githubEvidenceHandlesFromMetadata(metadata: Record<string, unknown> | n
       ref: cleanEvidenceField(source.ref),
       path: cleanEvidenceField(source.path),
       purpose: cleanEvidenceField(source.purpose),
+      authored_by: cleanEvidenceField(source.authored_by),
       citation_label: cleanEvidenceField(source.citation_label)
     };
 
@@ -1928,6 +1934,7 @@ function githubEvidenceHandlesFromMetadata(metadata: Record<string, unknown> | n
       handle.ref &&
       handle.path &&
       handle.purpose &&
+      handle.authored_by &&
       handle.citation_label
     ) {
       handles.push(handle);
