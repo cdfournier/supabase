@@ -310,6 +310,7 @@ type GitHubEvidenceHandle = {
   purpose: string;
   authored_by: string;
   citation_label: string;
+  max_bytes?: number;
 };
 
 type ControlPanelKey = "runtime" | "freeMoments" | "packetSignals";
@@ -1870,6 +1871,12 @@ function GitHubEvidenceList({ handles }: { handles: GitHubEvidenceHandle[] }) {
                   <dt>Authorized By</dt>
                   <dd>{participantDisplayName(handle.authored_by)}</dd>
                 </div>
+                {handle.max_bytes ? (
+                  <div>
+                    <dt>Max Bytes</dt>
+                    <dd>{handle.max_bytes.toLocaleString()}</dd>
+                  </div>
+                ) : null}
               </dl>
               {refNotice ? <p className="github-evidence-warning">{refNotice}</p> : null}
             </article>
@@ -1923,7 +1930,8 @@ function githubEvidenceHandlesFromMetadata(metadata: Record<string, unknown> | n
       path: cleanEvidenceField(source.path),
       purpose: cleanEvidenceField(source.purpose),
       authored_by: cleanEvidenceField(source.authored_by),
-      citation_label: cleanEvidenceField(source.citation_label)
+      citation_label: cleanEvidenceField(source.citation_label),
+      max_bytes: cleanEvidenceByteLimit(source.max_bytes)
     };
 
     if (
@@ -1946,6 +1954,12 @@ function githubEvidenceHandlesFromMetadata(metadata: Record<string, unknown> | n
 
 function cleanEvidenceField(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function cleanEvidenceByteLimit(value: unknown) {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : undefined;
 }
 
 function githubRefNotice(ref: string) {

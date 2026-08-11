@@ -260,8 +260,9 @@ reject bridge-token reads.
 Packet-authorized GitHub evidence can be resolved only by explicit handle id.
 The resolver is read-only, accepts only handles already present in
 `metadata.github_evidence`, fetches only full commit SHAs or `refs/tags/<tag>`
-refs, limits files to 200 KB, and writes an `evidence_resolved` audit receipt
-with `fetched_by`, `fetched_at`, `byte_length`, and `sha256`.
+refs, applies optional per-handle `max_bytes` limits under the 200 KB server
+cap, and writes an `evidence_resolved` audit receipt with `fetched_by`,
+`fetched_at`, `byte_length`, `effective_max_bytes`, and `sha256`.
 
 Operator route:
 

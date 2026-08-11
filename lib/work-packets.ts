@@ -264,7 +264,7 @@ export async function resolveWorkPacketEvidence(supabase: Supabase, input: unkno
   const evidenceId = requiredString(input.evidence_id ?? input.handle_id, "evidence_id", MAX_SHORT_TEXT);
   const packet = await loadPacket(supabase, packetId);
   const handle = githubEvidenceHandle(packet, evidenceId);
-  const { content, fetchedAt, sha256, byteLength } = await fetchGitHubEvidence(handle);
+  const { content, fetchedAt, sha256, byteLength, maxBytes } = await fetchGitHubEvidence(handle);
 
   await insertPacketEvent(
     supabase,
@@ -283,6 +283,8 @@ export async function resolveWorkPacketEvidence(supabase: Supabase, input: unkno
       purpose: handle.purpose,
       authored_by: handle.authored_by,
       citation_label: handle.citation_label,
+      max_bytes: handle.max_bytes,
+      effective_max_bytes: maxBytes,
       fetched_by: actor.actorId,
       fetched_at: fetchedAt,
       byte_length: byteLength,
@@ -298,6 +300,7 @@ export async function resolveWorkPacketEvidence(supabase: Supabase, input: unkno
       fetched_by: actor.actorId,
       fetched_at: fetchedAt,
       byte_length: byteLength,
+      effective_max_bytes: maxBytes,
       sha256,
       content
     }
@@ -470,6 +473,7 @@ type GitHubEvidenceHandle = {
   purpose: string;
   authored_by: string;
   citation_label: string;
+  max_bytes?: number;
 };
 
 function githubEvidenceHandle(packet: WorkPacket, evidenceId: string): GitHubEvidenceHandle {
@@ -493,7 +497,8 @@ function githubEvidenceHandle(packet: WorkPacket, evidenceId: string): GitHubEvi
       path: optionalString(item.path, MAX_TEXT) ?? "",
       purpose: optionalString(item.purpose, MAX_TEXT) ?? "",
       authored_by: optionalString(item.authored_by, MAX_SHORT_TEXT) ?? "",
-      citation_label: optionalString(item.citation_label, MAX_SHORT_TEXT) ?? ""
+      citation_label: optionalString(item.citation_label, MAX_SHORT_TEXT) ?? "",
+      max_bytes: optionalEvidenceByteLimit(item.max_bytes)
     };
 
     if (handle.id !== evidenceId) {
@@ -538,6 +543,10 @@ function validateGitHubEvidenceHandle(handle: GitHubEvidenceHandle) {
   if (!isImmutableGitHubRef(handle.ref)) {
     throw new Error("GitHub evidence ref must be a full commit SHA or refs/tags/<tag> for v0.");
   }
+
+  if (handle.max_bytes !== undefined && (handle.max_bytes < 1 || handle.max_bytes > MAX_EVIDENCE_BYTES)) {
+    throw new Error(`GitHub evidence max_bytes must be between 1 and ${MAX_EVIDENCE_BYTES}.`);
+  }
 }
 
 function isImmutableGitHubRef(ref: string) {
@@ -545,6 +554,7 @@ function isImmutableGitHubRef(ref: string) {
 }
 
 async function fetchGitHubEvidence(handle: GitHubEvidenceHandle) {
+  const maxBytes = handle.max_bytes ?? MAX_EVIDENCE_BYTES;
   const ref = handle.ref.startsWith("refs/tags/") ? handle.ref.slice("refs/tags/".length) : handle.ref;
   const url = `https://raw.githubusercontent.com/${encodeURIComponent(handle.owner)}/${encodeURIComponent(
     handle.repo
@@ -567,21 +577,36 @@ async function fetchGitHubEvidence(handle: GitHubEvidenceHandle) {
   const contentLength = Number(response.headers.get("content-length") ?? 0);
 
   if (contentLength > MAX_EVIDENCE_BYTES) {
-    throw new Error(`GitHub evidence file is too large for v0 (${contentLength} bytes).`);
+    throw new Error(`GitHub evidence file is too large for v0 (${contentLength} reported bytes).`);
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer());
 
-  if (bytes.byteLength > MAX_EVIDENCE_BYTES) {
-    throw new Error(`GitHub evidence file is too large for v0 (${bytes.byteLength} bytes).`);
+  if (bytes.byteLength > maxBytes) {
+    throw new Error(`GitHub evidence file is too large for this handle (${bytes.byteLength} bytes; max ${maxBytes}).`);
   }
 
   return {
     content: new TextDecoder("utf-8", { fatal: false }).decode(bytes),
     fetchedAt: new Date().toISOString(),
     sha256: createHash("sha256").update(bytes).digest("hex"),
-    byteLength: bytes.byteLength
+    byteLength: bytes.byteLength,
+    maxBytes
   };
+}
+
+function optionalEvidenceByteLimit(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    throw new Error("GitHub evidence max_bytes must be a number.");
+  }
+
+  return Math.floor(numeric);
 }
 
 async function loadPacket(supabase: Supabase, id: string) {
