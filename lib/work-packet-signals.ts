@@ -252,18 +252,31 @@ export async function tick(options: { scheduled?: boolean } = {}) {
 
 async function detectNewPacketEvents() {
   const supabase = getSupabaseAdmin();
-  let query = supabase
-    .from("work_packet_events")
-    .select("id, packet_id, actor_display_name, event_type, response_state, content, metadata, created_at")
-    .in("event_type", ["created", "packet_ready_for_rollup", "question", "hold", "rollup", "rollup_review"])
-    .order("created_at", { ascending: true })
-    .limit(50);
+  const eventTypes = ["created", "packet_ready_for_rollup", "question", "hold", "rollup", "rollup_review"];
 
-  if (state.lastSeenEventAt) {
-    query = query.gt("created_at", state.lastSeenEventAt);
+  if (!state.lastSeenEventAt) {
+    const { data, error } = await supabase
+      .from("work_packet_events")
+      .select("created_at")
+      .in("event_type", eventTypes)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      throw new Error(`Could not initialize work packet signal baseline: ${error.message}`);
+    }
+
+    state.lastSeenEventAt = data?.[0]?.created_at ?? null;
+    return;
   }
 
-  const { data, error } = await query;
+  const { data, error } = await supabase
+    .from("work_packet_events")
+    .select("id, packet_id, actor_display_name, event_type, response_state, content, metadata, created_at")
+    .in("event_type", eventTypes)
+    .gt("created_at", state.lastSeenEventAt)
+    .order("created_at", { ascending: true })
+    .limit(50);
 
   if (error) {
     throw new Error(`Could not read work packet events: ${error.message}`);
@@ -455,6 +468,10 @@ function signalTargets(event: PacketEventRow, packet?: PacketRow) {
   }
 
   if (event.event_type === "created") {
+    if (isClosedPacketStatus(packet.status)) {
+      return [];
+    }
+
     return uniqueTargets([
       ...packet.collaborators,
       packet.owner_agent
@@ -466,6 +483,10 @@ function signalTargets(event: PacketEventRow, packet?: PacketRow) {
   }
 
   return uniqueTargets([packet.conductor]);
+}
+
+function isClosedPacketStatus(status: string) {
+  return status === "merged" || status === "closed";
 }
 
 function scheduleNextCheck() {
@@ -504,6 +525,10 @@ function addEvent(
   sourceKey?: string
 ) {
   if (sourceKey && state.recentEvents.some((event) => event.source_key === sourceKey)) {
+    return;
+  }
+
+  if (type === "signal_detected" && targetIds.length === 0) {
     return;
   }
 

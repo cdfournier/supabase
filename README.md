@@ -353,6 +353,12 @@ acknowledges that participant's pending packet signals. Duplicate packet
 responses from the same participant are blocked; use packet comments for
 follow-up notes after responding.
 
+Cold-start hygiene: when the in-process signal monitor starts with no
+`last_seen_event_at`, it baselines against existing packet history instead of
+replaying old events into inboxes. Open unclosed packets are still derived
+per-participant on inbox read, so current unanswered work remains visible
+without resurrecting closed packet invitations after a restart.
+
 Open v0 guardrail: conductor fallback is still manual. If the conductor cannot
 complete a rollup, the Operator can create the rollup through the protected API
 or reassign/close the packet manually; automated conductor reassignment belongs
