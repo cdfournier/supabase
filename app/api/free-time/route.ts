@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   start as startFreeTime,
+  previewPrompt as previewFreeTimePrompt,
   statusWithSettings as freeTimeStatus,
   stop as stopFreeTime,
   tick as tickFreeTime
@@ -32,8 +33,12 @@ export async function POST(request: Request) {
       return NextResponse.json(await tickFreeTime(optionalAgent(body.agent)));
     }
 
+    if (action === "preview_prompt") {
+      return NextResponse.json(await previewFreeTimePrompt(requiredAgent(body.agent)));
+    }
+
     return NextResponse.json(
-      { error: 'Choose action "start", "stop", or "tick".' },
+      { error: 'Choose action "start", "stop", "tick", or "preview_prompt".' },
       { status: 400 }
     );
   } catch (error) {
@@ -61,6 +66,16 @@ function optionalAgent(value: unknown) {
 
   if (agent !== "soren" && agent !== "varro") {
     throw new Error("Free Moments agent must be soren or varro.");
+  }
+
+  return agent;
+}
+
+function requiredAgent(value: unknown) {
+  const agent = optionalAgent(value);
+
+  if (!agent) {
+    throw new Error("Free Moments preview_prompt requires agent soren or varro.");
   }
 
   return agent;

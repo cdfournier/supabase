@@ -59,6 +59,15 @@ type PendingWorkPacketSignal = {
   message: string;
 };
 
+type FreeTimeTriggerContext = {
+  allowed: boolean;
+  error: string | null;
+  pending_count: number;
+  visible_count: number;
+  digest: string | null;
+  pending_signals: PendingWorkPacketSignal[];
+};
+
 type FreeTimeState = {
   running: boolean;
   turnInProgress: boolean;
@@ -221,6 +230,21 @@ export async function tick(targetAgent?: AgentName, options: { scheduled?: boole
   return status();
 }
 
+export async function previewPrompt(agent: AgentName) {
+  if (!AGENTS.includes(agent)) {
+    throw new Error("Free Moments preview agent must be soren or varro.");
+  }
+
+  const capabilityProfile = await loadAgentCapabilityProfile(getSupabaseAdmin(), agent);
+  const triggerContext = await buildFreeTimeTriggerContext(agent, capabilityProfile, false);
+
+  return {
+    agent,
+    trigger_context: triggerContext,
+    prompt: promptWithTriggerDigest(triggerContext.digest)
+  };
+}
+
 async function runAgentTurn(agent: AgentName) {
   const capabilityProfile = await loadAgentCapabilityProfile(getSupabaseAdmin(), agent);
 
@@ -232,7 +256,8 @@ async function runAgentTurn(agent: AgentName) {
   addEvent("turn_started", `Free Moment turn started for ${agent}.`, agent);
 
   try {
-    await sendAgentMessage(agent, await buildFreeTimePrompt(agent, capabilityProfile), { source: "free_time" });
+    const triggerContext = await buildFreeTimeTriggerContext(agent, capabilityProfile, true);
+    await sendAgentMessage(agent, promptWithTriggerDigest(triggerContext.digest), { source: "free_time" });
     state.lastError = null;
     addEvent("turn_completed", `Free Moment turn completed for ${agent}.`, agent);
   } catch (error) {
@@ -245,33 +270,69 @@ async function runAgentTurn(agent: AgentName) {
   }
 }
 
-async function buildFreeTimePrompt(agent: AgentName, capabilityProfile: Awaited<ReturnType<typeof loadAgentCapabilityProfile>>) {
+async function buildFreeTimeTriggerContext(
+  agent: AgentName,
+  capabilityProfile: Awaited<ReturnType<typeof loadAgentCapabilityProfile>>,
+  recordFailureEvent: boolean
+): Promise<FreeTimeTriggerContext> {
   if (!isSurfaceAllowed(capabilityProfile, "work_packets", "read")) {
-    return FREE_TIME_PROMPT;
+    return {
+      allowed: false,
+      error: null,
+      pending_count: 0,
+      visible_count: 0,
+      digest: null,
+      pending_signals: []
+    };
   }
 
   try {
     const inbox = await refreshSignalsForParticipant(`agent:${agent}`);
-    const digest = workPacketSignalDigest(inbox.pending_signals as PendingWorkPacketSignal[]);
+    const pendingSignals = inbox.pending_signals as PendingWorkPacketSignal[];
+    const visibleSignals = visibleWorkPacketSignals(pendingSignals);
 
-    return digest ? `${FREE_TIME_PROMPT}\n\n${digest}` : FREE_TIME_PROMPT;
+    return {
+      allowed: true,
+      error: null,
+      pending_count: pendingSignals.length,
+      visible_count: visibleSignals.length,
+      digest: workPacketSignalDigest(visibleSignals),
+      pending_signals: pendingSignals
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not refresh Work Packet Signals.";
-    addEvent("turn_context_failed", `Could not add Work Packet Signals context for ${agent}: ${message}`, agent);
-    return FREE_TIME_PROMPT;
+
+    if (recordFailureEvent) {
+      addEvent("turn_context_failed", `Could not add Work Packet Signals context for ${agent}: ${message}`, agent);
+    }
+
+    return {
+      allowed: true,
+      error: message,
+      pending_count: 0,
+      visible_count: 0,
+      digest: null,
+      pending_signals: []
+    };
   }
 }
 
-function workPacketSignalDigest(signals: PendingWorkPacketSignal[]) {
-  const visibleSignals = signals
+function visibleWorkPacketSignals(signals: PendingWorkPacketSignal[]) {
+  return signals
     .filter((signal) => (signal.wake_priority ?? "digest_only") !== "silent")
     .slice(0, 5);
+}
 
-  if (!visibleSignals.length) {
-    return "";
+function promptWithTriggerDigest(digest: string | null) {
+  return digest ? `${FREE_TIME_PROMPT}\n\n${digest}` : FREE_TIME_PROMPT;
+}
+
+function workPacketSignalDigest(signals: PendingWorkPacketSignal[]) {
+  if (!signals.length) {
+    return null;
   }
 
-  const lines = visibleSignals.map((signal) => {
+  const lines = signals.map((signal) => {
     const title = signal.packet_title || "Untitled packet";
     const id = signal.packet_id ? `packet ${signal.packet_id}` : "packet id unavailable";
     const type = signal.packet_event_type || "signal";

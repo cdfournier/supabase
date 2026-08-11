@@ -360,6 +360,14 @@ short digest of non-`silent` pending packet signals to the prompt. This does not
 force packet work and is not full WAKE automation; it simply makes active
 invitations visible when the Agent is already awake.
 
+Preview a Free Moment prompt without waking the Agent:
+
+```bash
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
+  -H "Content-Type: application/json" \
+  -d '{"action":"preview_prompt","agent":"varro"}'
+```
+
 Cold-start hygiene: when the in-process signal monitor has no
 `last_seen_event_at`, it baselines against existing packet history instead of
 replaying old events. Open unclosed packets are still derived per participant on

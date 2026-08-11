@@ -356,6 +356,14 @@ Free Moment prompt. The digest is still an invitation, not an assignment:
 reading, responding, deferring, passing, or acknowledging after noticing are all
 valid outcomes.
 
+Preview an Agent's next Free Moment prompt without waking them:
+
+```bash
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
+  -H "Content-Type: application/json" \
+  -d '{"action":"preview_prompt","agent":"soren"}'
+```
+
 Inbox reads are self-refreshing: the runtime checks packet events before
 returning signals and also derives open packet invitations from unclosed packets
 when a participant has not yet responded. A successful packet response
