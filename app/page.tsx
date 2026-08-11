@@ -295,8 +295,20 @@ type WorkPacket = {
   review_rollup: WorkPacketRollup;
   status: "queued" | "active" | "blocked" | "review" | "merged" | "closed";
   wake_priority: string;
+  metadata: Record<string, unknown>;
   updated_at: string;
   created_at: string;
+};
+
+type GitHubEvidenceHandle = {
+  id: string;
+  provider: string;
+  owner: string;
+  repo: string;
+  ref: string;
+  path: string;
+  purpose: string;
+  citation_label: string;
 };
 
 type ControlPanelKey = "runtime" | "freeMoments" | "packetSignals";
@@ -1728,6 +1740,7 @@ function OperatorInboxView({
 
         {packets.map((packet) => {
           const rollup = packet.review_rollup ?? {};
+          const evidenceHandles = githubEvidenceHandlesFromMetadata(packet.metadata);
           const note = notes[packet.id] ?? "";
           const actionDisabled = Boolean(actionInProgress);
 
@@ -1763,6 +1776,8 @@ function OperatorInboxView({
                   </div>
                 ) : null}
               </div>
+
+              <GitHubEvidenceList handles={evidenceHandles} />
 
               <div className="inbox-rollup-grid">
                 <RollupList title="Reviewed By" items={rollup.reviewed_by} />
@@ -1814,6 +1829,52 @@ function OperatorInboxView({
   );
 }
 
+function GitHubEvidenceList({ handles }: { handles: GitHubEvidenceHandle[] }) {
+  if (!handles.length) {
+    return null;
+  }
+
+  return (
+    <div className="github-evidence" aria-label="GitHub evidence handles">
+      <div>
+        <h4>Evidence</h4>
+        <p>Authorized GitHub file handles for this packet. No content is fetched here.</p>
+      </div>
+      <div className="github-evidence-list">
+        {handles.map((handle) => {
+          const refNotice = githubRefNotice(handle.ref);
+
+          return (
+            <article className="github-evidence-card" key={handle.id}>
+              <div>
+                <strong>{handle.citation_label}</strong>
+                <code>
+                  {handle.owner}/{handle.repo}:{handle.path}
+                </code>
+              </div>
+              <dl>
+                <div>
+                  <dt>Handle</dt>
+                  <dd>{handle.id}</dd>
+                </div>
+                <div>
+                  <dt>Ref</dt>
+                  <dd>{handle.ref}</dd>
+                </div>
+                <div>
+                  <dt>Purpose</dt>
+                  <dd>{handle.purpose}</dd>
+                </div>
+              </dl>
+              {refNotice ? <p className="github-evidence-warning">{refNotice}</p> : null}
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function RollupList({ items, title }: { items?: string[]; title: string }) {
   const visibleItems = (items ?? []).filter(Boolean);
 
@@ -1831,6 +1892,65 @@ function RollupList({ items, title }: { items?: string[]; title: string }) {
       )}
     </div>
   );
+}
+
+function githubEvidenceHandlesFromMetadata(metadata: Record<string, unknown> | null | undefined) {
+  const evidence = metadata?.github_evidence;
+
+  if (!Array.isArray(evidence)) {
+    return [];
+  }
+
+  const handles: GitHubEvidenceHandle[] = [];
+
+  for (const item of evidence) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+
+    const source = item as Record<string, unknown>;
+    const handle = {
+      id: cleanEvidenceField(source.id),
+      provider: cleanEvidenceField(source.provider),
+      owner: cleanEvidenceField(source.owner),
+      repo: cleanEvidenceField(source.repo),
+      ref: cleanEvidenceField(source.ref),
+      path: cleanEvidenceField(source.path),
+      purpose: cleanEvidenceField(source.purpose),
+      citation_label: cleanEvidenceField(source.citation_label)
+    };
+
+    if (
+      handle.id &&
+      handle.provider === "github" &&
+      handle.owner &&
+      handle.repo &&
+      handle.ref &&
+      handle.path &&
+      handle.purpose &&
+      handle.citation_label
+    ) {
+      handles.push(handle);
+    }
+  }
+
+  return handles;
+}
+
+function cleanEvidenceField(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function githubRefNotice(ref: string) {
+  if (/^[a-f0-9]{40}$/i.test(ref) || ref.startsWith("refs/tags/")) {
+    return "";
+  }
+
+  if (ref.startsWith("refs/heads/") || ["main", "master", "develop", "trunk"].includes(ref)) {
+    return "Branch ref: requires explicit Operator sign-off for this evidence handle.";
+  }
+
+  return "Ref is not a full commit SHA. Confirm it is an immutable tag or explicitly approved.";
 }
 
 function FreeTimePanel({
