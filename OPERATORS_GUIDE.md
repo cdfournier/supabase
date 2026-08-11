@@ -359,6 +359,9 @@ Cold-start hygiene: when the in-process signal monitor has no
 replaying old events. Open unclosed packets are still derived per participant on
 inbox read, so current unanswered work remains visible without resurrecting
 closed packet invitations after a restart.
+Signal inboxes also prune deleted-packet signals and closed/merged actionable
+packet signals during status and inbox reads, keeping smoke tests and completed
+work from lingering as pending work.
 
 Signal inbox reads refresh before returning. If the event monitor has not yet
 noticed a packet-created event, the inbox derives an invitation from open

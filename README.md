@@ -358,6 +358,9 @@ Cold-start hygiene: when the in-process signal monitor starts with no
 replaying old events into inboxes. Open unclosed packets are still derived
 per-participant on inbox read, so current unanswered work remains visible
 without resurrecting closed packet invitations after a restart.
+Signal inboxes also prune deleted-packet signals and closed/merged actionable
+packet signals during status and inbox reads, keeping smoke tests and completed
+work from lingering as pending work.
 
 Open v0 guardrail: conductor fallback is still manual. If the conductor cannot
 complete a rollup, the Operator can create the rollup through the protected API

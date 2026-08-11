@@ -25,8 +25,10 @@ type SignalEvent = {
   source_key?: string;
   at: string;
   type: SignalEventType;
+  packet_event_type?: string;
   packet_id?: string;
   packet_title?: string;
+  packet_status?: string;
   target_ids: string[];
   acknowledged_by: string[];
   message: string;
@@ -53,6 +55,11 @@ type PacketRow = {
   wake_priority: string;
   metadata: Record<string, unknown> | null;
   updated_at: string;
+};
+
+type PacketStatusRow = {
+  id: string;
+  status: string;
 };
 
 type WorkPacketSignalsState = {
@@ -96,6 +103,8 @@ export function status() {
 
 export async function statusWithSettings() {
   try {
+    await pruneStalePacketSignals();
+
     return {
       ...status(),
       durable_enabled: await readWorkPacketSignalsEnabled(),
@@ -129,6 +138,7 @@ export function signalsForParticipant(participantId: string) {
 export async function refreshSignalsForParticipant(participantId: string) {
   await tick();
   await detectOpenPacketsForParticipant(participantId);
+  await pruneStalePacketSignals();
 
   return signalsForParticipant(participantId);
 }
@@ -232,6 +242,7 @@ export async function tick(options: { scheduled?: boolean } = {}) {
   try {
     await detectNewPacketEvents();
     await detectStalePackets();
+    await pruneStalePacketSignals();
     state.lastCheckAt = new Date().toISOString();
     state.lastError = null;
     addEvent("check_completed", "Work Packet Signals check completed.");
@@ -298,7 +309,9 @@ async function detectNewPacketEvents() {
       event.packet_id,
       context?.title ?? "Unknown packet",
       signalTargets(event, context),
-      `event:${event.id}`
+      `event:${event.id}`,
+      event.event_type,
+      context?.status
     );
   }
 
@@ -333,7 +346,9 @@ async function detectStalePackets() {
       packet.id,
       packet.title,
       [packet.conductor],
-      `stale:${packet.id}`
+      `stale:${packet.id}`,
+      "stale",
+      packet.status
     );
   }
 }
@@ -390,9 +405,63 @@ async function detectOpenPacketsForParticipant(participantId: string) {
       packet.id,
       packet.title,
       [participantId],
-      `participant:${participantId}:packet:${packet.id}:open`
+      `participant:${participantId}:packet:${packet.id}:open`,
+      "open_packet",
+      packet.status
     );
   }
+}
+
+async function pruneStalePacketSignals() {
+  const packetIds = [
+    ...new Set(
+      state.recentEvents
+        .map((event) => event.packet_id)
+        .filter((packetId): packetId is string => Boolean(packetId))
+    )
+  ];
+
+  if (!packetIds.length) {
+    return;
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("work_packets")
+    .select("id, status")
+    .in("id", packetIds);
+
+  if (error) {
+    throw new Error(`Could not prune stale work packet signals: ${error.message}`);
+  }
+
+  const statuses = new Map(
+    ((data ?? []) as PacketStatusRow[]).map((packet) => [packet.id, packet.status])
+  );
+
+  state.recentEvents = state.recentEvents.filter((event) => {
+    if (!event.packet_id || event.type !== "signal_detected") {
+      return true;
+    }
+
+    const status = statuses.get(event.packet_id);
+
+    if (!status) {
+      return false;
+    }
+
+    return !(isClosedPacketStatus(status) && isActionablePacketSignal(event));
+  });
+
+  state.seenStalePackets = new Set(
+    [...state.seenStalePackets].filter((packetId) => {
+      const status = statuses.get(packetId);
+      return Boolean(status && !isClosedPacketStatus(status));
+    })
+  );
+}
+
+function isActionablePacketSignal(event: SignalEvent) {
+  return event.packet_event_type !== "rollup_review";
 }
 
 function hasSignalForParticipantPacket(participantId: string, packetId: string) {
@@ -522,7 +591,9 @@ function addEvent(
   packetId?: string,
   packetTitle?: string,
   targetIds: string[] = [],
-  sourceKey?: string
+  sourceKey?: string,
+  packetEventType?: string,
+  packetStatus?: string
 ) {
   if (sourceKey && state.recentEvents.some((event) => event.source_key === sourceKey)) {
     return;
@@ -537,8 +608,10 @@ function addEvent(
     source_key: sourceKey,
     at: new Date().toISOString(),
     type,
+    packet_event_type: packetEventType,
     packet_id: packetId,
     packet_title: packetTitle,
+    packet_status: packetStatus,
     target_ids: targetIds,
     acknowledged_by: [],
     message
