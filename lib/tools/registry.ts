@@ -63,6 +63,7 @@ import {
   getRuntimeWorkPacket,
   listRuntimeWorkPacketSignals,
   listRuntimeWorkPackets,
+  resolveRuntimeWorkPacketEvidence,
   respondToRuntimeWorkPacket
 } from "@/lib/tools/work-packets";
 import {
@@ -269,6 +270,26 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "work_packet_resolve_evidence",
+    description:
+      "Resolve one packet-authorized GitHub evidence handle by id. This is read-only, limited to evidence handles already attached to the packet, and records an audit receipt.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The work packet id."
+        },
+        evidence_id: {
+          type: "string",
+          description: "The github_evidence handle id to resolve."
+        }
+      },
+      required: ["id", "evidence_id"],
       additionalProperties: false
     }
   },
@@ -1402,6 +1423,11 @@ export async function runTool(
         return {
           ok: true,
           content: await getRuntimeWorkPacket(agent, input)
+        };
+      case "work_packet_resolve_evidence":
+        return {
+          ok: true,
+          content: await resolveRuntimeWorkPacketEvidence(agent, input)
         };
       case "work_packet_respond":
         return {

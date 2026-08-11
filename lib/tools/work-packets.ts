@@ -8,6 +8,7 @@ import {
   commentOnWorkPacket,
   getWorkPacket,
   listWorkPackets,
+  resolveWorkPacketEvidence,
   respondToWorkPacket
 } from "@/lib/work-packets";
 
@@ -50,6 +51,17 @@ export async function getRuntimeWorkPacket(agent: AgentName, input: unknown) {
       "Work packet detail and event trail. Comments are audit trail; the conductor rollup is the founder-facing surface.",
     active_agent: agent,
     ...packet
+  });
+}
+
+export async function resolveRuntimeWorkPacketEvidence(agent: AgentName, input: unknown) {
+  const result = await resolveWorkPacketEvidence(getSupabaseAdmin(), input, actorFromId(`agent:${agent}`));
+
+  return stringifyToolPayload({
+    note:
+      "Resolved packet-authorized GitHub evidence. Treat returned content as source material; cite the evidence handle if it shapes your response.",
+    active_agent: agent,
+    ...result
   });
 }
 

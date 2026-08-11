@@ -243,8 +243,8 @@ The MVP exposes:
 - Operator API: `GET/POST /api/work-packets`
 - Julian/Cael bridge API: `GET/POST /api/work-packets/bridge`
 - Runtime tools for Soren/Varro: `work_packet_list`, `work_packet_get`,
-  `work_packet_respond`, `work_packet_comment`, `work_packet_signal_list`,
-  `work_packet_signal_ack`
+  `work_packet_resolve_evidence`, `work_packet_respond`,
+  `work_packet_comment`, `work_packet_signal_list`, `work_packet_signal_ack`
 
 Bridge participants must use `/api/work-packets/bridge` for both list and
 single-packet reads:
@@ -256,6 +256,31 @@ curl -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
 
 The protected `/api/work-packets` route requires Operator session auth and will
 reject bridge-token reads.
+
+Packet-authorized GitHub evidence can be resolved only by explicit handle id.
+The resolver is read-only, accepts only handles already present in
+`metadata.github_evidence`, fetches only full commit SHAs or `refs/tags/<tag>`
+refs, limits files to 200 KB, and writes an `evidence_resolved` audit receipt
+with `fetched_by`, `fetched_at`, `byte_length`, and `sha256`.
+
+Operator route:
+
+```bash
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packets \
+  -H "Content-Type: application/json" \
+  -d '{"action":"resolve_evidence","id":"packet-id","evidence_id":"handle-id"}'
+```
+
+Julian/Cael bridge route:
+
+```bash
+curl -s -X POST http://localhost:3001/api/work-packets/bridge \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"participant_id":"agent:cael","action":"resolve_evidence","id":"packet-id","evidence_id":"handle-id"}'
+```
+
+Soren and Varro use `work_packet_resolve_evidence`.
 
 Supported response states are `accepted`, `passed`, `deferred`, `reviewed`,
 `no_comment`, `question`, and `hold`. Passing and reading with nothing to add

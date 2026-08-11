@@ -276,6 +276,7 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   cafe_post_message: { surface: "cafe", action: "write" },
   work_packet_list: { surface: "work_packets", action: "read" },
   work_packet_get: { surface: "work_packets", action: "read" },
+  work_packet_resolve_evidence: { surface: "work_packets", action: "read" },
   work_packet_respond: { surface: "work_packets", action: "write" },
   work_packet_comment: { surface: "work_packets", action: "write" },
   work_packet_signal_list: { surface: "work_packets", action: "read" },

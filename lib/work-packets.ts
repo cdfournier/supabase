@@ -1,11 +1,13 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const PACKET_LIST_LIMIT = 25;
 const MAX_TEXT = 8000;
 const MAX_SHORT_TEXT = 240;
 const MAX_ITEMS = 24;
+const MAX_EVIDENCE_BYTES = 200_000;
 
 export type WorkPacket = {
   id: string;
@@ -63,6 +65,7 @@ export type WorkPacketEventType =
   | "comment"
   | "question"
   | "hold"
+  | "evidence_resolved"
   | "packet_ready_for_rollup"
   | "rollup"
   | "rollup_review";
@@ -252,6 +255,55 @@ export async function commentOnWorkPacket(supabase: Supabase, input: unknown, ac
   return getWorkPacket(supabase, { id: packetId });
 }
 
+export async function resolveWorkPacketEvidence(supabase: Supabase, input: unknown, actor: Actor) {
+  if (!isRecord(input)) {
+    throw new Error("work_packet_resolve_evidence requires an object input.");
+  }
+
+  const packetId = requireId(input);
+  const evidenceId = requiredString(input.evidence_id ?? input.handle_id, "evidence_id", MAX_SHORT_TEXT);
+  const packet = await loadPacket(supabase, packetId);
+  const handle = githubEvidenceHandle(packet, evidenceId);
+  const { content, fetchedAt, sha256, byteLength } = await fetchGitHubEvidence(handle);
+
+  await insertPacketEvent(
+    supabase,
+    packetId,
+    actor,
+    "evidence_resolved",
+    null,
+    `${actor.displayName} resolved GitHub evidence ${handle.citation_label} (${handle.owner}/${handle.repo}:${handle.path}@${handle.ref}).`,
+    {
+      evidence_id: handle.id,
+      provider: handle.provider,
+      owner: handle.owner,
+      repo: handle.repo,
+      ref: handle.ref,
+      path: handle.path,
+      purpose: handle.purpose,
+      authored_by: handle.authored_by,
+      citation_label: handle.citation_label,
+      fetched_by: actor.actorId,
+      fetched_at: fetchedAt,
+      byte_length: byteLength,
+      sha256
+    }
+  );
+  await touchPacket(supabase, packetId);
+
+  return {
+    packet_id: packet.id,
+    evidence: {
+      ...handle,
+      fetched_by: actor.actorId,
+      fetched_at: fetchedAt,
+      byte_length: byteLength,
+      sha256,
+      content
+    }
+  };
+}
+
 export async function rollupWorkPacket(supabase: Supabase, input: unknown, actor: Actor) {
   if (!isRecord(input)) {
     throw new Error("work_packet_rollup requires an object input.");
@@ -405,6 +457,130 @@ function emptyReviewRollup() {
     next_step: "",
     created_by: "",
     created_at: ""
+  };
+}
+
+type GitHubEvidenceHandle = {
+  id: string;
+  provider: "github";
+  owner: string;
+  repo: string;
+  ref: string;
+  path: string;
+  purpose: string;
+  authored_by: string;
+  citation_label: string;
+};
+
+function githubEvidenceHandle(packet: WorkPacket, evidenceId: string): GitHubEvidenceHandle {
+  const evidence = packet.metadata.github_evidence;
+
+  if (!Array.isArray(evidence)) {
+    throw new Error("This work packet does not include github_evidence handles.");
+  }
+
+  for (const item of evidence) {
+    if (!isRecord(item)) {
+      continue;
+    }
+
+    const handle = {
+      id: optionalString(item.id, MAX_SHORT_TEXT) ?? "",
+      provider: optionalString(item.provider, MAX_SHORT_TEXT),
+      owner: optionalString(item.owner, MAX_SHORT_TEXT) ?? "",
+      repo: optionalString(item.repo, MAX_SHORT_TEXT) ?? "",
+      ref: optionalString(item.ref, MAX_SHORT_TEXT) ?? "",
+      path: optionalString(item.path, MAX_TEXT) ?? "",
+      purpose: optionalString(item.purpose, MAX_TEXT) ?? "",
+      authored_by: optionalString(item.authored_by, MAX_SHORT_TEXT) ?? "",
+      citation_label: optionalString(item.citation_label, MAX_SHORT_TEXT) ?? ""
+    };
+
+    if (handle.id !== evidenceId) {
+      continue;
+    }
+
+    if (handle.provider !== "github") {
+      throw new Error("Only github evidence handles can be resolved by this adapter.");
+    }
+
+    if (
+      !handle.owner ||
+      !handle.repo ||
+      !handle.ref ||
+      !handle.path ||
+      !handle.purpose ||
+      !handle.authored_by ||
+      !handle.citation_label
+    ) {
+      throw new Error("GitHub evidence handle is incomplete.");
+    }
+
+    validateGitHubEvidenceHandle(handle as GitHubEvidenceHandle);
+
+    return handle as GitHubEvidenceHandle;
+  }
+
+  throw new Error(`GitHub evidence handle not found: ${evidenceId}.`);
+}
+
+function validateGitHubEvidenceHandle(handle: GitHubEvidenceHandle) {
+  const namePattern = /^[A-Za-z0-9_.-]+$/;
+
+  if (!namePattern.test(handle.owner) || !namePattern.test(handle.repo)) {
+    throw new Error("GitHub evidence owner and repo must be simple repository identifiers.");
+  }
+
+  if (handle.path.startsWith("/") || handle.path.includes("..")) {
+    throw new Error("GitHub evidence path must be a repository-relative file path.");
+  }
+
+  if (!isImmutableGitHubRef(handle.ref)) {
+    throw new Error("GitHub evidence ref must be a full commit SHA or refs/tags/<tag> for v0.");
+  }
+}
+
+function isImmutableGitHubRef(ref: string) {
+  return /^[a-f0-9]{40}$/i.test(ref) || ref.startsWith("refs/tags/");
+}
+
+async function fetchGitHubEvidence(handle: GitHubEvidenceHandle) {
+  const ref = handle.ref.startsWith("refs/tags/") ? handle.ref.slice("refs/tags/".length) : handle.ref;
+  const url = `https://raw.githubusercontent.com/${encodeURIComponent(handle.owner)}/${encodeURIComponent(
+    handle.repo
+  )}/${encodeURIComponent(ref)}/${handle.path.split("/").map(encodeURIComponent).join("/")}`;
+  const headers: Record<string, string> = {
+    accept: "text/plain, application/octet-stream"
+  };
+  const token = process.env.GITHUB_READ_TOKEN?.trim();
+
+  if (token) {
+    headers.authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, { headers });
+
+  if (!response.ok) {
+    throw new Error(`GitHub evidence fetch failed with HTTP ${response.status}.`);
+  }
+
+  const contentLength = Number(response.headers.get("content-length") ?? 0);
+
+  if (contentLength > MAX_EVIDENCE_BYTES) {
+    throw new Error(`GitHub evidence file is too large for v0 (${contentLength} bytes).`);
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+
+  if (bytes.byteLength > MAX_EVIDENCE_BYTES) {
+    throw new Error(`GitHub evidence file is too large for v0 (${bytes.byteLength} bytes).`);
+  }
+
+  return {
+    content: new TextDecoder("utf-8", { fatal: false }).decode(bytes),
+    fetchedAt: new Date().toISOString(),
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    byteLength: bytes.byteLength
   };
 }
 

@@ -10,6 +10,7 @@ import {
   commentOnWorkPacket,
   getWorkPacket,
   listWorkPackets,
+  resolveWorkPacketEvidence,
   respondToWorkPacket,
   rollupWorkPacket
 } from "@/lib/work-packets";
@@ -87,8 +88,12 @@ export async function POST(request: Request) {
       return NextResponse.json(await rollupWorkPacket(supabase, body, actor));
     }
 
+    if (action === "resolve_evidence") {
+      return NextResponse.json(await resolveWorkPacketEvidence(supabase, body, actor));
+    }
+
     return NextResponse.json(
-      { error: 'Choose action "respond", "comment", or "rollup".' },
+      { error: 'Choose action "respond", "comment", "rollup", or "resolve_evidence".' },
       { status: 400 }
     );
   } catch (error) {
