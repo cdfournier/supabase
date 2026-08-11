@@ -276,7 +276,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "work_packet_resolve_evidence",
     description:
-      "Resolve one packet-authorized GitHub evidence handle by id. This is read-only, limited to evidence handles already attached to the packet, and records an audit receipt.",
+      "Resolve one packet-authorized GitHub evidence handle by id. This is read-only, limited to evidence handles already attached to the packet, rejects files above the effective byte limit instead of truncating, and records an audit receipt.",
     input_schema: {
       type: "object",
       properties: {

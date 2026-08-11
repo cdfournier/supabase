@@ -263,6 +263,8 @@ The resolver is read-only, accepts only handles already present in
 refs, applies optional per-handle `max_bytes` limits under the 200 KB server
 cap, and writes an `evidence_resolved` audit receipt with `fetched_by`,
 `fetched_at`, `byte_length`, `effective_max_bytes`, and `sha256`.
+Files over the effective limit are rejected; the resolver does not silently
+truncate GitHub evidence in v0.
 
 Operator route:
 

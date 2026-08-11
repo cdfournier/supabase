@@ -59,7 +59,7 @@ export async function resolveRuntimeWorkPacketEvidence(agent: AgentName, input: 
 
   return stringifyToolPayload({
     note:
-      "Resolved packet-authorized GitHub evidence. Treat returned content as source material; cite the evidence handle if it shapes your response.",
+      "Resolved packet-authorized GitHub evidence. Treat returned content as source material; cite the evidence handle if it shapes your response. Files above the effective byte limit are rejected, not silently truncated.",
     active_agent: agent,
     ...result
   });

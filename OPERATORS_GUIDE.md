@@ -366,7 +366,8 @@ work from lingering as pending work.
 Packet-authorized GitHub evidence handles may include `max_bytes` to set a
 per-file read ceiling below the runtime's 200 KB hard cap. The resolver rejects
 files larger than the effective limit and records `effective_max_bytes` in the
-`evidence_resolved` receipt.
+`evidence_resolved` receipt. It does not silently truncate GitHub evidence in
+v0; snippets or partial reads should be a later explicit mode.
 
 Signal inbox reads refresh before returning. If the event monitor has not yet
 noticed a packet-created event, the inbox derives an invitation from open
