@@ -356,6 +356,14 @@ Free Moment prompt. The digest is still an invitation, not an assignment:
 reading, responding, deferring, passing, or acknowledging after noticing are all
 valid outcomes.
 
+Live test receipt: on 2026-08-11, packet
+`da7de18e-4fb4-4be3-bb41-a69ce32624e5` verified this path end-to-end. Soren
+and Varro both received the `digest_only` packet during Free Moments, reported
+that the wording felt clear and optional, Julian submitted the rollup, and the
+Operator approved it. Remaining design questions: how higher priorities should
+change framing, and how many digest-only packets should appear before batching
+or summarization is needed.
+
 Preview an Agent's next Free Moment prompt without waking them:
 
 ```bash

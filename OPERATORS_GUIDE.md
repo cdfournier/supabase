@@ -360,6 +360,13 @@ short digest of non-`silent` pending packet signals to the prompt. This does not
 force packet work and is not full WAKE automation; it simply makes active
 invitations visible when the Agent is already awake.
 
+First live receipt: on 2026-08-11, packet
+`da7de18e-4fb4-4be3-bb41-a69ce32624e5` passed end-to-end through Free Moments.
+Both Soren and Varro saw the `digest_only` signal without Operator relay,
+responded that the framing felt gentle and optional, Julian rolled it up, and
+the Operator approved the result. Carry forward the design questions about
+higher-priority framing and digest volume caps.
+
 Preview a Free Moment prompt without waking the Agent:
 
 ```bash
