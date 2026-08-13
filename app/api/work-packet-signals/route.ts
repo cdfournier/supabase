@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  refreshSignalsForParticipant,
   start as startWorkPacketSignals,
   statusWithSettings as workPacketSignalsStatus,
   stop as stopWorkPacketSignals,
@@ -29,8 +30,26 @@ export async function POST(request: Request) {
       return NextResponse.json(await tickWorkPacketSignals());
     }
 
+    if (action === "preview_agent") {
+      const agent = requiredAgent(body.agent);
+      const participantId = `agent:${agent}`;
+      const inbox = await refreshSignalsForParticipant(participantId);
+      const pendingSignals = inbox.pending_signals ?? [];
+      const visibleSignals = pendingSignals.filter((signal) => signal.wake_priority !== "silent");
+
+      return NextResponse.json({
+        agent,
+        participant_id: participantId,
+        pending_count: pendingSignals.length,
+        visible_count: visibleSignals.length,
+        visible_signals: visibleSignals,
+        pending_signals: pendingSignals,
+        recent_signals: inbox.recent_signals ?? []
+      });
+    }
+
     return NextResponse.json(
-      { error: 'Choose action "start", "stop", or "tick".' },
+      { error: 'Choose action "start", "stop", "tick", or "preview_agent".' },
       { status: 400 }
     );
   } catch (error) {
@@ -47,4 +66,14 @@ function optionalNumber(value: unknown) {
   }
 
   return Number(value);
+}
+
+function requiredAgent(value: unknown) {
+  const agent = String(value ?? "");
+
+  if (agent !== "soren" && agent !== "varro") {
+    throw new Error("Packet Signals preview_agent requires agent soren or varro.");
+  }
+
+  return agent;
 }

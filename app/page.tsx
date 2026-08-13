@@ -243,20 +243,18 @@ type FreeTimeStatus = {
   recent_events: FreeTimeEvent[];
 };
 
-type FreeTimePromptPreview = {
+type WorkPacketSignalPreview = {
   agent: AgentName;
-  trigger_context: {
-    allowed: boolean;
-    error: string | null;
-    pending_count: number;
-    visible_count: number;
-    digest: string | null;
-    pending_signals: WorkPacketSignalEvent[];
-  };
-  prompt: string;
+  participant_id: string;
+  pending_count: number;
+  visible_count: number;
+  visible_signals: WorkPacketSignalEvent[];
+  pending_signals: WorkPacketSignalEvent[];
+  recent_signals: WorkPacketSignalEvent[];
 };
 
 type WorkPacketSignalEvent = {
+  id?: string;
   at: string;
   type: string;
   packet_event_type?: string;
@@ -365,11 +363,11 @@ export default function Home() {
   const [freeTimeLoading, setFreeTimeLoading] = useState(true);
   const [freeTimeRequestInProgress, setFreeTimeRequestInProgress] = useState(false);
   const [freeTimeError, setFreeTimeError] = useState("");
-  const [freeTimePromptPreview, setFreeTimePromptPreview] = useState<FreeTimePromptPreview | null>(null);
   const [workPacketSignals, setWorkPacketSignals] = useState<WorkPacketSignalsStatus | null>(null);
   const [workPacketSignalsLoading, setWorkPacketSignalsLoading] = useState(true);
   const [workPacketSignalsRequestInProgress, setWorkPacketSignalsRequestInProgress] = useState(false);
   const [workPacketSignalsError, setWorkPacketSignalsError] = useState("");
+  const [workPacketSignalPreview, setWorkPacketSignalPreview] = useState<WorkPacketSignalPreview | null>(null);
   const [operatorInboxPackets, setOperatorInboxPackets] = useState<WorkPacket[]>([]);
   const [operatorInboxLoading, setOperatorInboxLoading] = useState(true);
   const [operatorInboxError, setOperatorInboxError] = useState("");
@@ -432,7 +430,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    setFreeTimePromptPreview(null);
+    setWorkPacketSignalPreview(null);
   }, [selectedAgent]);
 
   const toggleControlPanel = useCallback((panel: ControlPanelKey) => {
@@ -877,39 +875,6 @@ export default function Home() {
     }
   }
 
-  async function previewFreeTimePrompt() {
-    if (freeTimeRequestInProgress) {
-      return;
-    }
-
-    setFreeTimeRequestInProgress(true);
-    setFreeTimeError("");
-
-    try {
-      const response = await fetch("/api/free-time", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ action: "preview_prompt", agent: selectedAgent })
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Free Moment preview failed.");
-      }
-
-      setFreeTimePromptPreview(data);
-    } catch (previewError) {
-      setFreeTimeError(
-        previewError instanceof Error ? previewError.message : "Free Moment preview failed."
-      );
-    } finally {
-      setFreeTimeRequestInProgress(false);
-      setFreeTimeLoading(false);
-    }
-  }
-
   async function runWorkPacketSignalsAction(action: "start" | "stop" | "tick") {
     if (workPacketSignalsRequestInProgress) {
       return;
@@ -938,6 +903,40 @@ export default function Home() {
         actionError instanceof Error
           ? actionError.message
           : "Work Packet Signals request failed."
+      );
+    } finally {
+      setWorkPacketSignalsRequestInProgress(false);
+      setWorkPacketSignalsLoading(false);
+    }
+  }
+
+  async function previewWorkPacketSignals() {
+    if (workPacketSignalsRequestInProgress) {
+      return;
+    }
+
+    setWorkPacketSignalsRequestInProgress(true);
+    setWorkPacketSignalsError("");
+
+    try {
+      const response = await fetch("/api/work-packet-signals", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ action: "preview_agent", agent: selectedAgent })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Packet Signals preview failed.");
+      }
+
+      setWorkPacketSignalPreview(data);
+      void loadWorkPacketSignalsStatus();
+    } catch (previewError) {
+      setWorkPacketSignalsError(
+        previewError instanceof Error ? previewError.message : "Packet Signals preview failed."
       );
     } finally {
       setWorkPacketSignalsRequestInProgress(false);
@@ -1345,9 +1344,7 @@ export default function Home() {
           expanded={controlPanels.freeMoments}
           loading={freeTimeLoading}
           onAction={runFreeTimeAction}
-          onPreviewPrompt={previewFreeTimePrompt}
           onToggle={() => toggleControlPanel("freeMoments")}
-          promptPreview={freeTimePromptPreview}
           requestInProgress={freeTimeRequestInProgress}
           status={freeTime}
         />
@@ -1357,8 +1354,11 @@ export default function Home() {
           expanded={controlPanels.packetSignals}
           loading={workPacketSignalsLoading}
           onAction={runWorkPacketSignalsAction}
+          onPreview={previewWorkPacketSignals}
           onToggle={() => toggleControlPanel("packetSignals")}
+          preview={workPacketSignalPreview}
           requestInProgress={workPacketSignalsRequestInProgress}
+          selectedAgent={selectedAgent}
           status={workPacketSignals}
         />
       </aside>
@@ -2036,9 +2036,7 @@ function FreeTimePanel({
   expanded,
   loading,
   onAction,
-  onPreviewPrompt,
   onToggle,
-  promptPreview,
   requestInProgress,
   selectedAgent,
   status
@@ -2047,9 +2045,7 @@ function FreeTimePanel({
   expanded: boolean;
   loading: boolean;
   onAction: (action: "start" | "stop" | "tick") => void;
-  onPreviewPrompt: () => void;
   onToggle: () => void;
-  promptPreview: FreeTimePromptPreview | null;
   requestInProgress: boolean;
   selectedAgent: AgentName;
   status: FreeTimeStatus | null;
@@ -2147,33 +2143,7 @@ function FreeTimePanel({
             >
               Wake {selectedAgent} Now
             </button>
-            <button
-              className="quiet-action"
-              disabled={disabled}
-              onClick={onPreviewPrompt}
-              type="button"
-            >
-              Preview
-            </button>
           </div>
-
-          {promptPreview ? (
-            <div className="free-time-preview">
-              <div className="pressure-row">
-                <span>{promptPreview.agent} prompt preview</span>
-                <strong>
-                  {promptPreview.trigger_context.visible_count} / {promptPreview.trigger_context.pending_count}
-                </strong>
-              </div>
-              {promptPreview.trigger_context.error ? (
-                <p className="health-error">{promptPreview.trigger_context.error}</p>
-              ) : promptPreview.trigger_context.digest ? (
-                <pre>{promptPreview.trigger_context.digest}</pre>
-              ) : (
-                <p>No visible packet signals for this Free Moment.</p>
-              )}
-            </div>
-          ) : null}
 
           <div className="free-time-events">
             <div className="pressure-row">
@@ -2209,16 +2179,22 @@ function WorkPacketSignalsPanel({
   expanded,
   loading,
   onAction,
+  onPreview,
   onToggle,
+  preview,
   requestInProgress,
+  selectedAgent,
   status
 }: {
   error: string;
   expanded: boolean;
   loading: boolean;
   onAction: (action: "start" | "stop" | "tick") => void;
+  onPreview: () => void;
   onToggle: () => void;
+  preview: WorkPacketSignalPreview | null;
   requestInProgress: boolean;
+  selectedAgent: AgentName;
   status: WorkPacketSignalsStatus | null;
 }) {
   const disabled = loading || requestInProgress;
@@ -2307,7 +2283,42 @@ function WorkPacketSignalsPanel({
             >
               Check Now
             </button>
+            <button
+              className="quiet-action"
+              disabled={disabled || status.check_in_progress}
+              onClick={onPreview}
+              type="button"
+            >
+              Preview {selectedAgent}
+            </button>
           </div>
+
+          {preview ? (
+            <div className="free-time-preview">
+              <div className="pressure-row">
+                <span>{preview.agent} signal inbox</span>
+                <strong>
+                  {preview.visible_count} / {preview.pending_count}
+                </strong>
+              </div>
+              {preview.visible_signals.length > 0 ? (
+                <ol>
+                  {preview.visible_signals.map((event) => (
+                    <li key={`${event.id ?? event.at}-${event.type}-${event.message}`}>
+                      <time dateTime={event.at}>{formatShortTime(event.at)}</time>
+                      <span>
+                        {event.packet_title ? `${event.packet_title}: ` : ""}
+                        {event.wake_tone ? `[${event.wake_tone}] ` : ""}
+                        {event.message}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p>No visible packet signals for {preview.agent}.</p>
+              )}
+            </div>
+          ) : null}
 
           <div className="free-time-events">
             <div className="pressure-row">
