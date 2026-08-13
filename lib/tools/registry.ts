@@ -357,7 +357,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "work_packet_signal_list",
     description:
-      "List transient Work Packet Signals addressed to the active agent. Use to notice new packet invitations, questions, holds, stale packets, and rollup-ready packets; this reads only the active agent's signal view.",
+      "List transient Work Packet Signals addressed to the active agent. Use to notice new packet invitations, questions, holds, stale packets, and rollup-ready packets; this reads only the active agent's signal view. Each signal may include wake_tone, which frames the arrival without making it an assignment.",
     input_schema: {
       type: "object",
       properties: {},

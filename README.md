@@ -370,6 +370,9 @@ training ground for `soft`, `curiosity`, `recovery`, and `quiet` arrivals; packe
 signals are the training ground for `directed` and `high_signal` arrivals. The
 tone should frame the invitation without commanding the response: reading,
 acting, deferring, saving a scratchpad note, or passing quietly may all be valid.
+Runtime signal objects now include a derived `wake_tone` beside the legacy
+`wake_priority`; Free Moment prompt previews and digests surface the tone so the
+vocabulary can be tested before full WAKE automation exists.
 
 Preview an Agent's next Free Moment prompt without waking them:
 

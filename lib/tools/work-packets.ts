@@ -95,7 +95,7 @@ export async function listRuntimeWorkPacketSignals(agent: AgentName) {
 
   return stringifyToolPayload({
     note:
-      "Work Packet Signals addressed to the active agent. These are transient runtime notifications; acknowledge them after noticing or handling them.",
+      "Work Packet Signals addressed to the active agent. These are transient runtime notifications with wake_tone arrival framing; acknowledge them after noticing or handling them. Tone is an invitation frame, not an assignment.",
     active_agent: agent,
     ...signals
   });

@@ -30,6 +30,7 @@ type SignalEvent = {
   packet_title?: string;
   packet_status?: string;
   wake_priority?: string;
+  wake_tone?: WakeTone;
   target_ids: string[];
   acknowledged_by: string[];
   message: string;
@@ -62,6 +63,15 @@ type PacketStatusRow = {
   id: string;
   status: string;
 };
+
+type WakeTone =
+  | "quiet"
+  | "soft"
+  | "directed"
+  | "high_signal"
+  | "recovery"
+  | "curiosity"
+  | "maintenance";
 
 type WorkPacketSignalsState = {
   running: boolean;
@@ -618,11 +628,40 @@ function addEvent(
     packet_title: packetTitle,
     packet_status: packetStatus,
     wake_priority: wakePriority,
+    wake_tone: wakeTone(packetEventType, wakePriority),
     target_ids: targetIds,
     acknowledged_by: [],
     message
   });
   state.recentEvents = state.recentEvents.slice(-EVENT_LIMIT);
+}
+
+function wakeTone(packetEventType?: string, wakePriority?: string): WakeTone {
+  if (wakePriority === "silent") {
+    return "quiet";
+  }
+
+  if (wakePriority === "loud") {
+    return "high_signal";
+  }
+
+  if (packetEventType === "hold" || packetEventType === "question" || packetEventType === "stale") {
+    return "high_signal";
+  }
+
+  if (packetEventType === "rollup_review") {
+    return "quiet";
+  }
+
+  if (packetEventType === "open_packet" || packetEventType === "created" || packetEventType === "packet_ready_for_rollup") {
+    return "directed";
+  }
+
+  if (wakePriority === "quiet") {
+    return "soft";
+  }
+
+  return "directed";
 }
 
 function uniqueTargets(targets: Array<string | null | undefined>) {

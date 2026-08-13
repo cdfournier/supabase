@@ -259,8 +259,12 @@ type FreeTimePromptPreview = {
 type WorkPacketSignalEvent = {
   at: string;
   type: string;
+  packet_event_type?: string;
   packet_id?: string;
   packet_title?: string;
+  packet_status?: string;
+  wake_priority?: string;
+  wake_tone?: string;
   message: string;
 };
 
@@ -2317,6 +2321,7 @@ function WorkPacketSignalsPanel({
                     <time dateTime={event.at}>{formatShortTime(event.at)}</time>
                     <span>
                       {event.packet_title ? `${event.packet_title}: ` : ""}
+                      {event.wake_tone ? `[${event.wake_tone}] ` : ""}
                       {event.message}
                     </span>
                   </li>

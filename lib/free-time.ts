@@ -56,6 +56,7 @@ type PendingWorkPacketSignal = {
   packet_title?: string;
   packet_status?: string;
   wake_priority?: string;
+  wake_tone?: string;
   message: string;
 };
 
@@ -338,13 +339,14 @@ function workPacketSignalDigest(signals: PendingWorkPacketSignal[]) {
     const type = signal.packet_event_type || "signal";
     const status = signal.packet_status || "status unknown";
     const priority = signal.wake_priority || "digest_only";
+    const tone = signal.wake_tone || "directed";
 
-    return `- ${title} (${id}) — ${type}, ${status}, ${priority}: ${signal.message}`;
+    return `- ${title} (${id}) — ${type}, ${status}, tone ${tone}, priority ${priority}: ${signal.message}`;
   });
 
   return [
     "## Work Packet Signals",
-    "Your packet inbox has pending signals. These are invitations, not assignments: you may read and respond now, defer, pass/no_comment, ask a question, place a hold, or simply acknowledge after noticing.",
+    "Your packet inbox has pending signals. These are invitations, not assignments. Tone frames the arrival without commanding the response: you may read and respond now, defer, pass/no_comment, ask a question, place a hold, save a scratchpad note, or simply acknowledge after noticing.",
     "Use work_packet_signal_list for exact signal ids, work_packet_get before any packet response, and work_packet_signal_ack after you have noticed or handled a signal.",
     ...lines
   ].join("\n");
