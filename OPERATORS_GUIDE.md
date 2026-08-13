@@ -367,6 +367,13 @@ responded that the framing felt gentle and optional, Julian rolled it up, and
 the Operator approved the result. Carry forward the design questions about
 higher-priority framing and digest volume caps.
 
+The next WAKE layer should be tone-aware. Free Moments are the training ground
+for `soft`, `curiosity`, `recovery`, and `quiet` arrivals; packet signals are the
+training ground for `directed` and `high_signal` arrivals. Tone frames the wake,
+but it does not command the Agent's response. A quiet pass, a defer/scratchpad
+note, and a maximum-energy response can all be valid receipts depending on the
+arrival.
+
 Preview a Free Moment prompt without waking the Agent:
 
 ```bash

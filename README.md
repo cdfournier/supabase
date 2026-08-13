@@ -364,6 +364,13 @@ Operator approved it. Remaining design questions: how higher priorities should
 change framing, and how many digest-only packets should appear before batching
 or summarization is needed.
 
+WAKE direction: Free Moments and packet signals should eventually fold into a
+tone-aware arrival broker instead of separate alert systems. Free Moments are the
+training ground for `soft`, `curiosity`, `recovery`, and `quiet` arrivals; packet
+signals are the training ground for `directed` and `high_signal` arrivals. The
+tone should frame the invitation without commanding the response: reading,
+acting, deferring, saving a scratchpad note, or passing quietly may all be valid.
+
 Preview an Agent's next Free Moment prompt without waking them:
 
 ```bash
