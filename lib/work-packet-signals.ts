@@ -649,16 +649,16 @@ function wakeTone(packetEventType?: string, wakePriority?: string): WakeTone {
     return "high_signal";
   }
 
+  if (wakePriority === "quiet") {
+    return "soft";
+  }
+
   if (packetEventType === "rollup_review") {
     return "quiet";
   }
 
   if (packetEventType === "open_packet" || packetEventType === "created" || packetEventType === "packet_ready_for_rollup") {
     return "directed";
-  }
-
-  if (wakePriority === "quiet") {
-    return "soft";
   }
 
   return "directed";
