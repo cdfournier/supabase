@@ -6,7 +6,11 @@ import {
   writeOperatorNoteWakesEnabled
 } from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
-import { WAKE_RECEIPT_REDISPATCH_BLOCKING_STATUSES } from "@/lib/wake-policy";
+import {
+  WAKE_RECEIPT_REDISPATCH_BLOCKING_STATUSES,
+  wakePriorityForOperatorNote,
+  wakeToneForOperatorNote
+} from "@/lib/wake-policy";
 
 const EVENT_LIMIT = 40;
 const DEFAULT_WAKE_COOLDOWN_SECONDS = 600;
@@ -375,8 +379,8 @@ async function recordWakeReceipt(
       participant_id: participantId,
       delivery_method: "runtime_native",
       source: "operator_note_wake",
-      wake_priority: "quiet",
-      wake_tone: "soft",
+      wake_priority: wakePriorityForOperatorNote(),
+      wake_tone: wakeToneForOperatorNote(),
       status: receiptStatus,
       prompt_excerpt: prompt.slice(0, 1000),
       metadata: {

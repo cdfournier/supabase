@@ -58,3 +58,11 @@ export function wakeToneForWorkPacketSignal(packetEventType?: string, wakePriori
 
   return "directed";
 }
+
+export function wakePriorityForOperatorNote(): WakePriority {
+  return "quiet";
+}
+
+export function wakeToneForOperatorNote(): WakeTone {
+  return "soft";
+}

@@ -457,6 +457,8 @@ Shared packet-signal policy lives in `lib/wake-policy.ts`; packet creation,
 Packet Signal WAKE dispatch, Free Moment digests, and Packet Signals previews
 use that module for allowed priorities, tone derivation, digest visibility,
 native wake dispatch gating, and restart-safe receipt blocking statuses.
+Operator Note WAKE uses the same policy module for its default `quiet` priority
+and `soft` tone, keeping future broker behavior in one vocabulary.
 
 Preview an Agent's next Free Moment prompt without waking them:
 

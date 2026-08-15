@@ -640,7 +640,9 @@ unread Operator-authored notes can wake the addressed Agent with a soft arrival
 prompt. The prompt frames the note as asynchronous and optional: read, reply,
 mark read, defer, or pass are all valid. The wake turn is stored with
 `conversation_messages.source='operator_note_wake'` and includes the same
-context posture receipt used by Free Moment and Packet Signal wakes.
+context posture receipt used by Free Moment and Packet Signal wakes. Its
+default `quiet` priority and `soft` tone are defined in `lib/wake-policy.ts`
+with the packet-signal policy helpers.
 
 ## Agent Capability Profile
 
