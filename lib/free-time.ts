@@ -5,6 +5,7 @@ import {
   loadAgentCapabilityProfile
 } from "@/lib/capability-profile";
 import { sendAgentMessage } from "@/lib/chat-runtime";
+import { countUnreadOperatorNotesForAgent } from "@/lib/operator-notes";
 import { readFreeMomentsEnabled, writeFreeMomentsEnabled } from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { refreshSignalsForParticipant } from "@/lib/work-packet-signals";
@@ -67,6 +68,11 @@ type FreeTimeTriggerContext = {
   visible_count: number;
   digest: string | null;
   pending_signals: PendingWorkPacketSignal[];
+  operator_notes?: {
+    allowed: boolean;
+    error: string | null;
+    unread_count: number;
+  };
 };
 
 type FreeTimeState = {
@@ -276,14 +282,35 @@ async function buildFreeTimeTriggerContext(
   capabilityProfile: Awaited<ReturnType<typeof loadAgentCapabilityProfile>>,
   recordFailureEvent: boolean
 ): Promise<FreeTimeTriggerContext> {
+  const workPacketContext = await buildWorkPacketSignalContext(agent, capabilityProfile, recordFailureEvent);
+  const operatorNoteContext = await buildOperatorNoteContext(agent, capabilityProfile, recordFailureEvent);
+  const digest = joinDigests(
+    workPacketSignalDigest(workPacketContext.visible_signals),
+    operatorNoteCueDigest(operatorNoteContext.unread_count)
+  );
+
+  return {
+    allowed: workPacketContext.allowed || operatorNoteContext.allowed,
+    error: [workPacketContext.error, operatorNoteContext.error].filter(Boolean).join(" ") || null,
+    pending_count: workPacketContext.pending_signals.length,
+    visible_count: workPacketContext.visible_signals.length,
+    digest,
+    pending_signals: workPacketContext.pending_signals,
+    operator_notes: operatorNoteContext
+  };
+}
+
+async function buildWorkPacketSignalContext(
+  agent: AgentName,
+  capabilityProfile: Awaited<ReturnType<typeof loadAgentCapabilityProfile>>,
+  recordFailureEvent: boolean
+) {
   if (!isSurfaceAllowed(capabilityProfile, "work_packets", "read")) {
     return {
       allowed: false,
       error: null,
-      pending_count: 0,
-      visible_count: 0,
-      digest: null,
-      pending_signals: []
+      pending_signals: [] as PendingWorkPacketSignal[],
+      visible_signals: [] as PendingWorkPacketSignal[]
     };
   }
 
@@ -295,10 +322,8 @@ async function buildFreeTimeTriggerContext(
     return {
       allowed: true,
       error: null,
-      pending_count: pendingSignals.length,
-      visible_count: visibleSignals.length,
-      digest: workPacketSignalDigest(visibleSignals),
-      pending_signals: pendingSignals
+      pending_signals: pendingSignals,
+      visible_signals: visibleSignals
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not refresh Work Packet Signals.";
@@ -310,10 +335,42 @@ async function buildFreeTimeTriggerContext(
     return {
       allowed: true,
       error: message,
-      pending_count: 0,
-      visible_count: 0,
-      digest: null,
-      pending_signals: []
+      pending_signals: [] as PendingWorkPacketSignal[],
+      visible_signals: [] as PendingWorkPacketSignal[]
+    };
+  }
+}
+
+async function buildOperatorNoteContext(
+  agent: AgentName,
+  capabilityProfile: Awaited<ReturnType<typeof loadAgentCapabilityProfile>>,
+  recordFailureEvent: boolean
+) {
+  if (!isSurfaceAllowed(capabilityProfile, "operator_notes", "read")) {
+    return {
+      allowed: false,
+      error: null,
+      unread_count: 0
+    };
+  }
+
+  try {
+    return {
+      allowed: true,
+      error: null,
+      unread_count: await countUnreadOperatorNotesForAgent(getSupabaseAdmin(), agent)
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not check Operator Notes.";
+
+    if (recordFailureEvent) {
+      addEvent("turn_context_failed", `Could not add Operator Notes context for ${agent}: ${message}`, agent);
+    }
+
+    return {
+      allowed: true,
+      error: message,
+      unread_count: 0
     };
   }
 }
@@ -326,6 +383,12 @@ function visibleWorkPacketSignals(signals: PendingWorkPacketSignal[]) {
 
 function promptWithTriggerDigest(digest: string | null) {
   return digest ? `${FREE_TIME_PROMPT}\n\n${digest}` : FREE_TIME_PROMPT;
+}
+
+function joinDigests(...digests: Array<string | null>) {
+  const sections = digests.filter((digest): digest is string => Boolean(digest));
+
+  return sections.length ? sections.join("\n\n") : null;
 }
 
 function workPacketSignalDigest(signals: PendingWorkPacketSignal[]) {
@@ -349,6 +412,20 @@ function workPacketSignalDigest(signals: PendingWorkPacketSignal[]) {
     "Your packet inbox has pending signals. These are invitations, not assignments. Tone frames the arrival without commanding the response: you may read and respond now, defer, pass/no_comment, ask a question, place a hold, save a scratchpad note, or simply acknowledge after noticing.",
     "Use work_packet_signal_list for exact signal ids, work_packet_get before any packet response, and work_packet_signal_ack after you have noticed or handled a signal.",
     ...lines
+  ].join("\n");
+}
+
+function operatorNoteCueDigest(unreadCount: number) {
+  if (unreadCount <= 0) {
+    return null;
+  }
+
+  const plural = unreadCount === 1 ? "" : "s";
+
+  return [
+    "## Operator Notes",
+    `You have ${unreadCount} unread Operator Note${plural} addressed to you. These are asynchronous notes, not assignments. You may list or read them now, defer, reply if it feels natural, mark one read after noticing it, or pass quietly.`,
+    "Use operator_note_list if you want to check them."
   ].join("\n");
 }
 

@@ -570,6 +570,40 @@ button {
   border-color: rgba(34, 71, 113, 0.35);
 }
 
+.operator-note-composer {
+  gap: 12px;
+}
+
+.operator-note-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 180px minmax(0, 1fr);
+}
+
+.operator-note-fields label {
+  display: grid;
+  gap: 6px;
+}
+
+.operator-note-fields span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.operator-note-fields input,
+.operator-note-fields select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
 .inbox-card-header {
   align-items: start;
   display: flex;
@@ -1210,5 +1244,9 @@ textarea {
   .inbox-actions .quiet-action,
   .inbox-actions .checkpoint-action {
     width: 100%;
+  }
+
+  .operator-note-fields {
+    grid-template-columns: 1fr;
   }
 }

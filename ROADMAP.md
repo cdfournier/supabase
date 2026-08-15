@@ -92,12 +92,15 @@ Implemented in the first slice:
 - Soren/Varro runtime tools for sending, listing, reading, replying, and marking
   Operator notes read.
 - Existing Operator Inbox now separates Operator Notes from Work Packet Rollups.
+- Operator Inbox composer lets Chris leave asynchronous notes for Soren or Varro.
+- Free Moments append a gentle count-only cue when an agent has unread Operator
+  Notes, without injecting note content into the prompt.
 
 Open questions:
 
 - Bridge route/token posture for Julian and Cael.
-- Whether Operator-created notes should be shown in Free Moments prompts or left
-  as tool-discoverable inbox items only.
+- Whether unread Operator Notes should eventually participate in tone-aware WAKE
+  outside the scheduled Free Moment path.
 
 ### 3. Julian-To-Runtime Bridge Messaging
 

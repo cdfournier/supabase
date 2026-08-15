@@ -119,6 +119,22 @@ export async function listOperatorNotes(supabase: Supabase, input: unknown = {})
   return attachLatestEvents(supabase, asOperatorNotes(data));
 }
 
+export async function countUnreadOperatorNotesForAgent(supabase: Supabase, agent: string) {
+  const normalized = normalizeAgent(agent);
+  const { count, error } = await supabase
+    .from("operator_notes")
+    .select("id", { count: "exact", head: true })
+    .eq("agent", normalized)
+    .eq("status", "open")
+    .eq("agent_status", "unread");
+
+  if (error) {
+    throw operatorNotesSetupError(error.message);
+  }
+
+  return count ?? 0;
+}
+
 export async function getOperatorNote(supabase: Supabase, input: unknown, actor: Actor = operatorNoteOperatorActor()) {
   const id = requireId(input);
   const { data, error } = await supabase

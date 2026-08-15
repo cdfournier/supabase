@@ -404,6 +404,11 @@ export default function Home() {
   const [operatorInboxError, setOperatorInboxError] = useState("");
   const [operatorInboxNotes, setOperatorInboxNotes] = useState<Record<string, string>>({});
   const [operatorNoteReplies, setOperatorNoteReplies] = useState<Record<string, string>>({});
+  const [operatorNoteDraft, setOperatorNoteDraft] = useState({
+    agent: defaultAgent,
+    subject: "",
+    body: ""
+  });
   const [operatorInboxActionInProgress, setOperatorInboxActionInProgress] = useState<string | null>(null);
   const [compactionPreview, setCompactionPreview] = useState<CompactionPreview | null>(null);
   const [compactionLoading, setCompactionLoading] = useState(false);
@@ -1088,6 +1093,48 @@ export default function Home() {
     }
   }
 
+  async function createOperatorNote() {
+    if (operatorInboxActionInProgress || !operatorNoteDraft.body.trim()) {
+      return;
+    }
+
+    setOperatorInboxActionInProgress("operator-note:create");
+    setOperatorInboxError("");
+
+    try {
+      const response = await fetch("/api/operator-notes", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "create",
+          agent: operatorNoteDraft.agent,
+          subject: operatorNoteDraft.subject,
+          body: operatorNoteDraft.body
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not create Operator note.");
+      }
+
+      setOperatorNoteDraft((current) => ({
+        ...current,
+        subject: "",
+        body: ""
+      }));
+      await loadOperatorInbox();
+    } catch (noteError) {
+      setOperatorInboxError(
+        noteError instanceof Error ? noteError.message : "Could not create Operator note."
+      );
+    } finally {
+      setOperatorInboxActionInProgress(null);
+    }
+  }
+
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = message.trim();
@@ -1484,8 +1531,11 @@ export default function Home() {
           error={operatorInboxError}
           loading={operatorInboxLoading}
           notes={operatorInboxNotes}
+          operatorNoteDraft={operatorNoteDraft}
           operatorNotes={operatorInboxOperatorNotes}
           operatorReplies={operatorNoteReplies}
+          onCreateOperatorNote={createOperatorNote}
+          onOperatorDraftChange={setOperatorNoteDraft}
           onOperatorNoteAction={updateOperatorNote}
           onOperatorReplyChange={(noteId, reply) =>
             setOperatorNoteReplies((current) => ({ ...current, [noteId]: reply }))
@@ -1872,10 +1922,13 @@ function OperatorInboxView({
   loading,
   notes,
   onNoteChange,
+  onCreateOperatorNote,
+  onOperatorDraftChange,
   onOperatorNoteAction,
   onOperatorReplyChange,
   onRefresh,
   onReview,
+  operatorNoteDraft,
   operatorNotes,
   operatorReplies,
   packets
@@ -1885,6 +1938,8 @@ function OperatorInboxView({
   loading: boolean;
   notes: Record<string, string>;
   onNoteChange: (packetId: string, note: string) => void;
+  onCreateOperatorNote: () => void;
+  onOperatorDraftChange: (draft: { agent: AgentName; subject: string; body: string }) => void;
   onOperatorNoteAction: (
     noteId: string,
     action: "reply" | "mark_read" | "archive",
@@ -1893,6 +1948,7 @@ function OperatorInboxView({
   onOperatorReplyChange: (noteId: string, reply: string) => void;
   onRefresh: () => void;
   onReview: (packetId: string, reviewState: "approved" | "request_changes" | "hold") => void;
+  operatorNoteDraft: { agent: AgentName; subject: string; body: string };
   operatorNotes: OperatorNote[];
   operatorReplies: Record<string, string>;
   packets: WorkPacket[];
@@ -1917,6 +1973,76 @@ function OperatorInboxView({
         {!loading && !operatorNotes.length && !packets.length ? (
           <p className="empty">No Operator notes or rollups are waiting.</p>
         ) : null}
+
+        <section className="inbox-section" aria-label="New Operator Note">
+          <div className="inbox-section-heading">
+            <div>
+              <p className="inbox-eyebrow">New Operator Note</p>
+              <h3>Leave a note</h3>
+            </div>
+          </div>
+
+          <article className="inbox-card operator-note-composer">
+            <div className="operator-note-fields">
+              <label>
+                <span>Recipient</span>
+                <select
+                  disabled={actionDisabled}
+                  onChange={(event) =>
+                    onOperatorDraftChange({
+                      ...operatorNoteDraft,
+                      agent: event.target.value as AgentName
+                    })
+                  }
+                  value={operatorNoteDraft.agent}
+                >
+                  <option value="soren">Soren</option>
+                  <option value="varro">Varro</option>
+                </select>
+              </label>
+              <label>
+                <span>Subject</span>
+                <input
+                  disabled={actionDisabled}
+                  onChange={(event) =>
+                    onOperatorDraftChange({
+                      ...operatorNoteDraft,
+                      subject: event.target.value
+                    })
+                  }
+                  placeholder="Optional"
+                  value={operatorNoteDraft.subject}
+                />
+              </label>
+            </div>
+
+            <label className="inbox-note">
+              <span>Note</span>
+              <textarea
+                disabled={actionDisabled}
+                onChange={(event) =>
+                  onOperatorDraftChange({
+                    ...operatorNoteDraft,
+                    body: event.target.value
+                  })
+                }
+                placeholder="Leave an asynchronous note"
+                value={operatorNoteDraft.body}
+              />
+            </label>
+
+            <div className="inbox-actions">
+              <button
+                className="checkpoint-action"
+                disabled={actionDisabled || !operatorNoteDraft.body.trim()}
+                onClick={onCreateOperatorNote}
+                type="button"
+              >
+                {actionInProgress === "operator-note:create" ? "Sending" : "Send Note"}
+              </button>
+            </div>
+          </article>
+        </section>
 
         {!loading && operatorNotes.length ? (
           <section className="inbox-section" aria-label="Operator Notes">
