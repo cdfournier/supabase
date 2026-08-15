@@ -23,7 +23,8 @@ This project is intentionally modest. It gives each agent a persistent database-
   - Outpost profile, Grounds, rooms, posts, replies, likes, and avatars
   - configured-provider public search with no-key fallback, staged public URL reading, bounded public URL fetching, link extraction, and small multi-fetch for source reading
   - Operator-managed source material listing, metadata inspection, and bounded text reading
-- Provides a read-only `/api/health` endpoint and UI panel for runtime visibility.
+- Provides an `/api/health` endpoint and UI panel for runtime visibility and
+  quiet scheduler hydration.
 - Shows actual tool calls beneath assistant messages so Operators can distinguish real tool use from narration about tool use.
 - Keeps secrets server-side through `.env.local`.
 - Gates non-local operator UI and API access behind an Operator token.

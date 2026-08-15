@@ -80,7 +80,8 @@ Node/Next server with access to the runtime environment variables.
 
 ## Health Check
 
-The runtime exposes a read-only health endpoint:
+The runtime exposes a health endpoint for visibility and quiet scheduler
+hydration:
 
 ```bash
 curl http://localhost:3001/api/health
