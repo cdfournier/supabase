@@ -413,6 +413,10 @@ training ground for `directed` and `high_signal` arrivals. Tone frames the wake,
 but it does not command the Agent's response. A quiet pass, a defer/scratchpad
 note, and a maximum-energy response can all be valid receipts depending on the
 arrival.
+Shared packet-signal policy lives in `lib/wake-policy.ts`; packet creation,
+Packet Signal WAKE dispatch, Free Moment digests, and Packet Signals previews
+use that module for allowed priorities, tone derivation, digest visibility,
+native wake dispatch gating, and restart-safe receipt blocking statuses.
 
 Preview a Free Moment prompt without waking the Agent:
 

@@ -8,6 +8,12 @@ import {
 } from "@/lib/runtime-settings";
 import { type AgentName } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import {
+  shouldDispatchNativePacketSignalWake,
+  WAKE_RECEIPT_REDISPATCH_BLOCKING_STATUSES,
+  wakeToneForWorkPacketSignal,
+  type WakeTone
+} from "@/lib/wake-policy";
 
 const EVENT_LIMIT = 80;
 const DEFAULT_INTERVAL_SECONDS = 60;
@@ -78,15 +84,6 @@ type WakeReceiptRow = {
   signal_key: string;
   status: string;
 };
-
-type WakeTone =
-  | "quiet"
-  | "soft"
-  | "directed"
-  | "high_signal"
-  | "recovery"
-  | "curiosity"
-  | "maintenance";
 
 type WorkPacketSignalsState = {
   running: boolean;
@@ -640,8 +637,7 @@ function shouldAutoWakeForSignal(event: SignalEvent, participantId: string) {
     return false;
   }
 
-  const priority = event.wake_priority ?? "digest_only";
-  return priority !== "digest_only" && priority !== "silent";
+  return shouldDispatchNativePacketSignalWake(event.wake_priority);
 }
 
 async function filterSignalsWithoutDurableReceipt(participantId: string, signals: SignalEvent[]) {
@@ -657,7 +653,7 @@ async function filterSignalsWithoutDurableReceipt(participantId: string, signals
     .eq("participant_id", participantId)
     .eq("delivery_method", "runtime_native")
     .in("signal_key", signalKeys)
-    .in("status", ["attempted", "completed"]);
+    .in("status", WAKE_RECEIPT_REDISPATCH_BLOCKING_STATUSES);
 
   if (error) {
     throw workPacketWakeReceiptSetupError(`Could not read Work Packet Signal WAKE receipts: ${error.message}`);
@@ -933,41 +929,13 @@ function addEvent(
     packet_title: packetTitle,
     packet_status: packetStatus,
     wake_priority: wakePriority,
-    wake_tone: wakeTone(packetEventType, wakePriority),
+    wake_tone: wakeToneForWorkPacketSignal(packetEventType, wakePriority),
     target_ids: targetIds,
     acknowledged_by: [],
     woken_by: [],
     message
   });
   state.recentEvents = state.recentEvents.slice(-EVENT_LIMIT);
-}
-
-function wakeTone(packetEventType?: string, wakePriority?: string): WakeTone {
-  if (wakePriority === "silent") {
-    return "quiet";
-  }
-
-  if (wakePriority === "loud") {
-    return "high_signal";
-  }
-
-  if (packetEventType === "hold" || packetEventType === "question" || packetEventType === "stale") {
-    return "high_signal";
-  }
-
-  if (wakePriority === "quiet") {
-    return "soft";
-  }
-
-  if (packetEventType === "rollup_review") {
-    return "quiet";
-  }
-
-  if (packetEventType === "open_packet" || packetEventType === "created" || packetEventType === "packet_ready_for_rollup") {
-    return "directed";
-  }
-
-  return "directed";
 }
 
 function uniqueTargets(targets: Array<string | null | undefined>) {

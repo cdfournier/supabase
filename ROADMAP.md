@@ -110,6 +110,9 @@ Implemented in the first slice:
   adapter exists.
 - Native packet-signal WAKE writes durable delivery receipts so attempted or
   completed arrivals are not re-sent after a runtime restart.
+- Packet-signal tone and priority decisions now share a single policy module
+  across packet creation, native WAKE dispatch, Free Moment digests, and Packet
+  Signal previews.
 
 Open questions:
 

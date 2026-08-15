@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { countUnreadOperatorNotesForAgent } from "@/lib/operator-notes";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { shouldShowPacketSignalInDigest } from "@/lib/wake-policy";
 import {
   refreshSignalsForParticipant,
   startWakes as startWorkPacketSignalWakes,
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
       const participantId = `agent:${agent}`;
       const inbox = await refreshSignalsForParticipant(participantId);
       const pendingSignals = inbox.pending_signals ?? [];
-      const visibleSignals = pendingSignals.filter((signal) => signal.wake_priority !== "silent");
+      const visibleSignals = pendingSignals.filter((signal) => shouldShowPacketSignalInDigest(signal.wake_priority));
       const operatorNotes = await previewOperatorNotes(agent);
 
       return NextResponse.json({

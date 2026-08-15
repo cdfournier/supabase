@@ -12,6 +12,7 @@ import {
   writeFreeMomentsSettings
 } from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { shouldShowPacketSignalInDigest } from "@/lib/wake-policy";
 import { refreshSignalsForParticipant } from "@/lib/work-packet-signals";
 
 const AGENTS: AgentName[] = ["soren", "varro"];
@@ -426,7 +427,7 @@ async function buildOperatorNoteContext(
 
 function visibleWorkPacketSignals(signals: PendingWorkPacketSignal[]) {
   return signals
-    .filter((signal) => (signal.wake_priority ?? "digest_only") !== "silent")
+    .filter((signal) => shouldShowPacketSignalInDigest(signal.wake_priority))
     .slice(0, 5);
 }
 

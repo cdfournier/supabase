@@ -2,6 +2,10 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  WAKE_PRIORITIES,
+  type WakePriority
+} from "@/lib/wake-policy";
 
 const PACKET_LIST_LIMIT = 25;
 const MAX_TEXT = 8000;
@@ -50,7 +54,6 @@ export type WorkPacketEvent = {
 };
 
 export type WorkPacketStatus = "queued" | "active" | "blocked" | "review" | "merged" | "closed";
-export type WakePriority = "loud" | "quiet" | "digest_only" | "silent";
 export type WorkPacketResponseState =
   | "accepted"
   | "passed"
@@ -100,7 +103,6 @@ type CreatePacketInput = {
 };
 
 const STATUSES: WorkPacketStatus[] = ["queued", "active", "blocked", "review", "merged", "closed"];
-const WAKE_PRIORITIES: WakePriority[] = ["loud", "quiet", "digest_only", "silent"];
 const RESPONSE_STATES: WorkPacketResponseState[] = [
   "accepted",
   "passed",
