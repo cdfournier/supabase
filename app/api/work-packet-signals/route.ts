@@ -3,7 +3,9 @@ import { countUnreadOperatorNotesForAgent } from "@/lib/operator-notes";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
   refreshSignalsForParticipant,
+  startWakes as startWorkPacketSignalWakes,
   start as startWorkPacketSignals,
+  stopWakes as stopWorkPacketSignalWakes,
   statusWithSettings as workPacketSignalsStatus,
   stop as stopWorkPacketSignals,
   tick as tickWorkPacketSignals
@@ -26,6 +28,14 @@ export async function POST(request: Request) {
 
     if (action === "stop") {
       return NextResponse.json(await stopWorkPacketSignals());
+    }
+
+    if (action === "start_wakes") {
+      return NextResponse.json(await startWorkPacketSignalWakes());
+    }
+
+    if (action === "stop_wakes") {
+      return NextResponse.json(await stopWorkPacketSignalWakes());
     }
 
     if (action === "tick") {
@@ -53,7 +63,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { error: 'Choose action "start", "stop", "tick", or "preview_agent".' },
+      { error: 'Choose action "start", "stop", "start_wakes", "stop_wakes", "tick", or "preview_agent".' },
       { status: 400 }
     );
   } catch (error) {

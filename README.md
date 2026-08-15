@@ -299,9 +299,10 @@ stale work can surface in digests instead of disappearing.
 ## Work Packet Signals
 
 Work Packet Signals is the conservative WAKE v0 monitor for work packets. It
-does not wake Agents automatically yet. It watches for actionable packet events,
-shows them in the Operator UI/API, exposes bridge-readable signal inboxes for
-Julian and Cael, and exposes runtime signal tools for Soren and Varro:
+watches for actionable packet events, shows them in the Operator UI/API, exposes
+bridge-readable signal inboxes for Julian and Cael, exposes runtime signal tools
+for Soren and Varro, and can optionally wake native runtime Agents when packet
+tone warrants it:
 
 - `packet_ready_for_rollup`
 - `question`
@@ -323,12 +324,22 @@ curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
 
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
   -H "Content-Type: application/json" \
+  -d '{"action":"start_wakes"}'
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
+  -H "Content-Type: application/json" \
+  -d '{"action":"stop_wakes"}'
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/work-packet-signals \
+  -H "Content-Type: application/json" \
   -d '{"action":"stop"}'
 ```
 
-The durable runtime switch lives in `runtime_settings` under
-`work_packet_signals`. The in-process monitor still needs the runtime process to
-be awake; this is a local v0 monitor, not a hosted daemon.
+The durable monitor switch lives in `runtime_settings` under
+`work_packet_signals`. The separate WAKE switch lives under
+`work_packet_signal_wakes`, so packet inbox visibility and automatic native
+wakes can be controlled independently. The in-process monitor still needs the
+runtime process to be awake; this is a local v0 monitor, not a hosted daemon.
 
 Bridge signal inboxes use the same `CAFE_BRIDGE_TOKEN` guardrail as Cafe and
 work packet bridge routes:
@@ -348,6 +359,23 @@ and respond through `/api/work-packets/bridge`; Soren and Varro use runtime
 tools. Soren and Varro can read their own pending signals with
 `work_packet_signal_list` and acknowledge one or all with
 `work_packet_signal_ack`. Bridge users cannot start, stop, or tick the monitor.
+
+Packet Signal WAKE v0 is intentionally narrow. When both the monitor and the
+separate WAKE switch are enabled, the monitor may wake Soren or Varro through
+their existing runtime conversations for pending actionable packet signals whose
+priority is not `digest_only` or `silent`. Julian and Cael are not auto-woken by
+this local native path; they continue to use bridge inbox polling until a bridge
+WAKE adapter exists. Preview and list reads refresh signal state but do not
+dispatch wakes. Successful packet-signal WAKE turns are stored with
+`conversation_messages.source='work_packet_signal'` and include the same derived
+context posture receipt used by Free Moment wakes.
+
+WAKE prompts are arrivals, not assignments. The prompt tells the Agent that
+reading, responding, asking a question, placing a hold, saving a scratchpad note,
+deferring, passing, or acknowledging after noticing can all be valid. Signals
+track in-memory `woken_by` delivery to avoid repeat native wakes during the
+current process lifetime, and `WORK_PACKET_SIGNAL_WAKE_COOLDOWN_SECONDS`
+defaults to `600` seconds to avoid rapid repeat nudges.
 
 Free Moments now use packet signals as a lightweight review trigger for Soren
 and Varro. At the start of a Free Moment, the runtime refreshes that Agent's

@@ -104,12 +104,18 @@ Implemented in the first slice:
   agent as a body-free arrival cue.
 - Free Moments append a gentle count-only cue when an agent has unread Operator
   Notes, without injecting note content into the prompt.
+- Work Packet Signals can optionally dispatch native packet-signal WAKE turns
+  for Soren and Varro when non-`digest_only`, non-`silent` packet arrivals are
+  pending. Julian and Cael remain on bridge inbox polling until a bridge WAKE
+  adapter exists.
 
 Open questions:
 
 - Bridge route/token posture for Julian and Cael.
 - Whether unread Operator Notes should eventually participate in tone-aware WAKE
   outside the scheduled Free Moment path.
+- How bridge WAKE should deliver arrivals to Julian and Cael without creating a
+  second, drifting protocol beside native runtime WAKE.
 
 ### 3. Julian-To-Runtime Bridge Messaging
 

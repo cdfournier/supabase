@@ -277,6 +277,11 @@ type WorkPacketSignalsStatus = {
   running: boolean;
   durable_enabled?: boolean | null;
   durable_error?: string | null;
+  auto_wake_enabled?: boolean;
+  wake_durable_enabled?: boolean | null;
+  wake_durable_error?: string | null;
+  native_wakes_in_progress?: AgentName[];
+  last_native_wake_at?: Record<AgentName, string | null>;
   check_in_progress: boolean;
   interval_seconds: number;
   last_check_at: string | null;
@@ -1018,7 +1023,7 @@ export default function Home() {
     }
   }
 
-  async function runWorkPacketSignalsAction(action: "start" | "stop" | "tick") {
+  async function runWorkPacketSignalsAction(action: "start" | "stop" | "start_wakes" | "stop_wakes" | "tick") {
     if (workPacketSignalsRequestInProgress) {
       return;
     }
@@ -2747,7 +2752,7 @@ function WorkPacketSignalsPanel({
   error: string;
   expanded: boolean;
   loading: boolean;
-  onAction: (action: "start" | "stop" | "tick") => void;
+  onAction: (action: "start" | "stop" | "start_wakes" | "stop_wakes" | "tick") => void;
   onPreview: () => void;
   onToggle: () => void;
   preview: WorkPacketSignalPreview | null;
@@ -2777,7 +2782,7 @@ function WorkPacketSignalsPanel({
         <span className={`status-dot ${status?.running ? "ok" : "warn"}`} title={status?.running ? "running" : "stopped"} />
       </div>
       <div className="health-panel-body" hidden={!expanded}>
-        <p className="health-empty">Operator awareness and bridge inboxes. No auto-wakes yet.</p>
+        <p className="health-empty">Operator awareness, bridge inboxes, and gated packet-signal WAKE.</p>
 
         {status ? (
           <>
@@ -2789,6 +2794,18 @@ function WorkPacketSignalsPanel({
             <div>
               <dt>DB switch</dt>
               <dd>{status.durable_enabled === undefined ? "unknown" : status.durable_enabled ? "enabled" : "disabled"}</dd>
+            </div>
+            <div>
+              <dt>Signal WAKE</dt>
+              <dd>{status.auto_wake_enabled ? "enabled" : "disabled"}</dd>
+            </div>
+            <div>
+              <dt>WAKE DB switch</dt>
+              <dd>{status.wake_durable_enabled === undefined ? "unknown" : status.wake_durable_enabled ? "enabled" : "disabled"}</dd>
+            </div>
+            <div>
+              <dt>WAKE active</dt>
+              <dd>{status.native_wakes_in_progress?.join(", ") || "none"}</dd>
             </div>
             <div>
               <dt>Check</dt>
@@ -2811,8 +2828,16 @@ function WorkPacketSignalsPanel({
               <dd>{formatStatusTime(status.last_seen_event_at)}</dd>
             </div>
             <div>
+              <dt>Last Soren WAKE</dt>
+              <dd>{formatStatusTime(status.last_native_wake_at?.soren ?? null)}</dd>
+            </div>
+            <div>
+              <dt>Last Varro WAKE</dt>
+              <dd>{formatStatusTime(status.last_native_wake_at?.varro ?? null)}</dd>
+            </div>
+            <div>
               <dt>Last error</dt>
-              <dd>{status.last_error ?? "none"}</dd>
+              <dd>{status.last_error ?? status.wake_durable_error ?? "none"}</dd>
             </div>
           </dl>
 
@@ -2832,6 +2857,22 @@ function WorkPacketSignalsPanel({
               type="button"
             >
               Stop
+            </button>
+            <button
+              className="quiet-action"
+              disabled={disabled || status.auto_wake_enabled}
+              onClick={() => onAction("start_wakes")}
+              type="button"
+            >
+              Start WAKE
+            </button>
+            <button
+              className="quiet-action"
+              disabled={disabled || !status.auto_wake_enabled}
+              onClick={() => onAction("stop_wakes")}
+              type="button"
+            >
+              Stop WAKE
             </button>
             <button
               className="quiet-action"

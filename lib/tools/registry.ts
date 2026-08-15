@@ -500,8 +500,9 @@ export const toolDefinitions: ToolDefinition[] = [
         },
         source: {
           type: "string",
-          enum: ["chat_api", "free_time", "unknown"],
-          description: "Optional transcript source filter. Use free_time to inspect Free Moments only."
+          enum: ["chat_api", "free_time", "work_packet_signal", "unknown"],
+          description:
+            "Optional transcript source filter. Use free_time for Free Moments or work_packet_signal for packet-signal WAKE turns."
         }
       },
       required: [],
@@ -529,8 +530,9 @@ export const toolDefinitions: ToolDefinition[] = [
         },
         source: {
           type: "string",
-          enum: ["chat_api", "free_time", "unknown"],
-          description: "Optional transcript source filter. Use free_time to search Free Moments only."
+          enum: ["chat_api", "free_time", "work_packet_signal", "unknown"],
+          description:
+            "Optional transcript source filter. Use free_time for Free Moments or work_packet_signal for packet-signal WAKE turns."
         }
       },
       required: ["query"],

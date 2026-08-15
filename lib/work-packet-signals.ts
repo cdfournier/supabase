@@ -1,14 +1,19 @@
 import "server-only";
 
 import {
+  readWorkPacketSignalWakesEnabled,
   readWorkPacketSignalsEnabled,
+  writeWorkPacketSignalWakesEnabled,
   writeWorkPacketSignalsEnabled
 } from "@/lib/runtime-settings";
+import { type AgentName } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 const EVENT_LIMIT = 80;
 const DEFAULT_INTERVAL_SECONDS = 60;
 const MIN_INTERVAL_SECONDS = 5;
+const DEFAULT_WAKE_COOLDOWN_SECONDS = 600;
+const NATIVE_AGENTS: AgentName[] = ["soren", "varro"];
 
 type SignalEventType =
   | "started"
@@ -18,6 +23,10 @@ type SignalEventType =
   | "check_completed"
   | "check_blocked"
   | "signal_detected"
+  | "wake_started"
+  | "wake_completed"
+  | "wake_skipped"
+  | "wake_failed"
   | "check_failed";
 
 type SignalEvent = {
@@ -33,6 +42,7 @@ type SignalEvent = {
   wake_tone?: WakeTone;
   target_ids: string[];
   acknowledged_by: string[];
+  woken_by: string[];
   message: string;
 };
 
@@ -84,6 +94,9 @@ type WorkPacketSignalsState = {
   timer: ReturnType<typeof setTimeout> | null;
   recentEvents: SignalEvent[];
   seenStalePackets: Set<string>;
+  autoWakeEnabled: boolean;
+  nativeWakesInProgress: Set<AgentName>;
+  lastNativeWakeAt: Record<AgentName, string | null>;
 };
 
 const state: WorkPacketSignalsState = {
@@ -96,7 +109,13 @@ const state: WorkPacketSignalsState = {
   lastError: null,
   timer: null,
   recentEvents: [],
-  seenStalePackets: new Set()
+  seenStalePackets: new Set(),
+  autoWakeEnabled: false,
+  nativeWakesInProgress: new Set(),
+  lastNativeWakeAt: {
+    soren: null,
+    varro: null
+  }
 };
 
 export function status() {
@@ -108,6 +127,9 @@ export function status() {
     next_check_at: state.nextCheckAt,
     last_seen_event_at: state.lastSeenEventAt,
     last_error: state.lastError,
+    auto_wake_enabled: state.autoWakeEnabled,
+    native_wakes_in_progress: [...state.nativeWakesInProgress],
+    last_native_wake_at: { ...state.lastNativeWakeAt },
     recent_events: [...state.recentEvents]
   };
 }
@@ -115,17 +137,26 @@ export function status() {
 export async function statusWithSettings() {
   try {
     await pruneStalePacketSignals();
+    const [signalsEnabled, wakesEnabled] = await Promise.all([
+      readWorkPacketSignalsEnabled(),
+      readWorkPacketSignalWakesEnabled()
+    ]);
+    state.autoWakeEnabled = wakesEnabled;
 
     return {
       ...status(),
-      durable_enabled: await readWorkPacketSignalsEnabled(),
-      durable_error: null
+      durable_enabled: signalsEnabled,
+      durable_error: null,
+      wake_durable_enabled: wakesEnabled,
+      wake_durable_error: null
     };
   } catch (error) {
     return {
       ...status(),
       durable_enabled: null,
-      durable_error: error instanceof Error ? error.message : "Could not read Work Packet Signals setting."
+      durable_error: error instanceof Error ? error.message : "Could not read Work Packet Signals setting.",
+      wake_durable_enabled: null,
+      wake_durable_error: error instanceof Error ? error.message : "Could not read Work Packet Signal WAKE setting."
     };
   }
 }
@@ -146,8 +177,37 @@ export function signalsForParticipant(participantId: string) {
   };
 }
 
+export async function startWakes() {
+  await writeWorkPacketSignalWakesEnabled(true);
+  state.autoWakeEnabled = true;
+  state.lastError = null;
+  addEvent("started", "Work Packet Signal WAKE enabled.");
+
+  return {
+    ...status(),
+    durable_enabled: await readWorkPacketSignalsEnabled(),
+    durable_error: null,
+    wake_durable_enabled: true,
+    wake_durable_error: null
+  };
+}
+
+export async function stopWakes() {
+  await writeWorkPacketSignalWakesEnabled(false);
+  state.autoWakeEnabled = false;
+  addEvent("stopped", "Work Packet Signal WAKE disabled.");
+
+  return {
+    ...status(),
+    durable_enabled: await readWorkPacketSignalsEnabled(),
+    durable_error: null,
+    wake_durable_enabled: false,
+    wake_durable_error: null
+  };
+}
+
 export async function refreshSignalsForParticipant(participantId: string) {
-  await tick();
+  await tick({ dispatchWakes: false });
   await detectOpenPacketsForParticipant(participantId);
   await pruneStalePacketSignals();
 
@@ -221,7 +281,7 @@ export async function stop() {
   }
 }
 
-export async function tick(options: { scheduled?: boolean } = {}) {
+export async function tick(options: { scheduled?: boolean; dispatchWakes?: boolean } = {}) {
   if (state.checkInProgress) {
     addEvent("check_blocked", "Work Packet Signals check skipped because another check is in progress.");
     return status();
@@ -253,7 +313,12 @@ export async function tick(options: { scheduled?: boolean } = {}) {
   try {
     await detectNewPacketEvents();
     await detectStalePackets();
+    await detectOpenPacketsForParticipant("agent:soren");
+    await detectOpenPacketsForParticipant("agent:varro");
     await pruneStalePacketSignals();
+    if (options.dispatchWakes !== false) {
+      await wakeNativeAgentsFromPendingSignals();
+    }
     state.lastCheckAt = new Date().toISOString();
     state.lastError = null;
     addEvent("check_completed", "Work Packet Signals check completed.");
@@ -484,6 +549,114 @@ function hasSignalForParticipantPacket(participantId: string, packetId: string) 
   );
 }
 
+async function wakeNativeAgentsFromPendingSignals() {
+  if (!(await readWorkPacketSignalWakesEnabled())) {
+    state.autoWakeEnabled = false;
+    return;
+  }
+
+  state.autoWakeEnabled = true;
+
+  for (const agent of NATIVE_AGENTS) {
+    if (state.nativeWakesInProgress.has(agent) || isNativeWakeCoolingDown(agent)) {
+      continue;
+    }
+
+    const participantId = `agent:${agent}`;
+    const signals = state.recentEvents
+      .filter((event) => shouldAutoWakeForSignal(event, participantId))
+      .slice(0, 5);
+
+    if (!signals.length) {
+      continue;
+    }
+
+    await dispatchNativeWake(agent, signals);
+  }
+}
+
+async function dispatchNativeWake(agent: AgentName, signals: SignalEvent[]) {
+  state.nativeWakesInProgress.add(agent);
+  addEvent("wake_started", `WAKE started for ${agent} from ${signals.length} packet signal(s).`);
+
+  try {
+    const { sendAgentMessage } = await import("@/lib/chat-runtime");
+    await sendAgentMessage(agent, workPacketSignalWakePrompt(signals), {
+      source: "work_packet_signal"
+    });
+
+    const participantId = `agent:${agent}`;
+    for (const signal of signals) {
+      if (!signal.woken_by.includes(participantId)) {
+        signal.woken_by.push(participantId);
+      }
+    }
+
+    state.lastNativeWakeAt[agent] = new Date().toISOString();
+    addEvent("wake_completed", `WAKE completed for ${agent}.`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Work Packet Signal WAKE error.";
+    state.lastError = message;
+    state.lastNativeWakeAt[agent] = new Date().toISOString();
+    addEvent("wake_failed", `WAKE failed for ${agent}: ${message}`);
+  } finally {
+    state.nativeWakesInProgress.delete(agent);
+  }
+}
+
+function shouldAutoWakeForSignal(event: SignalEvent, participantId: string) {
+  if (event.type !== "signal_detected" || !event.target_ids.includes(participantId)) {
+    return false;
+  }
+
+  if (!isActionablePacketSignal(event) || event.acknowledged_by.includes(participantId)) {
+    return false;
+  }
+
+  if (event.woken_by.includes(participantId)) {
+    return false;
+  }
+
+  const priority = event.wake_priority ?? "digest_only";
+  return priority !== "digest_only" && priority !== "silent";
+}
+
+function isNativeWakeCoolingDown(agent: AgentName) {
+  const lastWakeAt = state.lastNativeWakeAt[agent];
+
+  if (!lastWakeAt) {
+    return false;
+  }
+
+  const elapsedMs = Date.now() - Date.parse(lastWakeAt);
+  const cooldownMs = configuredWakeCooldownSeconds() * 1000;
+
+  return Number.isFinite(elapsedMs) && elapsedMs < cooldownMs;
+}
+
+function workPacketSignalWakePrompt(signals: SignalEvent[]) {
+  const lines = signals.map((signal) => {
+    const title = signal.packet_title || "Untitled packet";
+    const id = signal.packet_id ? `packet ${signal.packet_id}` : "packet id unavailable";
+    const type = signal.packet_event_type || "signal";
+    const status = signal.packet_status || "status unknown";
+    const tone = signal.wake_tone || "directed";
+    const priority = signal.wake_priority || "digest_only";
+
+    return `- ${title} (${id}) — ${type}, ${status}, tone ${tone}, priority ${priority}: ${signal.message}`;
+  });
+
+  return [
+    "[A packet signal arrived]",
+    "",
+    "A Work Packet Signal arrived for you. This is an arrival, not an assignment. You may read it now, defer, pass/no_comment, ask a question, place a hold, save a scratchpad note, or simply acknowledge after noticing.",
+    "",
+    "Use work_packet_signal_list for exact signal ids, work_packet_get before any packet response, and work_packet_signal_ack after you have noticed or handled a signal.",
+    "",
+    ...lines
+  ].join("\n");
+}
+
 async function loadPacketContexts(packetIds: string[]) {
   const contexts = new Map<string, PacketRow>();
 
@@ -631,6 +804,7 @@ function addEvent(
     wake_tone: wakeTone(packetEventType, wakePriority),
     target_ids: targetIds,
     acknowledged_by: [],
+    woken_by: [],
     message
   });
   state.recentEvents = state.recentEvents.slice(-EVENT_LIMIT);
@@ -684,6 +858,10 @@ function configuredDefaultIntervalSeconds() {
 
 function configuredMinIntervalSeconds() {
   return positiveNumberEnv("WORK_PACKET_SIGNALS_MIN_INTERVAL_SECONDS", MIN_INTERVAL_SECONDS);
+}
+
+function configuredWakeCooldownSeconds() {
+  return positiveNumberEnv("WORK_PACKET_SIGNAL_WAKE_COOLDOWN_SECONDS", DEFAULT_WAKE_COOLDOWN_SECONDS);
 }
 
 function positiveNumberEnv(name: string, fallback: number) {

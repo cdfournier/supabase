@@ -26,7 +26,7 @@ const MAX_CONTEXT_RADIUS = 8;
 const DEFAULT_MESSAGE_CHARS = 1200;
 const MAX_MESSAGE_CHARS = 3000;
 const MAX_QUERY_LENGTH = 120;
-const ALLOWED_SOURCES = new Set(["chat_api", "free_time", "unknown"]);
+const ALLOWED_SOURCES = new Set(["chat_api", "free_time", "work_packet_signal", "unknown"]);
 
 export async function readRecentRuntimeMessages(agent: AgentName, input: unknown) {
   const limit = clampNumber(isRecord(input) ? input.limit : undefined, DEFAULT_RECENT_LIMIT, 1, MAX_RECENT_LIMIT);
@@ -274,7 +274,7 @@ function optionalSource(value: unknown) {
   const source = String(value);
 
   if (!ALLOWED_SOURCES.has(source)) {
-    throw new Error('source must be "chat_api", "free_time", or "unknown".');
+    throw new Error('source must be "chat_api", "free_time", "work_packet_signal", or "unknown".');
   }
 
   return source;

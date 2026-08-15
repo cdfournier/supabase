@@ -151,7 +151,7 @@ export async function sendAgentMessage(
     }));
 
   const attachmentDelivery = await buildAttachmentDelivery(attachmentRefs);
-  const messageForModel = source === "free_time"
+  const messageForModel = source === "free_time" || source === "work_packet_signal"
     ? messageWithContextReceipt(message, contextReceipt)
     : message;
   const modelMessage = buildAttachmentPromptTextWithDelivery(
