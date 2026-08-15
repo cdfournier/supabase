@@ -15,6 +15,11 @@ export type FreeMomentsSettings = {
   schedule_mode: string | null;
 };
 
+export type WorkPacketSignalsSettings = {
+  enabled: boolean;
+  interval_seconds: number | null;
+};
+
 export async function readFreeMomentsSettings(): Promise<FreeMomentsSettings> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -84,13 +89,65 @@ export async function writeFreeMomentsEnabled(enabled: boolean) {
 }
 
 export async function readWorkPacketSignalsEnabled() {
-  return readEnabledSetting(WORK_PACKET_SIGNALS_KEY, "Work Packet Signals");
+  return (await readWorkPacketSignalsSettings()).enabled;
 }
 
 export async function writeWorkPacketSignalsEnabled(enabled: boolean) {
-  await writeEnabledSetting(WORK_PACKET_SIGNALS_KEY, enabled, "Work Packet Signals");
+  const existing = await readWorkPacketSignalsSettings().catch(() => ({
+    enabled,
+    interval_seconds: null
+  }));
+  await writeWorkPacketSignalsSettings({
+    enabled,
+    interval_seconds: existing.interval_seconds
+  });
 
   return enabled;
+}
+
+export async function readWorkPacketSignalsSettings(): Promise<WorkPacketSignalsSettings> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("runtime_settings")
+    .select("value")
+    .eq("key", WORK_PACKET_SIGNALS_KEY)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Could not read Work Packet Signals setting: ${error.message}`);
+  }
+
+  const row = data as RuntimeSettingRow | null;
+  const value = row?.value ?? {};
+  const intervalSeconds = Number(value.interval_seconds);
+
+  return {
+    enabled: value.enabled === true,
+    interval_seconds: Number.isFinite(intervalSeconds) ? intervalSeconds : null
+  };
+}
+
+export async function writeWorkPacketSignalsSettings(settings: {
+  enabled: boolean;
+  interval_seconds?: number | null;
+}) {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("runtime_settings")
+    .upsert({
+      key: WORK_PACKET_SIGNALS_KEY,
+      value: {
+        enabled: settings.enabled,
+        interval_seconds: settings.interval_seconds ?? null
+      },
+      updated_at: new Date().toISOString()
+    });
+
+  if (error) {
+    throw new Error(`Could not update Work Packet Signals setting: ${error.message}`);
+  }
+
+  return settings;
 }
 
 export async function readWorkPacketSignalWakesEnabled() {

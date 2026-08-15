@@ -252,6 +252,11 @@ The MVP exposes:
   `work_packet_resolve_evidence`, `work_packet_respond`,
   `work_packet_comment`, `work_packet_signal_list`, `work_packet_signal_ack`
 
+Packet Signal monitoring and packet-signal WAKE each use durable
+`runtime_settings` switches. The monitor also stores its cadence and restores
+the scheduled loop from Supabase after a runtime restart when status is loaded,
+so a restart does not silently drop an enabled packet-signal lane.
+
 Bridge participants must use `/api/work-packets/bridge` for both list and
 single-packet reads:
 

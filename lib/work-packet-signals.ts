@@ -3,8 +3,9 @@ import "server-only";
 import {
   readWorkPacketSignalWakesEnabled,
   readWorkPacketSignalsEnabled,
+  readWorkPacketSignalsSettings,
   writeWorkPacketSignalWakesEnabled,
-  writeWorkPacketSignalsEnabled
+  writeWorkPacketSignalsSettings
 } from "@/lib/runtime-settings";
 import { type AgentName } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -139,15 +140,16 @@ export function status() {
 export async function statusWithSettings() {
   try {
     await pruneStalePacketSignals();
-    const [signalsEnabled, wakesEnabled] = await Promise.all([
-      readWorkPacketSignalsEnabled(),
+    const [signalsSettings, wakesEnabled] = await Promise.all([
+      readWorkPacketSignalsSettings(),
       readWorkPacketSignalWakesEnabled()
     ]);
+    restoreFromSettings(signalsSettings);
     state.autoWakeEnabled = wakesEnabled;
 
     return {
       ...status(),
-      durable_enabled: signalsEnabled,
+      durable_enabled: signalsSettings.enabled,
       durable_error: null,
       wake_durable_enabled: wakesEnabled,
       wake_durable_error: null
@@ -244,7 +246,10 @@ export async function start(intervalSeconds?: number) {
   state.intervalSeconds = normalizeIntervalSeconds(intervalSeconds);
   state.lastSeenEventAt = new Date().toISOString();
   state.seenStalePackets.clear();
-  await writeWorkPacketSignalsEnabled(true);
+  await writeWorkPacketSignalsSettings({
+    enabled: true,
+    interval_seconds: state.intervalSeconds
+  });
   state.running = true;
   state.lastError = null;
   addEvent("started", `Work Packet Signals started at ${state.intervalSeconds} second cadence.`);
@@ -264,7 +269,10 @@ export async function stop() {
   addEvent("stopped", "Work Packet Signals stopped.");
 
   try {
-    await writeWorkPacketSignalsEnabled(false);
+    await writeWorkPacketSignalsSettings({
+      enabled: false,
+      interval_seconds: state.intervalSeconds
+    });
     state.lastError = null;
     return {
       ...status(),
@@ -281,6 +289,33 @@ export async function stop() {
       durable_error: message
     };
   }
+}
+
+function restoreFromSettings(settings: Awaited<ReturnType<typeof readWorkPacketSignalsSettings>>) {
+  state.intervalSeconds = normalizeStoredIntervalSeconds(settings.interval_seconds);
+
+  if (!settings.enabled) {
+    if (state.running) {
+      clearScheduledCheck();
+      state.running = false;
+      state.nextCheckAt = null;
+      addEvent("stopped", "Work Packet Signals restored as stopped from durable setting.");
+    }
+
+    return;
+  }
+
+  if (state.running) {
+    if (!state.nextCheckAt && !state.checkInProgress) {
+      scheduleNextCheck();
+    }
+
+    return;
+  }
+
+  state.running = true;
+  addEvent("started", `Work Packet Signals restored at ${state.intervalSeconds} second cadence.`);
+  scheduleNextCheck();
 }
 
 export async function tick(options: { scheduled?: boolean; dispatchWakes?: boolean } = {}) {
@@ -950,6 +985,10 @@ function normalizeIntervalSeconds(value?: number) {
   const minimum = configuredMinIntervalSeconds();
 
   return Math.max(minimum, interval);
+}
+
+function normalizeStoredIntervalSeconds(value: number | null) {
+  return normalizeIntervalSeconds(value ?? undefined);
 }
 
 function configuredDefaultIntervalSeconds() {

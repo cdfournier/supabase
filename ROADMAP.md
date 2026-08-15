@@ -113,6 +113,8 @@ Implemented in the first slice:
 - Packet-signal tone and priority decisions now share a single policy module
   across packet creation, native WAKE dispatch, Free Moment digests, and Packet
   Signal previews.
+- Packet Signal monitoring persists its enabled state and cadence, then restores
+  the scheduled monitor loop from durable settings after runtime restart.
 
 Open questions:
 

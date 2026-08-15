@@ -394,6 +394,11 @@ Existing `attempted` or `completed` receipts block duplicate native wakes after
 a runtime restart. Explicit send failures are marked `failed`, allowing a later
 retry after cooldown.
 
+Packet Signal monitoring and packet-signal WAKE each use durable
+`runtime_settings` switches. The monitor also stores its cadence and restores
+the scheduled loop from Supabase after a runtime restart when status is loaded,
+so an enabled packet-signal lane does not come back as an inert toggle.
+
 Free Moments use packet signals as a conservative review trigger for Soren and
 Varro. Each Free Moment refreshes the active Agent's signal inbox and appends a
 short digest of non-`silent` pending packet signals to the prompt. This does not
