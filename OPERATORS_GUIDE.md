@@ -410,13 +410,14 @@ a later WAKE pass.
 
 ## Free Moments
 
-Free Moments is a local, in-process scheduler. It does not auto-start when the app boots.
+Free Moments is a local, in-process scheduler with durable settings. On status
+load after a server/runtime restart, the scheduler restores itself from
+`runtime_settings.free_moments`: enabled state, cadence, and schedule mode.
 
 Important safety note: in dev mode, a hot reload can leave stale in-memory timers
 behind. If Free Moments appears to keep running after the UI says stopped, stop
-the scheduler, then fully stop and restart the dev server. Current builds also
-write a durable `runtime_settings.free_moments.enabled` switch and scheduled
-turns must check it before waking an agent.
+the scheduler, then fully stop and restart the dev server. Scheduled turns also
+check the durable switch before waking an agent.
 
 Check status:
 

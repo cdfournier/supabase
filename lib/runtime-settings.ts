@@ -8,7 +8,13 @@ type RuntimeSettingRow = {
   value: Record<string, unknown> | null;
 };
 
-export async function readFreeMomentsEnabled() {
+export type FreeMomentsSettings = {
+  enabled: boolean;
+  interval_minutes: number | null;
+  schedule_mode: string | null;
+};
+
+export async function readFreeMomentsSettings(): Promise<FreeMomentsSettings> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("runtime_settings")
@@ -21,22 +27,57 @@ export async function readFreeMomentsEnabled() {
   }
 
   const row = data as RuntimeSettingRow | null;
-  return row?.value?.enabled === true;
+  const value = row?.value ?? {};
+  const intervalMinutes = Number(value.interval_minutes);
+  const scheduleMode = typeof value.schedule_mode === "string" ? value.schedule_mode : null;
+
+  return {
+    enabled: value.enabled === true,
+    interval_minutes: Number.isFinite(intervalMinutes) ? intervalMinutes : null,
+    schedule_mode: scheduleMode
+  };
 }
 
-export async function writeFreeMomentsEnabled(enabled: boolean) {
+export async function readFreeMomentsEnabled() {
+  return (await readFreeMomentsSettings()).enabled;
+}
+
+export async function writeFreeMomentsSettings(settings: {
+  enabled: boolean;
+  interval_minutes?: number | null;
+  schedule_mode?: string | null;
+}) {
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("runtime_settings")
     .upsert({
       key: FREE_MOMENTS_KEY,
-      value: { enabled },
+      value: {
+        enabled: settings.enabled,
+        interval_minutes: settings.interval_minutes ?? null,
+        schedule_mode: settings.schedule_mode ?? null
+      },
       updated_at: new Date().toISOString()
     });
 
   if (error) {
     throw new Error(`Could not update Free Moments setting: ${error.message}`);
   }
+
+  return settings;
+}
+
+export async function writeFreeMomentsEnabled(enabled: boolean) {
+  const existing = await readFreeMomentsSettings().catch(() => ({
+    enabled,
+    interval_minutes: null,
+    schedule_mode: null
+  }));
+  await writeFreeMomentsSettings({
+    enabled,
+    interval_minutes: existing.interval_minutes,
+    schedule_mode: existing.schedule_mode
+  });
 
   return enabled;
 }

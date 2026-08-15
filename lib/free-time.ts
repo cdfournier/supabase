@@ -6,7 +6,11 @@ import {
 } from "@/lib/capability-profile";
 import { sendAgentMessage } from "@/lib/chat-runtime";
 import { countUnreadOperatorNotesForAgent } from "@/lib/operator-notes";
-import { readFreeMomentsEnabled, writeFreeMomentsEnabled } from "@/lib/runtime-settings";
+import {
+  readFreeMomentsEnabled,
+  readFreeMomentsSettings,
+  writeFreeMomentsSettings
+} from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { refreshSignalsForParticipant } from "@/lib/work-packet-signals";
 
@@ -121,9 +125,12 @@ export function status() {
 
 export async function statusWithSettings() {
   try {
+    const settings = await readFreeMomentsSettings();
+    restoreFromSettings(settings);
+
     return {
       ...status(),
-      durable_enabled: await readFreeMomentsEnabled(),
+      durable_enabled: settings.enabled,
       durable_error: null
     };
   } catch (error) {
@@ -138,7 +145,11 @@ export async function statusWithSettings() {
 export async function start(intervalMinutes?: number, scheduleMode?: FreeTimeScheduleMode) {
   state.intervalMinutes = normalizeIntervalMinutes(intervalMinutes);
   state.scheduleMode = normalizeScheduleMode(scheduleMode);
-  await writeFreeMomentsEnabled(true);
+  await writeFreeMomentsSettings({
+    enabled: true,
+    interval_minutes: state.intervalMinutes,
+    schedule_mode: state.scheduleMode
+  });
   state.running = true;
   addEvent("started", `Free Moments started at ${state.intervalMinutes} minute cadence in ${state.scheduleMode} mode.`);
   scheduleNextTurn();
@@ -157,7 +168,11 @@ export async function stop() {
   addEvent("stopped", "Free Moments stopped.");
 
   try {
-    await writeFreeMomentsEnabled(false);
+    await writeFreeMomentsSettings({
+      enabled: false,
+      interval_minutes: state.intervalMinutes,
+      schedule_mode: state.scheduleMode
+    });
     state.lastError = null;
     return {
       ...status(),
@@ -250,6 +265,40 @@ export async function previewPrompt(agent: AgentName) {
     trigger_context: triggerContext,
     prompt: promptWithTriggerDigest(triggerContext.digest)
   };
+}
+
+function restoreFromSettings(settings: Awaited<ReturnType<typeof readFreeMomentsSettings>>) {
+  const intervalMinutes = normalizeStoredIntervalMinutes(settings.interval_minutes);
+  const scheduleMode = normalizeStoredScheduleMode(settings.schedule_mode);
+
+  state.intervalMinutes = intervalMinutes;
+  state.scheduleMode = scheduleMode;
+
+  if (!settings.enabled) {
+    if (state.running) {
+      clearScheduledTurn();
+      state.running = false;
+      state.nextTurnAt = null;
+      addEvent("stopped", "Free Moments restored as stopped from durable setting.");
+    }
+
+    return;
+  }
+
+  if (state.running) {
+    if (!state.nextTurnAt && !state.turnInProgress) {
+      scheduleNextTurn();
+    }
+
+    return;
+  }
+
+  state.running = true;
+  addEvent(
+    "started",
+    `Free Moments restored at ${state.intervalMinutes} minute cadence in ${state.scheduleMode} mode.`
+  );
+  scheduleNextTurn();
 }
 
 async function runAgentTurn(agent: AgentName) {
@@ -480,6 +529,14 @@ function normalizeScheduleMode(value?: FreeTimeScheduleMode) {
   return value === "paired" || value === "round_robin"
     ? value
     : configuredDefaultScheduleMode();
+}
+
+function normalizeStoredIntervalMinutes(value: number | null) {
+  return normalizeIntervalMinutes(value ?? undefined);
+}
+
+function normalizeStoredScheduleMode(value: string | null) {
+  return normalizeScheduleMode(value === "paired" || value === "round_robin" ? value : undefined);
 }
 
 function nextScheduledAgents() {
