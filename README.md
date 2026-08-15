@@ -471,6 +471,9 @@ and Operator Note WAKE into one lane summary. It is broker groundwork, not a
 new control plane: it reports durable switches, running state, active wakes,
 last checks, and lane errors without adding another UI surface.
 
+See `WAKE_PROTOCOLS.md` for the shared arrival contract: lanes, priorities,
+tones, receipts, broker responsibilities, and native/bridge adapter boundaries.
+
 Preview an Agent's next Free Moment prompt without waking them:
 
 ```bash

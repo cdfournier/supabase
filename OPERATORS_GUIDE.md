@@ -649,6 +649,10 @@ Moments, Packet Signals, Packet Signal WAKE, and Operator Note WAKE into one
 read-only lane summary so future broker decisions can be built from the shared
 arrival model instead of scraping separate panels.
 
+`WAKE_PROTOCOLS.md` names the arrival contract the broker should preserve:
+arrivals are invitations, priority decides delivery posture, tone frames the
+moment, and durable receipts prevent duplicate wakes after restart.
+
 ## Agent Capability Profile
 
 Run `sql/2026-07-07-agent-capabilities.sql` before relying on database-backed

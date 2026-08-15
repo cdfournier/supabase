@@ -120,6 +120,10 @@ Implemented in the first slice:
 - Operator Note WAKE can be enabled separately from packet-signal WAKE; it uses
   durable note-event receipts and soft native arrivals for unread
   Operator-authored notes addressed to Soren or Varro.
+- `/api/wake-arrivals` now exposes a read-only aggregate arrival-lane status for
+  Free Moments, Packet Signals, Packet Signal WAKE, and Operator Note WAKE.
+- `WAKE_PROTOCOLS.md` captures the shared arrival contract for lanes, priority,
+  tone, receipts, broker responsibilities, and native/bridge adapter boundaries.
 
 Open questions:
 
