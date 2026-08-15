@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import {
-  cafeBridgeTokenConfigured,
-  cafeBridgeTokenMatches
-} from "@/lib/cafe";
+  authorizeBridge,
+  bridgeErrorStatus,
+  requireBridgeParticipantId
+} from "@/lib/bridge-auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { acknowledgeSignals } from "@/lib/work-packet-signals";
 import {
@@ -15,10 +16,8 @@ import {
   rollupWorkPacket
 } from "@/lib/work-packets";
 
-const BRIDGE_PARTICIPANTS = new Set(["agent:julian", "agent:cael"]);
-
 export async function GET(request: Request) {
-  const auth = authorizeBridge(request);
+  const auth = authorizeBridge(request, "work packet bridge");
 
   if (auth) {
     return auth;
@@ -49,7 +48,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = authorizeBridge(request);
+  const auth = authorizeBridge(request, "work packet bridge");
 
   if (auth) {
     return auth;
@@ -57,15 +56,8 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const participantId = String(body.participant_id ?? "").trim();
+    const participantId = requireBridgeParticipantId(body.participant_id);
     const action = String(body.action ?? "").trim();
-
-    if (!BRIDGE_PARTICIPANTS.has(participantId)) {
-      return NextResponse.json(
-        { error: "participant_id must be agent:julian or agent:cael." },
-        { status: 400 }
-      );
-    }
 
     const supabase = getSupabaseAdmin();
     const actor = actorFromId(participantId);
@@ -99,37 +91,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown work packet bridge error" },
-      { status: 500 }
+      { status: bridgeErrorStatus(error) }
     );
   }
-}
-
-function authorizeBridge(request: Request) {
-  if (!cafeBridgeTokenConfigured()) {
-    return NextResponse.json({ error: "CAFE_BRIDGE_TOKEN is not configured." }, { status: 503 });
-  }
-
-  const token = bridgeTokenFromRequest(request);
-
-  if (!cafeBridgeTokenMatches(token)) {
-    return NextResponse.json({ error: "Invalid work packet bridge token." }, { status: 401 });
-  }
-
-  return null;
-}
-
-function bridgeTokenFromRequest(request: Request) {
-  const explicit = request.headers.get("x-cafe-bridge-token");
-
-  if (explicit) {
-    return explicit;
-  }
-
-  const authorization = request.headers.get("authorization") ?? "";
-
-  if (authorization.toLowerCase().startsWith("bearer ")) {
-    return authorization.slice("bearer ".length);
-  }
-
-  return "";
 }
