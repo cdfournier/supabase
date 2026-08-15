@@ -565,6 +565,11 @@ normal Operator session auth; no bridge token route exists yet. Julian/Cael
 bridge access should be added as a deliberate adapter later, not by making the
 Operator route public.
 
+Each Operator Note card keeps the list view light by showing only the latest
+event preview until Chris expands its Trail control. The expanded trail uses the
+existing note detail endpoint and shows author, event type, timestamp, and
+content only; event metadata stays out of the UI.
+
 Free Moments include a gentle count-only cue when the active agent has unread
 Operator Notes. The cue does not include subjects or body previews; agents must
 choose to call `operator_note_list` or `operator_note_get` before relying on note

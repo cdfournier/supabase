@@ -94,6 +94,8 @@ Implemented in the first slice:
 - Existing Operator Inbox now separates Operator Notes from Work Packet Rollups.
 - Operator Inbox composer lets Chris leave asynchronous notes for Soren, Varro,
   or both through an "Everyone" fan-out option.
+- Operator Note cards can expand a lazy-loaded source trail showing the note
+  event history without bloating the Inbox list payload.
 - Free Moments append a gentle count-only cue when an agent has unread Operator
   Notes, without injecting note content into the prompt.
 

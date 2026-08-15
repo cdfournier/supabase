@@ -346,6 +346,11 @@ type OperatorNote = {
   latest_event?: OperatorNoteEvent | null;
 };
 
+type OperatorNoteDetail = {
+  note: OperatorNote;
+  events: OperatorNoteEvent[];
+};
+
 type GitHubEvidenceHandle = {
   id: string;
   provider: string;
@@ -405,6 +410,10 @@ export default function Home() {
   const [operatorInboxError, setOperatorInboxError] = useState("");
   const [operatorInboxNotes, setOperatorInboxNotes] = useState<Record<string, string>>({});
   const [operatorNoteReplies, setOperatorNoteReplies] = useState<Record<string, string>>({});
+  const [operatorNoteDetails, setOperatorNoteDetails] = useState<Record<string, OperatorNoteDetail>>({});
+  const [operatorNoteExpanded, setOperatorNoteExpanded] = useState<Record<string, boolean>>({});
+  const [operatorNoteTrailErrors, setOperatorNoteTrailErrors] = useState<Record<string, string>>({});
+  const [operatorNoteTrailLoading, setOperatorNoteTrailLoading] = useState<Record<string, boolean>>({});
   const [operatorNoteDraft, setOperatorNoteDraft] = useState({
     agent: defaultAgent as OperatorNoteRecipient,
     subject: "",
@@ -561,6 +570,75 @@ export default function Home() {
       setOperatorInboxLoading(false);
     }
   }, []);
+
+  function clearOperatorNoteTrail(noteId: string) {
+    setOperatorNoteDetails((current) => {
+      const next = { ...current };
+      delete next[noteId];
+      return next;
+    });
+    setOperatorNoteTrailErrors((current) => {
+      const next = { ...current };
+      delete next[noteId];
+      return next;
+    });
+    setOperatorNoteTrailLoading((current) => {
+      const next = { ...current };
+      delete next[noteId];
+      return next;
+    });
+  }
+
+  async function toggleOperatorNoteTrail(noteId: string) {
+    const willExpand = !operatorNoteExpanded[noteId];
+
+    setOperatorNoteExpanded((current) => ({
+      ...current,
+      [noteId]: willExpand
+    }));
+
+    if (!willExpand || operatorNoteDetails[noteId] || operatorNoteTrailLoading[noteId]) {
+      return;
+    }
+
+    setOperatorNoteTrailLoading((current) => ({
+      ...current,
+      [noteId]: true
+    }));
+    setOperatorNoteTrailErrors((current) => {
+      const next = { ...current };
+      delete next[noteId];
+      return next;
+    });
+
+    try {
+      const response = await fetch(`/api/operator-notes?id=${encodeURIComponent(noteId)}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load Operator note trail.");
+      }
+
+      setOperatorNoteDetails((current) => ({
+        ...current,
+        [noteId]: {
+          note: data.note,
+          events: data.events ?? []
+        }
+      }));
+    } catch (trailError) {
+      setOperatorNoteTrailErrors((current) => ({
+        ...current,
+        [noteId]:
+          trailError instanceof Error ? trailError.message : "Could not load Operator note trail."
+      }));
+    } finally {
+      setOperatorNoteTrailLoading((current) => ({
+        ...current,
+        [noteId]: false
+      }));
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -1083,6 +1161,12 @@ export default function Home() {
           return next;
         });
       }
+      clearOperatorNoteTrail(noteId);
+      setOperatorNoteExpanded((current) => {
+        const next = { ...current };
+        delete next[noteId];
+        return next;
+      });
 
       await loadOperatorInbox();
     } catch (noteError) {
@@ -1543,14 +1627,19 @@ export default function Home() {
           loading={operatorInboxLoading}
           notes={operatorInboxNotes}
           operatorNoteDraft={operatorNoteDraft}
+          operatorNoteDetails={operatorNoteDetails}
+          operatorNoteExpanded={operatorNoteExpanded}
           operatorNotes={operatorInboxOperatorNotes}
           operatorReplies={operatorNoteReplies}
+          operatorNoteTrailErrors={operatorNoteTrailErrors}
+          operatorNoteTrailLoading={operatorNoteTrailLoading}
           onCreateOperatorNote={createOperatorNote}
           onOperatorDraftChange={setOperatorNoteDraft}
           onOperatorNoteAction={updateOperatorNote}
           onOperatorReplyChange={(noteId, reply) =>
             setOperatorNoteReplies((current) => ({ ...current, [noteId]: reply }))
           }
+          onOperatorNoteTrailToggle={toggleOperatorNoteTrail}
           onNoteChange={(packetId, note) =>
             setOperatorInboxNotes((current) => ({ ...current, [packetId]: note }))
           }
@@ -1937,11 +2026,16 @@ function OperatorInboxView({
   onOperatorDraftChange,
   onOperatorNoteAction,
   onOperatorReplyChange,
+  onOperatorNoteTrailToggle,
   onRefresh,
   onReview,
   operatorNoteDraft,
+  operatorNoteDetails,
+  operatorNoteExpanded,
   operatorNotes,
   operatorReplies,
+  operatorNoteTrailErrors,
+  operatorNoteTrailLoading,
   packets
 }: {
   actionInProgress: string | null;
@@ -1957,11 +2051,16 @@ function OperatorInboxView({
     body?: string
   ) => void;
   onOperatorReplyChange: (noteId: string, reply: string) => void;
+  onOperatorNoteTrailToggle: (noteId: string) => void;
   onRefresh: () => void;
   onReview: (packetId: string, reviewState: "approved" | "request_changes" | "hold") => void;
   operatorNoteDraft: { agent: OperatorNoteRecipient; subject: string; body: string };
+  operatorNoteDetails: Record<string, OperatorNoteDetail>;
+  operatorNoteExpanded: Record<string, boolean>;
   operatorNotes: OperatorNote[];
   operatorReplies: Record<string, string>;
+  operatorNoteTrailErrors: Record<string, string>;
+  operatorNoteTrailLoading: Record<string, boolean>;
   packets: WorkPacket[];
 }) {
   const actionDisabled = Boolean(actionInProgress);
@@ -2069,6 +2168,10 @@ function OperatorInboxView({
             {operatorNotes.map((operatorNote) => {
               const reply = operatorReplies[operatorNote.id] ?? "";
               const isUnread = operatorNote.operator_status === "unread";
+              const isTrailExpanded = Boolean(operatorNoteExpanded[operatorNote.id]);
+              const trailDetail = operatorNoteDetails[operatorNote.id];
+              const trailError = operatorNoteTrailErrors[operatorNote.id];
+              const trailLoading = Boolean(operatorNoteTrailLoading[operatorNote.id]);
 
               return (
                 <article className={`inbox-card operator-note-card ${isUnread ? "unread" : ""}`} key={operatorNote.id}>
@@ -2091,6 +2194,14 @@ function OperatorInboxView({
                     <p>{operatorNote.latest_event?.content || "No note body available."}</p>
                   </div>
 
+                  {isTrailExpanded ? (
+                    <OperatorNoteTrail
+                      error={trailError}
+                      events={trailDetail?.events ?? []}
+                      loading={trailLoading}
+                    />
+                  ) : null}
+
                   <label className="inbox-note">
                     <span>Reply</span>
                     <textarea
@@ -2102,6 +2213,14 @@ function OperatorInboxView({
                   </label>
 
                   <div className="inbox-actions">
+                    <button
+                      className="quiet-action"
+                      disabled={actionDisabled}
+                      onClick={() => onOperatorNoteTrailToggle(operatorNote.id)}
+                      type="button"
+                    >
+                      {isTrailExpanded ? "Hide Trail" : "Trail"}
+                    </button>
                     <button
                       className="checkpoint-action"
                       disabled={actionDisabled || !reply.trim()}
@@ -2232,6 +2351,44 @@ function OperatorInboxView({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function OperatorNoteTrail({
+  error,
+  events,
+  loading
+}: {
+  error?: string;
+  events: OperatorNoteEvent[];
+  loading: boolean;
+}) {
+  return (
+    <div className="operator-note-trail" aria-label="Operator note trail">
+      <div className="operator-note-trail-header">
+        <h4>Trail</h4>
+        <span>{loading ? "Loading" : `${events.length} ${events.length === 1 ? "event" : "events"}`}</span>
+      </div>
+      {error ? <p className="operator-note-trail-error">{error}</p> : null}
+      {!error && loading ? <p className="operator-note-trail-empty">Loading note trail...</p> : null}
+      {!error && !loading && !events.length ? (
+        <p className="operator-note-trail-empty">No trail events found.</p>
+      ) : null}
+      {!error && events.length ? (
+        <ol>
+          {events.map((event) => (
+            <li className="operator-note-event" key={event.id}>
+              <div className="operator-note-event-meta">
+                <span>{actorDisplayName(event.actor_id)}</span>
+                <span>{operatorNoteEventLabel(event.event_type)}</span>
+                <time dateTime={event.created_at}>{formatMessageTime(event.created_at)}</time>
+              </div>
+              <p>{event.content}</p>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
   );
 }
 
@@ -2964,6 +3121,17 @@ function participantDisplayName(participantId: string) {
 
 function actorDisplayName(actorId: string) {
   return participantDisplayName(actorId);
+}
+
+function operatorNoteEventLabel(eventType: OperatorNoteEvent["event_type"]) {
+  switch (eventType) {
+    case "created":
+      return "Created";
+    case "reply":
+      return "Reply";
+    default:
+      return eventType;
+  }
 }
 
 function isPendingOperatorRollup(packet: WorkPacket) {

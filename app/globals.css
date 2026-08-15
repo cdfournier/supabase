@@ -669,6 +669,91 @@ button {
   white-space: pre-wrap;
 }
 
+.operator-note-trail {
+  background: #fffdf9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.operator-note-trail-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.operator-note-trail-header h4 {
+  font-size: 13px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.operator-note-trail-header span,
+.operator-note-event-meta,
+.operator-note-trail-empty,
+.operator-note-trail-error {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.operator-note-trail-error {
+  color: #a94432;
+  margin: 0;
+}
+
+.operator-note-trail-empty {
+  margin: 0;
+}
+
+.operator-note-trail ol {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.operator-note-event {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.operator-note-event:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.operator-note-event-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.operator-note-event-meta span:first-child {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.operator-note-event-meta span + span::before,
+.operator-note-event-meta time::before {
+  content: "·";
+  margin-right: 6px;
+}
+
+.operator-note-event p {
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .inbox-rollup {
   display: grid;
   gap: 12px;
