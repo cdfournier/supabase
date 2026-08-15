@@ -252,6 +252,11 @@ type WorkPacketSignalPreview = {
   visible_signals: WorkPacketSignalEvent[];
   pending_signals: WorkPacketSignalEvent[];
   recent_signals: WorkPacketSignalEvent[];
+  operator_notes?: {
+    allowed: boolean;
+    error: string | null;
+    unread_count: number;
+  };
 };
 
 type WorkPacketSignalEvent = {
@@ -2807,12 +2812,21 @@ function WorkPacketSignalsPanel({
 
           {preview ? (
             <div className="free-time-preview">
-              <div className="pressure-row">
-                <span>{preview.agent} signal inbox</span>
-                <strong>
-                  {preview.visible_count} / {preview.pending_count}
-                </strong>
+              <div className="arrival-preview-rows">
+                <div className="pressure-row">
+                  <span>{preview.agent} packet signals</span>
+                  <strong>
+                    {preview.visible_count} / {preview.pending_count}
+                  </strong>
+                </div>
+                <div className="pressure-row">
+                  <span>Operator Notes</span>
+                  <strong>{preview.operator_notes?.unread_count ?? 0} unread</strong>
+                </div>
               </div>
+              {preview.operator_notes?.error ? (
+                <p>{preview.operator_notes.error}</p>
+              ) : null}
               {preview.visible_signals.length > 0 ? (
                 <ol>
                   {preview.visible_signals.map((event) => (

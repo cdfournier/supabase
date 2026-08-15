@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { countUnreadOperatorNotesForAgent } from "@/lib/operator-notes";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import {
   refreshSignalsForParticipant,
   start as startWorkPacketSignals,
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
       const inbox = await refreshSignalsForParticipant(participantId);
       const pendingSignals = inbox.pending_signals ?? [];
       const visibleSignals = pendingSignals.filter((signal) => signal.wake_priority !== "silent");
+      const operatorNotes = await previewOperatorNotes(agent);
 
       return NextResponse.json({
         agent,
@@ -44,7 +47,8 @@ export async function POST(request: Request) {
         visible_count: visibleSignals.length,
         visible_signals: visibleSignals,
         pending_signals: pendingSignals,
-        recent_signals: inbox.recent_signals ?? []
+        recent_signals: inbox.recent_signals ?? [],
+        operator_notes: operatorNotes
       });
     }
 
@@ -66,6 +70,22 @@ function optionalNumber(value: unknown) {
   }
 
   return Number(value);
+}
+
+async function previewOperatorNotes(agent: "soren" | "varro") {
+  try {
+    return {
+      allowed: true,
+      error: null,
+      unread_count: await countUnreadOperatorNotesForAgent(getSupabaseAdmin(), agent)
+    };
+  } catch (error) {
+    return {
+      allowed: true,
+      error: error instanceof Error ? error.message : "Could not check Operator Notes.",
+      unread_count: 0
+    };
+  }
 }
 
 function requiredAgent(value: unknown) {

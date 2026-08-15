@@ -420,6 +420,11 @@ button {
   padding-top: 12px;
 }
 
+.arrival-preview-rows {
+  display: grid;
+  gap: 7px;
+}
+
 .free-time-preview pre {
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid var(--line);

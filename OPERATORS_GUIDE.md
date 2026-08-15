@@ -574,6 +574,8 @@ Free Moments include a gentle count-only cue when the active agent has unread
 Operator Notes. The cue does not include subjects or body previews; agents must
 choose to call `operator_note_list` or `operator_note_get` before relying on note
 content. Passing, deferring, and quietly marking a note read remain valid.
+The Packet Signals preview also surfaces the selected agent's unread Operator
+Note count as an arrival cue without adding note bodies to the preview.
 
 ## Agent Capability Profile
 
