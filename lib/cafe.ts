@@ -83,7 +83,7 @@ const CAFE_PARTICIPANTS: CafeParticipantSeed[] = [
     participantType: "external_agent",
     participantAdapter: "codex_local",
     displayName: "Cael",
-    metadata: { agent: "cael", adapter_status: "planned" }
+    metadata: { agent: "cael", adapter_display_name: "Claude Cowork", adapter_status: "planned" }
   }
 ];
 

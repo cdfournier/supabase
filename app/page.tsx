@@ -1637,7 +1637,7 @@ function CafeView({
             participants.map((participant) => (
               <span className="participant-chip" key={participant.id}>
                 <strong>{participant.display_name}</strong>
-                <small>{participantAdapterLabel(participant.participant_adapter)}</small>
+                <small>{participantAdapterLabel(participant)}</small>
               </span>
             ))
           ) : (
@@ -2571,8 +2571,14 @@ function conversationLabel(agent: AgentName) {
   return `${agent}-main`;
 }
 
-function participantAdapterLabel(adapter: CafeParticipant["participant_adapter"]) {
-  switch (adapter) {
+function participantAdapterLabel(participant: CafeParticipant) {
+  const displayLabel = cafeParticipantAdapterDisplayLabel(participant.metadata);
+
+  if (displayLabel) {
+    return displayLabel;
+  }
+
+  switch (participant.participant_adapter) {
     case "operator_browser":
       return "Operator";
     case "runtime_native":
@@ -2582,8 +2588,14 @@ function participantAdapterLabel(adapter: CafeParticipant["participant_adapter"]
     case "external_bridge":
       return "Bridge";
     default:
-      return adapter;
+      return participant.participant_adapter;
   }
+}
+
+function cafeParticipantAdapterDisplayLabel(metadata: CafeParticipant["metadata"]) {
+  const label = metadata.adapter_display_name;
+
+  return typeof label === "string" && label.trim() ? label.trim() : null;
 }
 
 function participantDisplayName(participantId: string) {
