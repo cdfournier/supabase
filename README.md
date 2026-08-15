@@ -256,6 +256,8 @@ Packet Signal monitoring and packet-signal WAKE each use durable
 `runtime_settings` switches. The monitor also stores its cadence and restores
 the scheduled loop from Supabase after a runtime restart when status is loaded,
 so a restart does not silently drop an enabled packet-signal lane.
+The `/api/health` endpoint also performs this quiet restore check, allowing the
+dashboard or an uptime ping to rehydrate enabled WAKE loops after process start.
 
 Bridge participants must use `/api/work-packets/bridge` for both list and
 single-packet reads:

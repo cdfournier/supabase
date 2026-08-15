@@ -398,6 +398,8 @@ Packet Signal monitoring and packet-signal WAKE each use durable
 `runtime_settings` switches. The monitor also stores its cadence and restores
 the scheduled loop from Supabase after a runtime restart when status is loaded,
 so an enabled packet-signal lane does not come back as an inert toggle.
+`/api/health` also performs the same quiet restore check, allowing the dashboard
+or an uptime ping to rehydrate enabled WAKE loops after process start.
 
 Free Moments use packet signals as a conservative review trigger for Soren and
 Varro. Each Free Moment refreshes the active Agent's signal inbox and appends a

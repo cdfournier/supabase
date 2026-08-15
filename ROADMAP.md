@@ -115,6 +115,8 @@ Implemented in the first slice:
   Signal previews.
 - Packet Signal monitoring persists its enabled state and cadence, then restores
   the scheduled monitor loop from durable settings after runtime restart.
+- Runtime health checks now quietly hydrate Free Moment and Packet Signal
+  scheduler state, so the dashboard or an uptime ping can revive enabled loops.
 
 Open questions:
 

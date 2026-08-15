@@ -20,9 +20,10 @@ import {
   loadAgentCapabilityProfile
 } from "@/lib/capability-profile";
 import { loadUsageTotals } from "@/lib/model-usage";
-import { readFreeMomentsEnabled } from "@/lib/runtime-settings";
+import { statusWithSettings as freeMomentsStatusWithSettings } from "@/lib/free-time";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { toolDefinitions } from "@/lib/tools/registry";
+import { statusWithSettings as workPacketSignalsStatusWithSettings } from "@/lib/work-packet-signals";
 
 const DEFAULT_TIME_ZONE = "America/New_York";
 
@@ -48,8 +49,11 @@ export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
     const agents = await loadAgentList(supabase);
-    const freeMomentsEnabled = await readFreeMomentsEnabled().catch(() => false);
-    const usage = await loadUsageTotals(supabase);
+    const [freeMomentsStatus, workPacketSignalsStatus, usage] = await Promise.all([
+      freeMomentsStatusWithSettings().catch(() => null),
+      workPacketSignalsStatusWithSettings().catch(() => null),
+      loadUsageTotals(supabase)
+    ]);
     const agentHealth = [];
 
     for (const agent of agents) {
@@ -71,7 +75,11 @@ export async function GET() {
         max_tool_rounds: numberEnv("ANTHROPIC_MAX_TOOL_ROUNDS", 6),
         prompt_cache: anthropicPromptCacheEnabled(),
         prompt_cache_ttl: anthropicPromptCacheEnabled() ? ANTHROPIC_PROMPT_CACHE_TTL : "off",
-        free_moments_enabled: freeMomentsEnabled
+        free_moments_enabled: freeMomentsStatus?.durable_enabled === true,
+        free_moments_running: freeMomentsStatus?.running === true,
+        work_packet_signals_enabled: workPacketSignalsStatus?.durable_enabled === true,
+        work_packet_signals_running: workPacketSignalsStatus?.running === true,
+        work_packet_signal_wakes_enabled: workPacketSignalsStatus?.wake_durable_enabled === true
       },
       env: {
         supabase_url: present("NEXT_PUBLIC_SUPABASE_URL"),
