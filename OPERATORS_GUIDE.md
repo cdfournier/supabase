@@ -653,6 +653,11 @@ arrival model instead of scraping separate panels.
 arrivals are invitations, priority decides delivery posture, tone frames the
 moment, and durable receipts prevent duplicate wakes after restart.
 
+`GET /api/wake-arrivals/bridge?participant_id=agent:julian|agent:cael` exposes
+the same status plus that bridge participant's packet-signal inbox behind the
+Cafe bridge token. It is an external-agent polling lane, not an autonomous wake
+dispatcher.
+
 ## Agent Capability Profile
 
 Run `sql/2026-07-07-agent-capabilities.sql` before relying on database-backed

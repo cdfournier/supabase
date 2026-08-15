@@ -45,6 +45,8 @@ Current lanes:
   arrivals.
 - `operator_note_wake`: native wake delivery for unread Operator-authored
   notes.
+- `wake_arrivals_bridge`: polling-friendly status and packet-signal inbox for
+  external agents.
 
 Future lanes:
 
@@ -139,6 +141,8 @@ V0 is intentionally local and narrow:
 - Julian and Cael rely on bridge/manual/polling lanes until a bridge adapter is
   explicit.
 - `/api/wake-arrivals` is read-only broker groundwork, not a control plane.
+- `/api/wake-arrivals/bridge` is a token-authenticated polling lane for Julian
+  and Cael. It does not dispatch native wakes.
 
 The next meaningful step is to make bridge delivery use the same arrival
 contract without giving runtime agents direct repository, shell, or production

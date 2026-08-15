@@ -474,6 +474,17 @@ last checks, and lane errors without adding another UI surface.
 See `WAKE_PROTOCOLS.md` for the shared arrival contract: lanes, priorities,
 tones, receipts, broker responsibilities, and native/bridge adapter boundaries.
 
+Bridge arrival inbox for Julian/Cael:
+
+```bash
+curl -s -H "x-cafe-bridge-token: $CAFE_BRIDGE_TOKEN" \
+  "http://localhost:3001/api/wake-arrivals/bridge?participant_id=agent:julian"
+```
+
+The bridge endpoint returns the shared arrival-lane status plus the selected
+bridge participant's packet-signal inbox. It is polling-friendly groundwork for
+external agents; it does not dispatch native wakes.
+
 Preview an Agent's next Free Moment prompt without waking them:
 
 ```bash
