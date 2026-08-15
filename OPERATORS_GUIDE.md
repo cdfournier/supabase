@@ -644,6 +644,11 @@ context posture receipt used by Free Moment and Packet Signal wakes. Its
 default `quiet` priority and `soft` tone are defined in `lib/wake-policy.ts`
 with the packet-signal policy helpers.
 
+`GET /api/wake-arrivals` is the first shared WAKE status surface. It folds Free
+Moments, Packet Signals, Packet Signal WAKE, and Operator Note WAKE into one
+read-only lane summary so future broker decisions can be built from the shared
+arrival model instead of scraping separate panels.
+
 ## Agent Capability Profile
 
 Run `sql/2026-07-07-agent-capabilities.sql` before relying on database-backed

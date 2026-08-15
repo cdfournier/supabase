@@ -460,6 +460,17 @@ native wake dispatch gating, and restart-safe receipt blocking statuses.
 Operator Note WAKE uses the same policy module for its default `quiet` priority
 and `soft` tone, keeping future broker behavior in one vocabulary.
 
+WAKE arrival status:
+
+```bash
+curl -s -b "$COOKIE_JAR" http://localhost:3001/api/wake-arrivals
+```
+
+This read-only endpoint folds Free Moments, Packet Signals, Packet Signal WAKE,
+and Operator Note WAKE into one lane summary. It is broker groundwork, not a
+new control plane: it reports durable switches, running state, active wakes,
+last checks, and lane errors without adding another UI surface.
+
 Preview an Agent's next Free Moment prompt without waking them:
 
 ```bash
