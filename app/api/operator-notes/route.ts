@@ -8,6 +8,7 @@ import {
   operatorNoteOperatorActor,
   replyToOperatorNote
 } from "@/lib/operator-notes";
+import { dispatchOperatorNoteWakeForNote } from "@/lib/operator-note-wakes";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export async function GET(request: Request) {
@@ -46,11 +47,19 @@ export async function POST(request: Request) {
     const actor = operatorNoteOperatorActor();
 
     if (action === "create") {
-      return NextResponse.json(await createOperatorNote(supabase, body, actor));
+      const result = await createOperatorNote(supabase, body, actor);
+      return NextResponse.json({
+        ...result,
+        operator_note_wake: await dispatchOperatorNoteWakeForNote(result.note.id)
+      });
     }
 
     if (action === "reply") {
-      return NextResponse.json(await replyToOperatorNote(supabase, body, actor));
+      const result = await replyToOperatorNote(supabase, body, actor);
+      return NextResponse.json({
+        ...result,
+        operator_note_wake: await dispatchOperatorNoteWakeForNote(result.note.id)
+      });
     }
 
     if (action === "mark_read") {

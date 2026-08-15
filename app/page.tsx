@@ -291,6 +291,25 @@ type WorkPacketSignalsStatus = {
   recent_events: WorkPacketSignalEvent[];
 };
 
+type OperatorNoteWakeEvent = {
+  at: string;
+  type: string;
+  agent?: AgentName;
+  note_id?: string;
+  message: string;
+};
+
+type OperatorNoteWakeStatus = {
+  enabled: boolean;
+  durable_enabled?: boolean | null;
+  durable_error?: string | null;
+  native_wakes_in_progress: AgentName[];
+  last_native_wake_at: Record<AgentName, string | null>;
+  last_check_at: string | null;
+  last_error: string | null;
+  recent_events: OperatorNoteWakeEvent[];
+};
+
 type WorkPacketRollup = {
   summary?: string;
   reviewed_by?: string[];
@@ -415,6 +434,10 @@ export default function Home() {
   const [workPacketSignalsRequestInProgress, setWorkPacketSignalsRequestInProgress] = useState(false);
   const [workPacketSignalsError, setWorkPacketSignalsError] = useState("");
   const [workPacketSignalPreview, setWorkPacketSignalPreview] = useState<WorkPacketSignalPreview | null>(null);
+  const [operatorNoteWakes, setOperatorNoteWakes] = useState<OperatorNoteWakeStatus | null>(null);
+  const [operatorNoteWakesLoading, setOperatorNoteWakesLoading] = useState(true);
+  const [operatorNoteWakesRequestInProgress, setOperatorNoteWakesRequestInProgress] = useState(false);
+  const [operatorNoteWakesError, setOperatorNoteWakesError] = useState("");
   const [operatorInboxPackets, setOperatorInboxPackets] = useState<WorkPacket[]>([]);
   const [operatorInboxOperatorNotes, setOperatorInboxOperatorNotes] = useState<OperatorNote[]>([]);
   const [operatorInboxLoading, setOperatorInboxLoading] = useState(true);
@@ -453,6 +476,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const freeTimeStatusLoadedRef = useRef(false);
   const workPacketSignalsStatusLoadedRef = useRef(false);
+  const operatorNoteWakesStatusLoadedRef = useRef(false);
 
   const activeAgent = useMemo(
     () => agents.find((agent) => agent.name === selectedAgent),
@@ -539,6 +563,28 @@ export default function Home() {
       );
     } finally {
       setWorkPacketSignalsLoading(false);
+    }
+  }, []);
+
+  const loadOperatorNoteWakesStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/operator-note-wakes");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load Operator Note WAKE status.");
+      }
+
+      setOperatorNoteWakes(data);
+      setOperatorNoteWakesError("");
+    } catch (statusError) {
+      setOperatorNoteWakesError(
+        statusError instanceof Error
+          ? statusError.message
+          : "Could not load Operator Note WAKE status."
+      );
+    } finally {
+      setOperatorNoteWakesLoading(false);
     }
   }, []);
 
@@ -806,6 +852,34 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    const shouldPoll = Boolean(
+      operatorNoteWakes?.enabled ||
+      operatorNoteWakesRequestInProgress
+    );
+
+    if (!operatorNoteWakesStatusLoadedRef.current) {
+      operatorNoteWakesStatusLoadedRef.current = true;
+      void loadOperatorNoteWakesStatus();
+    }
+
+    if (!shouldPoll) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadOperatorNoteWakesStatus();
+    }, workPacketSignalsPollMs);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [
+    operatorNoteWakes?.enabled,
+    operatorNoteWakesRequestInProgress,
+    loadOperatorNoteWakesStatus
+  ]);
+
+  useEffect(() => {
     transcriptRef.current?.scrollTo({
       top: 0,
       behavior: "smooth"
@@ -1058,6 +1132,41 @@ export default function Home() {
     }
   }
 
+  async function runOperatorNoteWakesAction(action: "start" | "stop" | "check") {
+    if (operatorNoteWakesRequestInProgress) {
+      return;
+    }
+
+    setOperatorNoteWakesRequestInProgress(true);
+    setOperatorNoteWakesError("");
+
+    try {
+      const response = await fetch("/api/operator-note-wakes", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ action })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Operator Note WAKE request failed.");
+      }
+
+      setOperatorNoteWakes(data);
+    } catch (actionError) {
+      setOperatorNoteWakesError(
+        actionError instanceof Error
+          ? actionError.message
+          : "Operator Note WAKE request failed."
+      );
+    } finally {
+      setOperatorNoteWakesRequestInProgress(false);
+      setOperatorNoteWakesLoading(false);
+    }
+  }
+
   async function previewWorkPacketSignals() {
     if (workPacketSignalsRequestInProgress) {
       return;
@@ -1180,6 +1289,7 @@ export default function Home() {
       });
 
       await loadOperatorInbox();
+      void loadOperatorNoteWakesStatus();
     } catch (noteError) {
       setOperatorInboxError(
         noteError instanceof Error ? noteError.message : "Could not update Operator note."
@@ -1232,6 +1342,7 @@ export default function Home() {
         body: ""
       }));
       await loadOperatorInbox();
+      void loadOperatorNoteWakesStatus();
     } catch (noteError) {
       setOperatorInboxError(
         noteError instanceof Error ? noteError.message : "Could not create Operator note."
@@ -1607,7 +1718,12 @@ export default function Home() {
           error={workPacketSignalsError}
           expanded={controlPanels.packetSignals}
           loading={workPacketSignalsLoading}
+          noteWakeError={operatorNoteWakesError}
+          noteWakeLoading={operatorNoteWakesLoading}
+          noteWakeRequestInProgress={operatorNoteWakesRequestInProgress}
+          noteWakeStatus={operatorNoteWakes}
           onAction={runWorkPacketSignalsAction}
+          onNoteWakeAction={runOperatorNoteWakesAction}
           onPreview={previewWorkPacketSignals}
           onToggle={() => toggleControlPanel("packetSignals")}
           preview={workPacketSignalPreview}
@@ -2741,7 +2857,12 @@ function WorkPacketSignalsPanel({
   error,
   expanded,
   loading,
+  noteWakeError,
+  noteWakeLoading,
+  noteWakeRequestInProgress,
+  noteWakeStatus,
   onAction,
+  onNoteWakeAction,
   onPreview,
   onToggle,
   preview,
@@ -2752,7 +2873,12 @@ function WorkPacketSignalsPanel({
   error: string;
   expanded: boolean;
   loading: boolean;
+  noteWakeError: string;
+  noteWakeLoading: boolean;
+  noteWakeRequestInProgress: boolean;
+  noteWakeStatus: OperatorNoteWakeStatus | null;
   onAction: (action: "start" | "stop" | "start_wakes" | "stop_wakes" | "tick") => void;
+  onNoteWakeAction: (action: "start" | "stop" | "check") => void;
   onPreview: () => void;
   onToggle: () => void;
   preview: WorkPacketSignalPreview | null;
@@ -2762,6 +2888,8 @@ function WorkPacketSignalsPanel({
 }) {
   const disabled = loading || requestInProgress;
   const recentEvents = status?.recent_events ?? [];
+  const noteWakeDisabled = noteWakeLoading || noteWakeRequestInProgress;
+  const noteWakeEvents = noteWakeStatus?.recent_events ?? [];
 
   return (
     <section className={`health-panel signal-panel ${expanded ? "" : "collapsed"}`} aria-label="Work Packet Signals">
@@ -2890,6 +3018,86 @@ function WorkPacketSignalsPanel({
             >
               Preview {selectedAgent}
             </button>
+          </div>
+
+          <div className="free-time-events">
+            <div className="pressure-row">
+              <span>Operator Note WAKE</span>
+              <strong>{noteWakeStatus?.enabled ? "enabled" : "stopped"}</strong>
+            </div>
+
+            {noteWakeStatus ? (
+              <dl className="health-list free-time-list">
+                <div>
+                  <dt>DB switch</dt>
+                  <dd>{noteWakeStatus.durable_enabled === undefined ? "unknown" : noteWakeStatus.durable_enabled ? "enabled" : "disabled"}</dd>
+                </div>
+                <div>
+                  <dt>WAKE active</dt>
+                  <dd>{noteWakeStatus.native_wakes_in_progress?.join(", ") || "none"}</dd>
+                </div>
+                <div>
+                  <dt>Last check</dt>
+                  <dd>{formatStatusTime(noteWakeStatus.last_check_at)}</dd>
+                </div>
+                <div>
+                  <dt>Last Soren note WAKE</dt>
+                  <dd>{formatStatusTime(noteWakeStatus.last_native_wake_at?.soren ?? null)}</dd>
+                </div>
+                <div>
+                  <dt>Last Varro note WAKE</dt>
+                  <dd>{formatStatusTime(noteWakeStatus.last_native_wake_at?.varro ?? null)}</dd>
+                </div>
+                <div>
+                  <dt>Last error</dt>
+                  <dd>{noteWakeStatus.last_error ?? noteWakeStatus.durable_error ?? "none"}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="health-empty">{noteWakeLoading ? "Loading Operator Note WAKE..." : "Operator Note WAKE unavailable."}</p>
+            )}
+
+            <div className="free-time-actions">
+              <button
+                className="quiet-action"
+                disabled={noteWakeDisabled || noteWakeStatus?.enabled}
+                onClick={() => onNoteWakeAction("start")}
+                type="button"
+              >
+                {noteWakeRequestInProgress ? "Working" : "Start Note WAKE"}
+              </button>
+              <button
+                className="quiet-action"
+                disabled={noteWakeDisabled || !noteWakeStatus?.enabled}
+                onClick={() => onNoteWakeAction("stop")}
+                type="button"
+              >
+                Stop Note WAKE
+              </button>
+              <button
+                className="quiet-action"
+                disabled={noteWakeDisabled || !noteWakeStatus?.enabled}
+                onClick={() => onNoteWakeAction("check")}
+                type="button"
+              >
+                Check Notes
+              </button>
+            </div>
+
+            {noteWakeError ? <p className="health-error">{noteWakeError}</p> : null}
+
+            {noteWakeEvents.length > 0 ? (
+              <ol>
+                {noteWakeEvents.slice(-5).map((event) => (
+                  <li key={`${event.at}-${event.type}-${event.message}`}>
+                    <time dateTime={event.at}>{formatShortTime(event.at)}</time>
+                    <span>{event.agent ? `${event.agent}: ` : ""}{event.message}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p>No Operator Note WAKE events yet.</p>
+            )}
           </div>
 
           {preview ? (

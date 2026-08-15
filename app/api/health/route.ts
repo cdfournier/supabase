@@ -21,6 +21,7 @@ import {
 } from "@/lib/capability-profile";
 import { loadUsageTotals } from "@/lib/model-usage";
 import { statusWithSettings as freeMomentsStatusWithSettings } from "@/lib/free-time";
+import { statusWithSettings as operatorNoteWakeStatusWithSettings } from "@/lib/operator-note-wakes";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { toolDefinitions } from "@/lib/tools/registry";
 import { statusWithSettings as workPacketSignalsStatusWithSettings } from "@/lib/work-packet-signals";
@@ -49,9 +50,10 @@ export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
     const agents = await loadAgentList(supabase);
-    const [freeMomentsStatus, workPacketSignalsStatus, usage] = await Promise.all([
+    const [freeMomentsStatus, workPacketSignalsStatus, operatorNoteWakeStatus, usage] = await Promise.all([
       freeMomentsStatusWithSettings().catch(() => null),
       workPacketSignalsStatusWithSettings().catch(() => null),
+      operatorNoteWakeStatusWithSettings().catch(() => null),
       loadUsageTotals(supabase)
     ]);
     const agentHealth = [];
@@ -79,7 +81,8 @@ export async function GET() {
         free_moments_running: freeMomentsStatus?.running === true,
         work_packet_signals_enabled: workPacketSignalsStatus?.durable_enabled === true,
         work_packet_signals_running: workPacketSignalsStatus?.running === true,
-        work_packet_signal_wakes_enabled: workPacketSignalsStatus?.wake_durable_enabled === true
+        work_packet_signal_wakes_enabled: workPacketSignalsStatus?.wake_durable_enabled === true,
+        operator_note_wakes_enabled: operatorNoteWakeStatus?.durable_enabled === true
       },
       env: {
         supabase_url: present("NEXT_PUBLIC_SUPABASE_URL"),

@@ -591,7 +591,8 @@ Notes live in `peer_notes`, are visible to the Operator through Supabase, and ar
 ## Operator Notes
 
 Operator Notes are an asynchronous Inbox lane between the Operator and native
-runtime agents. They are not live chat, not assignments, and not wake pressure.
+runtime agents. They are not live chat or assignments; optional Note WAKE can
+surface them as soft arrivals without changing that consent model.
 
 Run `sql/2026-08-15-operator-notes.sql` before relying on this surface. The
 migration creates:
@@ -599,6 +600,10 @@ migration creates:
 - `operator_notes`
 - `operator_note_events`
 - `operator_notes` capability rows for Soren and Varro
+
+Run `sql/2026-08-15-operator-note-wake-receipts.sql` before enabling native
+Operator Note WAKE. The receipt table records attempted/completed/failed
+deliveries by note event so restart hydration cannot re-send the same arrival.
 
 Native runtime tools:
 
@@ -628,6 +633,14 @@ choose to call `operator_note_list` or `operator_note_get` before relying on not
 content. Passing, deferring, and quietly marking a note read remain valid.
 The Packet Signals preview also surfaces the selected agent's unread Operator
 Note count as an arrival cue without adding note bodies to the preview.
+
+Operator Note WAKE is an optional local native wake lane for Soren and Varro.
+When enabled from the Packet Signals panel or `/api/operator-note-wakes`, new
+unread Operator-authored notes can wake the addressed Agent with a soft arrival
+prompt. The prompt frames the note as asynchronous and optional: read, reply,
+mark read, defer, or pass are all valid. The wake turn is stored with
+`conversation_messages.source='operator_note_wake'` and includes the same
+context posture receipt used by Free Moment and Packet Signal wakes.
 
 ## Agent Capability Profile
 

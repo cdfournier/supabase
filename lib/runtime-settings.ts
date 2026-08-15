@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 const FREE_MOMENTS_KEY = "free_moments";
 const WORK_PACKET_SIGNALS_KEY = "work_packet_signals";
 const WORK_PACKET_SIGNAL_WAKES_KEY = "work_packet_signal_wakes";
+const OPERATOR_NOTE_WAKES_KEY = "operator_note_wakes";
 
 type RuntimeSettingRow = {
   value: Record<string, unknown> | null;
@@ -156,6 +157,16 @@ export async function readWorkPacketSignalWakesEnabled() {
 
 export async function writeWorkPacketSignalWakesEnabled(enabled: boolean) {
   await writeEnabledSetting(WORK_PACKET_SIGNAL_WAKES_KEY, enabled, "Work Packet Signal WAKE");
+
+  return enabled;
+}
+
+export async function readOperatorNoteWakesEnabled() {
+  return readEnabledSetting(OPERATOR_NOTE_WAKES_KEY, "Operator Note WAKE");
+}
+
+export async function writeOperatorNoteWakesEnabled(enabled: boolean) {
+  await writeEnabledSetting(OPERATOR_NOTE_WAKES_KEY, enabled, "Operator Note WAKE");
 
   return enabled;
 }

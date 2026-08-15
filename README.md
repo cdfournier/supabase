@@ -245,6 +245,12 @@ For restart-safe packet-signal WAKE delivery receipts, also run:
 sql/2026-08-15-work-packet-wake-receipts.sql
 ```
 
+For restart-safe Operator Note WAKE delivery receipts, run:
+
+```text
+sql/2026-08-15-operator-note-wake-receipts.sql
+```
+
 The MVP exposes:
 
 - Operator API: `GET/POST /api/work-packets`
@@ -397,6 +403,31 @@ the Agent model and updates the receipt to `completed` after the turn succeeds.
 Existing `attempted` or `completed` receipts block duplicate native wakes after
 a runtime restart. Explicit send failures are marked `failed`, allowing a later
 retry after cooldown.
+
+Operator Note WAKE v0 is also intentionally narrow. When enabled, new unread
+Operator-authored notes for Soren or Varro can trigger a soft native wake using
+the existing runtime conversations. Delivery receipts are written before and
+after the wake so the same note event is not re-sent after restart. Agents may
+read, reply, mark read, defer, or pass quietly; the wake is an arrival cue, not
+an assignment.
+
+Operator Note WAKE API:
+
+```bash
+curl -s -b "$COOKIE_JAR" http://localhost:3001/api/operator-note-wakes
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/operator-note-wakes \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start"}'
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/operator-note-wakes \
+  -H "Content-Type: application/json" \
+  -d '{"action":"check"}'
+
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/operator-note-wakes \
+  -H "Content-Type: application/json" \
+  -d '{"action":"stop"}'
+```
 
 Free Moments now use packet signals as a lightweight review trigger for Soren
 and Varro. At the start of a Free Moment, the runtime refreshes that Agent's

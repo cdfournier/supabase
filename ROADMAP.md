@@ -117,6 +117,9 @@ Implemented in the first slice:
   the scheduled monitor loop from durable settings after runtime restart.
 - Runtime health checks now quietly hydrate Free Moment and Packet Signal
   scheduler state, so the dashboard or an uptime ping can revive enabled loops.
+- Operator Note WAKE can be enabled separately from packet-signal WAKE; it uses
+  durable note-event receipts and soft native arrivals for unread
+  Operator-authored notes addressed to Soren or Varro.
 
 Open questions:
 
