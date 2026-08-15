@@ -10,6 +10,7 @@ import {
 
 type AgentName = "soren" | "varro";
 type OperatorNoteRecipient = AgentName | "all";
+type OperatorNoteFilter = "active" | "needs_operator" | "waiting_agent" | "settled" | "all";
 type ActiveSurface = "chat" | "cafe" | "inbox";
 
 type Agent = {
@@ -2069,6 +2070,26 @@ function OperatorInboxView({
   packets: WorkPacket[];
 }) {
   const actionDisabled = Boolean(actionInProgress);
+  const [operatorNoteFilter, setOperatorNoteFilter] = useState<OperatorNoteFilter>("active");
+  const filteredOperatorNotes = operatorNotes.filter((note) =>
+    operatorNoteMatchesFilter(note, operatorNoteFilter)
+  );
+  const operatorNoteFilterCounts = {
+    active: operatorNotes.filter((note) => operatorNoteMatchesFilter(note, "active")).length,
+    needs_operator: operatorNotes.filter((note) =>
+      operatorNoteMatchesFilter(note, "needs_operator")
+    ).length,
+    waiting_agent: operatorNotes.filter((note) => operatorNoteMatchesFilter(note, "waiting_agent")).length,
+    settled: operatorNotes.filter((note) => operatorNoteMatchesFilter(note, "settled")).length,
+    all: operatorNotes.length
+  };
+  const operatorNoteFilterOptions: Array<{ label: string; value: OperatorNoteFilter }> = [
+    { label: "Active", value: "active" },
+    { label: "Needs Chris", value: "needs_operator" },
+    { label: "Waiting", value: "waiting_agent" },
+    { label: "Settled", value: "settled" },
+    { label: "All", value: "all" }
+  ];
 
   return (
     <section className="main inbox-main">
@@ -2167,10 +2188,30 @@ function OperatorInboxView({
                 <p className="inbox-eyebrow">Operator Notes</p>
                 <h3>Notes</h3>
               </div>
-              <span>{operatorNotes.length}</span>
+              <span>
+                {filteredOperatorNotes.length} / {operatorNotes.length}
+              </span>
             </div>
 
-            {operatorNotes.map((operatorNote) => {
+            <div className="operator-note-filter" aria-label="Filter Operator Notes">
+              {operatorNoteFilterOptions.map((option) => (
+                <button
+                  className={operatorNoteFilter === option.value ? "active" : ""}
+                  key={option.value}
+                  onClick={() => setOperatorNoteFilter(option.value)}
+                  type="button"
+                >
+                  <span>{option.label}</span>
+                  <strong>{operatorNoteFilterCounts[option.value]}</strong>
+                </button>
+              ))}
+            </div>
+
+            {!filteredOperatorNotes.length ? (
+              <p className="empty">No Operator notes match this filter.</p>
+            ) : null}
+
+            {filteredOperatorNotes.map((operatorNote) => {
               const reply = operatorReplies[operatorNote.id] ?? "";
               const isUnread = operatorNote.operator_status === "unread";
               const agentLabel = participantDisplayName(`agent:${operatorNote.agent}`);
@@ -3158,7 +3199,7 @@ function operatorNoteEventLabel(eventType: OperatorNoteEvent["event_type"]) {
 
 function operatorNoteAttentionLabel(note: OperatorNote) {
   if (note.operator_status === "unread") {
-    return "Needs Operator";
+    return "Needs Chris";
   }
 
   if (note.agent_status === "unread") {
@@ -3166,6 +3207,23 @@ function operatorNoteAttentionLabel(note: OperatorNote) {
   }
 
   return "Settled";
+}
+
+function operatorNoteMatchesFilter(note: OperatorNote, filter: OperatorNoteFilter) {
+  switch (filter) {
+    case "active":
+      return note.operator_status === "unread" || note.agent_status === "unread";
+    case "needs_operator":
+      return note.operator_status === "unread";
+    case "waiting_agent":
+      return note.operator_status === "read" && note.agent_status === "unread";
+    case "settled":
+      return note.operator_status === "read" && note.agent_status === "read";
+    case "all":
+      return true;
+    default:
+      return true;
+  }
 }
 
 function isPendingOperatorRollup(packet: WorkPacket) {

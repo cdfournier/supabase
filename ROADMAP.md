@@ -98,6 +98,8 @@ Implemented in the first slice:
   event history without bloating the Inbox list payload.
 - Operator Note cards show two-sided attention state, distinguishing notes that
   need Chris from notes waiting on the addressed agent.
+- Operator Notes can be filtered client-side by Active, Needs Chris, Waiting,
+  Settled, or All without changing the underlying open-note list.
 - Packet Signals preview surfaces unread Operator Note counts for the selected
   agent as a body-free arrival cue.
 - Free Moments append a gentle count-only cue when an agent has unread Operator

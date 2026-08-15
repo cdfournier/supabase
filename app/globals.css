@@ -579,6 +579,48 @@ button {
   gap: 12px;
 }
 
+.operator-note-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 980px;
+}
+
+.operator-note-filter button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
+.operator-note-filter button.active {
+  background: #dcebed;
+  border-color: rgba(34, 71, 113, 0.45);
+  color: var(--accent-strong);
+}
+
+.operator-note-filter span {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.operator-note-filter strong {
+  background: rgba(34, 71, 113, 0.1);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  min-width: 20px;
+  padding: 4px 6px;
+  text-align: center;
+}
+
 .operator-note-fields {
   display: grid;
   gap: 12px;
