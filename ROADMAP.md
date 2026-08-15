@@ -108,6 +108,8 @@ Implemented in the first slice:
   for Soren and Varro when non-`digest_only`, non-`silent` packet arrivals are
   pending. Julian and Cael remain on bridge inbox polling until a bridge WAKE
   adapter exists.
+- Native packet-signal WAKE writes durable delivery receipts so attempted or
+  completed arrivals are not re-sent after a runtime restart.
 
 Open questions:
 

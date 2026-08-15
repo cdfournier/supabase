@@ -74,6 +74,11 @@ type PacketStatusRow = {
   status: string;
 };
 
+type WakeReceiptRow = {
+  signal_key: string;
+  status: string;
+};
+
 type WakeTone =
   | "quiet"
   | "soft"
@@ -563,9 +568,10 @@ async function wakeNativeAgentsFromPendingSignals() {
     }
 
     const participantId = `agent:${agent}`;
-    const signals = state.recentEvents
+    const candidateSignals = state.recentEvents
       .filter((event) => shouldAutoWakeForSignal(event, participantId))
       .slice(0, 5);
+    const signals = await filterSignalsWithoutDurableReceipt(participantId, candidateSignals);
 
     if (!signals.length) {
       continue;
@@ -578,14 +584,21 @@ async function wakeNativeAgentsFromPendingSignals() {
 async function dispatchNativeWake(agent: AgentName, signals: SignalEvent[]) {
   state.nativeWakesInProgress.add(agent);
   addEvent("wake_started", `WAKE started for ${agent} from ${signals.length} packet signal(s).`);
+  const participantId = `agent:${agent}`;
+  const prompt = workPacketSignalWakePrompt(signals);
+  let attemptedReceiptRecorded = false;
 
   try {
+    await recordWakeReceipts(participantId, signals, "attempted", prompt);
+    attemptedReceiptRecorded = true;
+
     const { sendAgentMessage } = await import("@/lib/chat-runtime");
-    await sendAgentMessage(agent, workPacketSignalWakePrompt(signals), {
+    await sendAgentMessage(agent, prompt, {
       source: "work_packet_signal"
     });
 
-    const participantId = `agent:${agent}`;
+    await recordWakeReceipts(participantId, signals, "completed", prompt);
+
     for (const signal of signals) {
       if (!signal.woken_by.includes(participantId)) {
         signal.woken_by.push(participantId);
@@ -596,6 +609,16 @@ async function dispatchNativeWake(agent: AgentName, signals: SignalEvent[]) {
     addEvent("wake_completed", `WAKE completed for ${agent}.`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Work Packet Signal WAKE error.";
+    if (attemptedReceiptRecorded) {
+      try {
+        await recordWakeReceipts(participantId, signals, "failed", prompt, message);
+      } catch (receiptError) {
+        const receiptMessage = receiptError instanceof Error
+          ? receiptError.message
+          : "Unknown Work Packet Signal WAKE receipt error.";
+        addEvent("wake_failed", `Could not mark WAKE receipt failed for ${agent}: ${receiptMessage}`);
+      }
+    }
     state.lastError = message;
     state.lastNativeWakeAt[agent] = new Date().toISOString();
     addEvent("wake_failed", `WAKE failed for ${agent}: ${message}`);
@@ -621,6 +644,101 @@ function shouldAutoWakeForSignal(event: SignalEvent, participantId: string) {
   return priority !== "digest_only" && priority !== "silent";
 }
 
+async function filterSignalsWithoutDurableReceipt(participantId: string, signals: SignalEvent[]) {
+  const signalKeys = [...new Set(signals.map(signalKeyForEvent))];
+
+  if (!signalKeys.length) {
+    return [];
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("work_packet_wake_receipts")
+    .select("signal_key, status")
+    .eq("participant_id", participantId)
+    .eq("delivery_method", "runtime_native")
+    .in("signal_key", signalKeys)
+    .in("status", ["attempted", "completed"]);
+
+  if (error) {
+    throw workPacketWakeReceiptSetupError(`Could not read Work Packet Signal WAKE receipts: ${error.message}`);
+  }
+
+  const deliveredSignalKeys = new Set(
+    ((data ?? []) as WakeReceiptRow[]).map((receipt) => receipt.signal_key)
+  );
+
+  return signals.filter((signal) => !deliveredSignalKeys.has(signalKeyForEvent(signal)));
+}
+
+async function recordWakeReceipts(
+  participantId: string,
+  signals: SignalEvent[],
+  receiptStatus: "attempted" | "completed" | "failed",
+  prompt: string,
+  errorMessage = ""
+) {
+  const now = new Date().toISOString();
+  const signalKeys = [...new Set(signals.map(signalKeyForEvent))];
+
+  if (!signalKeys.length) {
+    return;
+  }
+
+  if (receiptStatus !== "attempted") {
+    const patch = {
+      status: receiptStatus,
+      completed_at: receiptStatus === "completed" ? now : null,
+      failed_at: receiptStatus === "failed" ? now : null,
+      error: errorMessage || null
+    };
+    const { error } = await getSupabaseAdmin()
+      .from("work_packet_wake_receipts")
+      .update(patch)
+      .eq("participant_id", participantId)
+      .eq("delivery_method", "runtime_native")
+      .in("signal_key", signalKeys);
+
+    if (error) {
+      throw workPacketWakeReceiptSetupError(`Could not update Work Packet Signal WAKE receipt: ${error.message}`);
+    }
+
+    return;
+  }
+
+  const promptExcerpt = prompt.slice(0, 1000);
+  const rows = signals.map((signal) => ({
+    signal_key: signalKeyForEvent(signal),
+    packet_id: signal.packet_id ?? null,
+    packet_event_id: packetEventIdFromSignal(signal),
+    participant_id: participantId,
+    delivery_method: "runtime_native",
+    source: "work_packet_signal",
+    wake_priority: signal.wake_priority ?? "digest_only",
+    wake_tone: signal.wake_tone ?? "directed",
+    status: receiptStatus,
+    prompt_excerpt: promptExcerpt,
+    metadata: {
+      packet_event_type: signal.packet_event_type ?? null,
+      packet_status: signal.packet_status ?? null,
+      packet_title: signal.packet_title ?? null
+    },
+    attempted_at: now,
+    completed_at: null,
+    failed_at: null,
+    error: null
+  }));
+
+  const { error } = await getSupabaseAdmin()
+    .from("work_packet_wake_receipts")
+    .upsert(rows, {
+      onConflict: "signal_key,participant_id,delivery_method"
+    });
+
+  if (error) {
+    throw workPacketWakeReceiptSetupError(`Could not record Work Packet Signal WAKE receipt: ${error.message}`);
+  }
+}
+
 function isNativeWakeCoolingDown(agent: AgentName) {
   const lastWakeAt = state.lastNativeWakeAt[agent];
 
@@ -632,6 +750,20 @@ function isNativeWakeCoolingDown(agent: AgentName) {
   const cooldownMs = configuredWakeCooldownSeconds() * 1000;
 
   return Number.isFinite(elapsedMs) && elapsedMs < cooldownMs;
+}
+
+function signalKeyForEvent(event: SignalEvent) {
+  return event.source_key ?? `packet:${event.packet_id ?? "unknown"}:${event.packet_event_type ?? "unknown"}:${event.id}`;
+}
+
+function packetEventIdFromSignal(event: SignalEvent) {
+  const sourceKey = event.source_key ?? "";
+
+  if (!sourceKey.startsWith("event:")) {
+    return null;
+  }
+
+  return sourceKey.slice("event:".length);
 }
 
 function workPacketSignalWakePrompt(signals: SignalEvent[]) {
@@ -868,4 +1000,14 @@ function positiveNumberEnv(name: string, fallback: number) {
   const value = Number(process.env[name]);
 
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function workPacketWakeReceiptSetupError(message: string) {
+  if (message.includes("work_packet_wake_receipts")) {
+    return new Error(
+      `Work Packet Signal WAKE receipt schema is not installed. Run sql/2026-08-15-work-packet-wake-receipts.sql in Supabase, then restart the runtime. (${message})`
+    );
+  }
+
+  return new Error(message);
 }

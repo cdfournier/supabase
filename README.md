@@ -238,6 +238,12 @@ Install the schema once:
 sql/2026-08-09-work-packets.sql
 ```
 
+For restart-safe packet-signal WAKE delivery receipts, also run:
+
+```text
+sql/2026-08-15-work-packet-wake-receipts.sql
+```
+
 The MVP exposes:
 
 - Operator API: `GET/POST /api/work-packets`
@@ -376,6 +382,13 @@ deferring, passing, or acknowledging after noticing can all be valid. Signals
 track in-memory `woken_by` delivery to avoid repeat native wakes during the
 current process lifetime, and `WORK_PACKET_SIGNAL_WAKE_COOLDOWN_SECONDS`
 defaults to `600` seconds to avoid rapid repeat nudges.
+
+Native WAKE dispatch also writes durable delivery receipts to
+`work_packet_wake_receipts`. The dispatcher writes `attempted` before calling
+the Agent model and updates the receipt to `completed` after the turn succeeds.
+Existing `attempted` or `completed` receipts block duplicate native wakes after
+a runtime restart. Explicit send failures are marked `failed`, allowing a later
+retry after cooldown.
 
 Free Moments now use packet signals as a lightweight review trigger for Soren
 and Varro. At the start of a Free Moment, the runtime refreshes that Agent's
