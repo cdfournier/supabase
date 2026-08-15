@@ -255,11 +255,7 @@ export async function start(intervalSeconds?: number) {
   addEvent("started", `Work Packet Signals started at ${state.intervalSeconds} second cadence.`);
   scheduleNextCheck();
 
-  return {
-    ...status(),
-    durable_enabled: true,
-    durable_error: null
-  };
+  return statusWithSettings();
 }
 
 export async function stop() {
@@ -274,11 +270,7 @@ export async function stop() {
       interval_seconds: state.intervalSeconds
     });
     state.lastError = null;
-    return {
-      ...status(),
-      durable_enabled: false,
-      durable_error: null
-    };
+    return statusWithSettings();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not update Work Packet Signals setting.";
     state.lastError = message;
@@ -321,7 +313,7 @@ function restoreFromSettings(settings: Awaited<ReturnType<typeof readWorkPacketS
 export async function tick(options: { scheduled?: boolean; dispatchWakes?: boolean } = {}) {
   if (state.checkInProgress) {
     addEvent("check_blocked", "Work Packet Signals check skipped because another check is in progress.");
-    return status();
+    return statusWithSettings();
   }
 
   clearScheduledCheck();
@@ -332,7 +324,7 @@ export async function tick(options: { scheduled?: boolean; dispatchWakes?: boole
         state.running = false;
         state.nextCheckAt = null;
         addEvent("check_blocked", "Scheduled Work Packet Signals check blocked because runtime setting is disabled.");
-        return status();
+        return statusWithSettings();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not verify Work Packet Signals setting.";
@@ -371,7 +363,7 @@ export async function tick(options: { scheduled?: boolean; dispatchWakes?: boole
     }
   }
 
-  return status();
+  return statusWithSettings();
 }
 
 async function detectNewPacketEvents() {
