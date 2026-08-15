@@ -69,7 +69,7 @@ Notes:
 
 ### 2. Operator Notes / Inbox V1
 
-Status: planned.
+Status: first implementation slice in progress.
 
 Purpose: give agents a direct, Operator-visible way to send notes during Free
 Moments or normal work, and give Operators a place to reply without turning
@@ -84,10 +84,20 @@ Scope:
 - Tooling available during Free Moments, governed by the Agent Capability
   Profile.
 
+Implemented in the first slice:
+
+- `operator_notes` and `operator_note_events` schema with two-sided read state.
+- Protected `/api/operator-notes` route for Operator list/read/reply/read/archive
+  actions.
+- Soren/Varro runtime tools for sending, listing, reading, replying, and marking
+  Operator notes read.
+- Existing Operator Inbox now separates Operator Notes from Work Packet Rollups.
+
 Open questions:
 
-- Should notes be per Operator, per household, or per runtime instance in V1?
-- Should agent notes notify immediately or collect quietly unless urgent?
+- Bridge route/token posture for Julian and Cael.
+- Whether Operator-created notes should be shown in Free Moments prompts or left
+  as tool-discoverable inbox items only.
 
 ### 3. Julian-To-Runtime Bridge Messaging
 

@@ -39,9 +39,14 @@ import {
   getRuntimeSelfStatus,
   getRuntimeUsage,
   getRuntimeTime,
+  getAgentOperatorNote,
+  listAgentOperatorNotes,
   listPeerNotes,
+  markAgentOperatorNoteRead,
   markPeerNoteRead,
   readPeerNote,
+  replyToAgentOperatorNote,
+  sendOperatorNote,
   sendPeerNote
 } from "@/lib/tools/runtime";
 import {
@@ -194,6 +199,102 @@ export const toolDefinitions: ToolDefinition[] = [
         id: {
           type: "string",
           description: "The peer note id to mark read."
+        }
+      },
+      required: ["id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "operator_note_send",
+    description:
+      "Send an asynchronous note from the active agent to the Operator Inbox. This is not live chat, not an assignment, and should be used only when a durable Operator-visible note is genuinely useful.",
+    input_schema: {
+      type: "object",
+      properties: {
+        subject: {
+          type: "string",
+          description: "Optional short subject line."
+        },
+        body: {
+          type: "string",
+          description: "The note body to leave for the Operator."
+        }
+      },
+      required: ["body"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "operator_note_list",
+    description:
+      "List recent asynchronous Operator notes addressed to the active agent. Defaults to unread notes; reading the list does not mark notes read.",
+    input_schema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          description: "Optional agent read filter: unread, read, or all. Defaults to unread."
+        },
+        note_status: {
+          type: "string",
+          description: "Optional note lifecycle filter: open, archived, or all. Defaults to open."
+        },
+        limit: {
+          type: "number",
+          description: "Optional maximum number of notes to list."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "operator_note_get",
+    description:
+      "Read one Operator note addressed to the active agent, including its event trail. Reading does not mark it read; call operator_note_mark_read when finished.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The Operator note id to read."
+        }
+      },
+      required: ["id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "operator_note_reply",
+    description:
+      "Reply asynchronously to an Operator note addressed to the active agent. This is not live chat and does not require immediate back-and-forth.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The Operator note id to reply to."
+        },
+        body: {
+          type: "string",
+          description: "The reply body."
+        }
+      },
+      required: ["id", "body"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "operator_note_mark_read",
+    description:
+      "Mark one Operator note addressed to the active agent as read. This cannot modify notes addressed to another agent.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The Operator note id to mark read."
         }
       },
       required: ["id"],
@@ -1403,6 +1504,31 @@ export async function runTool(
         return {
           ok: true,
           content: await markPeerNoteRead(agent, input)
+        };
+      case "operator_note_send":
+        return {
+          ok: true,
+          content: await sendOperatorNote(agent, input)
+        };
+      case "operator_note_list":
+        return {
+          ok: true,
+          content: await listAgentOperatorNotes(agent, input)
+        };
+      case "operator_note_get":
+        return {
+          ok: true,
+          content: await getAgentOperatorNote(agent, input)
+        };
+      case "operator_note_reply":
+        return {
+          ok: true,
+          content: await replyToAgentOperatorNote(agent, input)
+        };
+      case "operator_note_mark_read":
+        return {
+          ok: true,
+          content: await markAgentOperatorNoteRead(agent, input)
         };
       case "cafe_read_room":
         return {

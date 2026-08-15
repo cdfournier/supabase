@@ -17,6 +17,14 @@ import {
   loadAgentCapabilityProfile
 } from "@/lib/capability-profile";
 import { loadRecentUsageEvents, loadUsageTotals } from "@/lib/model-usage";
+import {
+  createOperatorNote,
+  getOperatorNote,
+  listOperatorNotes,
+  markOperatorNoteRead,
+  operatorNoteActorFromAgent,
+  replyToOperatorNote
+} from "@/lib/operator-notes";
 import { runtimeClock } from "@/lib/runtime-clock";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import type { ToolDefinition } from "@/lib/tools/types";
@@ -418,6 +426,111 @@ export async function markPeerNoteRead(agent: AgentName, input: unknown) {
   return stringifyToolPayload({
     note: "Peer note marked read for the active agent only.",
     peer_note: data
+  });
+}
+
+export async function sendOperatorNote(agent: AgentName, input: unknown) {
+  const supabase = getSupabaseAdmin();
+  const actor = operatorNoteActorFromAgent(agent);
+  const result = await createOperatorNote(supabase, input, actor);
+
+  return stringifyToolPayload({
+    note: "Asynchronous Operator note sent. This is not live chat or an assignment.",
+    receipt: {
+      id: result.note.id,
+      subject: result.note.subject,
+      agent: result.note.agent,
+      operator_status: result.note.operator_status,
+      created_at: result.note.created_at,
+      updated_at: result.note.updated_at
+    }
+  });
+}
+
+export async function listAgentOperatorNotes(agent: AgentName, input: unknown) {
+  if (input !== undefined && !isRecord(input)) {
+    throw new Error("operator_note_list requires an object input.");
+  }
+
+  const status = normalizeListStatus(isRecord(input) ? input.status : undefined);
+  const supabase = getSupabaseAdmin();
+  const notes = await listOperatorNotes(supabase, {
+    side: "agent",
+    agent,
+    status: isRecord(input) ? input.note_status : undefined,
+    agent_status: status,
+    limit: isRecord(input) ? input.limit : undefined
+  });
+
+  return stringifyToolPayload({
+    note: "Recent asynchronous Operator notes for the active agent. Reading the list does not mark notes read.",
+    agent,
+    status,
+    notes: notes.map((operatorNote) => ({
+      id: operatorNote.id,
+      subject: operatorNote.subject,
+      status: operatorNote.status,
+      agent_status: operatorNote.agent_status,
+      operator_status: operatorNote.operator_status,
+      last_message_by: operatorNote.last_message_by,
+      body_preview: clampText(operatorNote.latest_event?.content ?? "", 240),
+      updated_at: operatorNote.updated_at
+    }))
+  });
+}
+
+export async function getAgentOperatorNote(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("operator_note_get requires an object input.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const result = await getOperatorNote(supabase, input, operatorNoteActorFromAgent(agent));
+
+  return stringifyToolPayload({
+    note: "Operator note for the active agent only. Reading does not mark it read; call operator_note_mark_read when done.",
+    operator_note: result.note,
+    events: result.events
+  });
+}
+
+export async function replyToAgentOperatorNote(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("operator_note_reply requires an object input.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const result = await replyToOperatorNote(supabase, input, operatorNoteActorFromAgent(agent));
+
+  return stringifyToolPayload({
+    note: "Asynchronous Operator note reply sent. This is not live chat or an assignment.",
+    operator_note: {
+      id: result.note.id,
+      subject: result.note.subject,
+      agent: result.note.agent,
+      operator_status: result.note.operator_status,
+      agent_status: result.note.agent_status,
+      updated_at: result.note.updated_at
+    }
+  });
+}
+
+export async function markAgentOperatorNoteRead(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("operator_note_mark_read requires an object input.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const note = await markOperatorNoteRead(supabase, input, operatorNoteActorFromAgent(agent));
+
+  return stringifyToolPayload({
+    note: "Operator note marked read for the active agent only.",
+    operator_note: {
+      id: note.id,
+      subject: note.subject,
+      agent_status: note.agent_status,
+      agent_read_at: note.agent_read_at
+    }
   });
 }
 

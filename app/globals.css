@@ -528,6 +528,34 @@ button {
   padding: 24px;
 }
 
+.inbox-section {
+  display: grid;
+  gap: 12px;
+  max-width: 980px;
+}
+
+.inbox-section-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.inbox-section-heading h3 {
+  font-size: 18px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.inbox-section-heading > span {
+  background: rgba(34, 71, 113, 0.1);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
 .inbox-card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -536,6 +564,10 @@ button {
   gap: 16px;
   max-width: 980px;
   padding: 18px;
+}
+
+.operator-note-card.unread {
+  border-color: rgba(34, 71, 113, 0.35);
 }
 
 .inbox-card-header {
@@ -582,6 +614,25 @@ button {
   font-size: 12px;
   font-weight: 700;
   padding: 5px 9px;
+}
+
+.inbox-status.unread {
+  background: #dcebed;
+  color: var(--accent-strong);
+}
+
+.operator-note-preview {
+  background: rgba(247, 244, 239, 0.58);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.operator-note-preview p {
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .inbox-rollup {

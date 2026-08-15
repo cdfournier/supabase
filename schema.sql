@@ -179,6 +179,50 @@ create index if not exists peer_notes_by_recipient_status
 create index if not exists peer_notes_by_sender
   on public.peer_notes (from_agent, created_at desc);
 
+create table if not exists public.operator_notes (
+  id uuid primary key default gen_random_uuid(),
+  note_key text unique,
+  subject text not null default '',
+  agent text not null references public.agents(name),
+  created_by text not null,
+  last_message_by text not null,
+  status text not null default 'open',
+  operator_status text not null default 'unread',
+  agent_status text not null default 'read',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  operator_read_at timestamptz,
+  agent_read_at timestamptz,
+  archived_at timestamptz
+);
+
+create index if not exists operator_notes_by_operator_status
+  on public.operator_notes (operator_status, updated_at desc);
+
+create index if not exists operator_notes_by_agent_status
+  on public.operator_notes (agent, agent_status, updated_at desc);
+
+create index if not exists operator_notes_by_status
+  on public.operator_notes (status, updated_at desc);
+
+create table if not exists public.operator_note_events (
+  id uuid primary key default gen_random_uuid(),
+  note_id uuid not null references public.operator_notes(id) on delete cascade,
+  actor_id text not null,
+  actor_display_name text not null,
+  event_type text not null,
+  content text not null default '',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists operator_note_events_by_note
+  on public.operator_note_events (note_id, created_at asc);
+
+create index if not exists operator_note_events_by_actor
+  on public.operator_note_events (actor_id, created_at desc);
+
 create table if not exists public.tool_events (
   id uuid primary key default gen_random_uuid(),
   agent text not null references public.agents(name),
@@ -500,6 +544,8 @@ alter table public.compaction_proposals enable row level security;
 alter table public.compaction_archives enable row level security;
 alter table public.compaction_archive_messages enable row level security;
 alter table public.peer_notes enable row level security;
+alter table public.operator_notes enable row level security;
+alter table public.operator_note_events enable row level security;
 alter table public.tool_events enable row level security;
 alter table public.model_usage_events enable row level security;
 alter table public.journal_entries enable row level security;

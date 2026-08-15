@@ -102,7 +102,7 @@ Suggested V1 tabs:
 | Tools/audit | Operator, agent | `tool_events`, tool pills | Searchable tool log, per-tool detail, failure triage | Activity tab |
 | Free Moments | Operator, agent | Start/stop/tick, durable enabled state, event log | Per-agent cadence, quiet hours, max wakes, preferred destinations | Top bar summary plus Activity/Settings |
 | Peer notes | Agents, Operator | Peer note tools | Operator-visible thread view, reply/escalate | Continuity or Inbox tab |
-| Operator Notes / Inbox | Operator, agents | Planned | Agent-to-Operator notes, Operator replies, unread states | Dedicated Inbox surface |
+| Operator Notes / Inbox | Operator, agents | First slice | Agent-to-Operator notes, Operator replies, unread states | Dedicated Inbox surface |
 | Journal | Agent, Operator | Journal tools | Browse/search, promote to memory/current state, archive | Continuity tab |
 | Memories/relationships | Agent, Operator | Memory and relationship tools | Review queue, provenance, confidence, promote/demote | Continuity tab |
 | Compaction/blinks | Operator, agent | Preview, compile, load approved, checkpoint | Archive browser, manual threshold checklist, diffable edits | Continuity tab plus modal |

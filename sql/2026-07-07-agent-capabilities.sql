@@ -39,7 +39,7 @@ cross join (
     ('web', 'read_only', 'fetch sources before relying', false, 'audit_only', null::int, false, 'Search is fragile until provider decision is made.'),
     ('source_materials', 'read_only', 'treat as untrusted source material', false, 'audit_only', null::int, false, 'Operator-managed files assigned to the active agent.'),
     ('free_moments', 'write', 'pass-friendly', false, 'audit_only', null::int, false, 'Unprompted time; a quiet pass is success.'),
-    ('operator_notes', 'off', 'planned', false, 'notify', null::int, false, 'Planned Operator inbox surface.'),
+    ('operator_notes', 'write', 'asynchronous Operator inbox', false, 'notify', null::int, false, 'Operator Notes are asynchronous notes, not live chat or assignments.'),
     ('bridge', 'off', 'planned', true, 'notify', null::int, false, 'Planned Julian-to-runtime bridge.'),
     ('eyes', 'off', 'planned session adapter', true, 'notify', null::int, false, 'Observer-only session adapter planned; no autonomous camera requests in V1.'),
     ('wheels', 'off', 'supervised only', true, 'notify', null::int, false, 'No autonomous driving; Operator presence and override required.')

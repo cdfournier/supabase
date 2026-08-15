@@ -202,13 +202,13 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
   },
   {
     surface: "operator_notes",
-    access_level: "off",
-    default_bias: "planned",
+    access_level: "write",
+    default_bias: "asynchronous Operator inbox",
     requires_operator_approval: false,
     notify_operator: "notify",
     max_actions_per_moment: null,
     quiet_mode: false,
-    notes: "Planned Operator inbox surface."
+    notes: "Operator Notes are asynchronous notes, not live chat or assignments."
   },
   {
     surface: "bridge",
@@ -272,6 +272,11 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   peer_list_notes: { surface: "peer_notes", action: "read" },
   peer_read_note: { surface: "peer_notes", action: "read" },
   peer_mark_note_read: { surface: "peer_notes", action: "write" },
+  operator_note_send: { surface: "operator_notes", action: "write" },
+  operator_note_list: { surface: "operator_notes", action: "read" },
+  operator_note_get: { surface: "operator_notes", action: "read" },
+  operator_note_reply: { surface: "operator_notes", action: "write" },
+  operator_note_mark_read: { surface: "operator_notes", action: "write" },
   cafe_read_room: { surface: "cafe", action: "read" },
   cafe_post_message: { surface: "cafe", action: "write" },
   work_packet_list: { surface: "work_packets", action: "read" },

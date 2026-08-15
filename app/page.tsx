@@ -315,6 +315,36 @@ type WorkPacket = {
   created_at: string;
 };
 
+type OperatorNoteEvent = {
+  id: string;
+  note_id: string;
+  actor_id: string;
+  actor_display_name: string;
+  event_type: "created" | "reply";
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+type OperatorNote = {
+  id: string;
+  note_key: string | null;
+  subject: string;
+  agent: AgentName;
+  created_by: string;
+  last_message_by: string;
+  status: "open" | "archived";
+  operator_status: "unread" | "read";
+  agent_status: "unread" | "read";
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  operator_read_at: string | null;
+  agent_read_at: string | null;
+  archived_at: string | null;
+  latest_event?: OperatorNoteEvent | null;
+};
+
 type GitHubEvidenceHandle = {
   id: string;
   provider: string;
@@ -369,9 +399,11 @@ export default function Home() {
   const [workPacketSignalsError, setWorkPacketSignalsError] = useState("");
   const [workPacketSignalPreview, setWorkPacketSignalPreview] = useState<WorkPacketSignalPreview | null>(null);
   const [operatorInboxPackets, setOperatorInboxPackets] = useState<WorkPacket[]>([]);
+  const [operatorInboxOperatorNotes, setOperatorInboxOperatorNotes] = useState<OperatorNote[]>([]);
   const [operatorInboxLoading, setOperatorInboxLoading] = useState(true);
   const [operatorInboxError, setOperatorInboxError] = useState("");
   const [operatorInboxNotes, setOperatorInboxNotes] = useState<Record<string, string>>({});
+  const [operatorNoteReplies, setOperatorNoteReplies] = useState<Record<string, string>>({});
   const [operatorInboxActionInProgress, setOperatorInboxActionInProgress] = useState<string | null>(null);
   const [compactionPreview, setCompactionPreview] = useState<CompactionPreview | null>(null);
   const [compactionLoading, setCompactionLoading] = useState(false);
@@ -403,6 +435,8 @@ export default function Home() {
   const activeMessages = transcripts[selectedAgent] ?? [];
   const activeToolEvents = toolEvents[selectedAgent] ?? [];
   const pendingOperatorRollups = operatorInboxPackets.filter(isPendingOperatorRollup);
+  const unreadOperatorNotes = operatorInboxOperatorNotes.filter((note) => note.operator_status === "unread");
+  const operatorInboxCount = pendingOperatorRollups.length + unreadOperatorNotes.length;
   const activeHealth = health?.agents.find((agent) => agent.agent === selectedAgent);
   const activeMessageCount = activeHealth?.conversation.message_count ?? activeMessages.length;
   const hiddenOlderMessageCount = activeHealth
@@ -484,16 +518,35 @@ export default function Home() {
 
   const loadOperatorInbox = useCallback(async () => {
     setOperatorInboxError("");
+    setOperatorInboxLoading(true);
 
     try {
-      const response = await fetch("/api/work-packets?status=review&limit=12");
-      const data = await response.json();
+      const [packetsResponse, notesResponse] = await Promise.all([
+        fetch("/api/work-packets?status=review&limit=12"),
+        fetch("/api/operator-notes?status=open&limit=20")
+      ]);
+      const [packetsData, notesData] = await Promise.all([
+        packetsResponse.json(),
+        notesResponse.json()
+      ]);
+      const errors: string[] = [];
 
-      if (!response.ok) {
-        throw new Error(data.error || "Could not load Operator Inbox.");
+      if (packetsResponse.ok) {
+        setOperatorInboxPackets(packetsData.packets ?? []);
+      } else {
+        errors.push(packetsData.error || "Could not load work packet rollups.");
       }
 
-      setOperatorInboxPackets(data.packets ?? []);
+      if (notesResponse.ok) {
+        setOperatorInboxOperatorNotes(notesData.notes ?? []);
+      } else {
+        setOperatorInboxOperatorNotes([]);
+        errors.push(notesData.error || "Could not load Operator notes.");
+      }
+
+      if (errors.length) {
+        throw new Error(errors.join(" "));
+      }
     } catch (inboxError) {
       setOperatorInboxError(
         inboxError instanceof Error ? inboxError.message : "Could not load Operator Inbox."
@@ -987,6 +1040,54 @@ export default function Home() {
     }
   }
 
+  async function updateOperatorNote(
+    noteId: string,
+    action: "reply" | "mark_read" | "archive",
+    body = ""
+  ) {
+    if (operatorInboxActionInProgress) {
+      return;
+    }
+
+    setOperatorInboxActionInProgress(`${noteId}:${action}`);
+    setOperatorInboxError("");
+
+    try {
+      const response = await fetch("/api/operator-notes", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          action,
+          id: noteId,
+          body
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not update Operator note.");
+      }
+
+      if (action === "reply") {
+        setOperatorNoteReplies((current) => {
+          const next = { ...current };
+          delete next[noteId];
+          return next;
+        });
+      }
+
+      await loadOperatorInbox();
+    } catch (noteError) {
+      setOperatorInboxError(
+        noteError instanceof Error ? noteError.message : "Could not update Operator note."
+      );
+    } finally {
+      setOperatorInboxActionInProgress(null);
+    }
+  }
+
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = message.trim();
@@ -1298,7 +1399,7 @@ export default function Home() {
         >
           <strong>Inbox</strong>
           <br />
-          <span>{pendingOperatorRollups.length} rollup{pendingOperatorRollups.length === 1 ? "" : "s"}</span>
+          <span>{operatorInboxCount} item{operatorInboxCount === 1 ? "" : "s"}</span>
         </button>
         <div className="agent-list">
           {agents.map((agent) => (
@@ -1383,6 +1484,12 @@ export default function Home() {
           error={operatorInboxError}
           loading={operatorInboxLoading}
           notes={operatorInboxNotes}
+          operatorNotes={operatorInboxOperatorNotes}
+          operatorReplies={operatorNoteReplies}
+          onOperatorNoteAction={updateOperatorNote}
+          onOperatorReplyChange={(noteId, reply) =>
+            setOperatorNoteReplies((current) => ({ ...current, [noteId]: reply }))
+          }
           onNoteChange={(packetId, note) =>
             setOperatorInboxNotes((current) => ({ ...current, [packetId]: note }))
           }
@@ -1765,8 +1872,12 @@ function OperatorInboxView({
   loading,
   notes,
   onNoteChange,
+  onOperatorNoteAction,
+  onOperatorReplyChange,
   onRefresh,
   onReview,
+  operatorNotes,
+  operatorReplies,
   packets
 }: {
   actionInProgress: string | null;
@@ -1774,16 +1885,26 @@ function OperatorInboxView({
   loading: boolean;
   notes: Record<string, string>;
   onNoteChange: (packetId: string, note: string) => void;
+  onOperatorNoteAction: (
+    noteId: string,
+    action: "reply" | "mark_read" | "archive",
+    body?: string
+  ) => void;
+  onOperatorReplyChange: (noteId: string, reply: string) => void;
   onRefresh: () => void;
   onReview: (packetId: string, reviewState: "approved" | "request_changes" | "hold") => void;
+  operatorNotes: OperatorNote[];
+  operatorReplies: Record<string, string>;
   packets: WorkPacket[];
 }) {
+  const actionDisabled = Boolean(actionInProgress);
+
   return (
     <section className="main inbox-main">
       <header className="header inbox-header">
         <div>
           <h2>Operator Inbox</h2>
-          <p>Rollups awaiting review. The packet remains the source trail.</p>
+          <p>Asynchronous notes and rollups awaiting review. Source trails stay attached.</p>
         </div>
         <button className="quiet-action" disabled={loading || Boolean(actionInProgress)} onClick={onRefresh} type="button">
           Refresh
@@ -1793,15 +1914,101 @@ function OperatorInboxView({
       <div className="inbox-list">
         {error ? <p className="error">{error}</p> : null}
         {loading ? <p className="empty">Loading Operator Inbox...</p> : null}
-        {!loading && !packets.length ? (
-          <p className="empty">No rollups are waiting for Operator review.</p>
+        {!loading && !operatorNotes.length && !packets.length ? (
+          <p className="empty">No Operator notes or rollups are waiting.</p>
         ) : null}
 
-        {packets.map((packet) => {
+        {!loading && operatorNotes.length ? (
+          <section className="inbox-section" aria-label="Operator Notes">
+            <div className="inbox-section-heading">
+              <div>
+                <p className="inbox-eyebrow">Operator Notes</p>
+                <h3>Notes</h3>
+              </div>
+              <span>{operatorNotes.length}</span>
+            </div>
+
+            {operatorNotes.map((operatorNote) => {
+              const reply = operatorReplies[operatorNote.id] ?? "";
+              const isUnread = operatorNote.operator_status === "unread";
+
+              return (
+                <article className={`inbox-card operator-note-card ${isUnread ? "unread" : ""}`} key={operatorNote.id}>
+                  <div className="inbox-card-header">
+                    <div>
+                      <p className="inbox-eyebrow">Operator Note</p>
+                      <h3>{operatorNote.subject || "Untitled note"}</h3>
+                      <p>
+                        {participantDisplayName(`agent:${operatorNote.agent}`)} · Last message{" "}
+                        {actorDisplayName(operatorNote.last_message_by)} · Updated{" "}
+                        {formatMessageTime(operatorNote.updated_at)}
+                      </p>
+                    </div>
+                    <span className={`inbox-status ${isUnread ? "unread" : ""}`}>
+                      {isUnread ? "Unread" : "Read"}
+                    </span>
+                  </div>
+
+                  <div className="operator-note-preview">
+                    <p>{operatorNote.latest_event?.content || "No note body available."}</p>
+                  </div>
+
+                  <label className="inbox-note">
+                    <span>Reply</span>
+                    <textarea
+                      disabled={actionDisabled}
+                      onChange={(event) => onOperatorReplyChange(operatorNote.id, event.target.value)}
+                      placeholder="Optional reply for the note trail"
+                      value={reply}
+                    />
+                  </label>
+
+                  <div className="inbox-actions">
+                    <button
+                      className="checkpoint-action"
+                      disabled={actionDisabled || !reply.trim()}
+                      onClick={() => onOperatorNoteAction(operatorNote.id, "reply", reply)}
+                      type="button"
+                    >
+                      {actionInProgress === `${operatorNote.id}:reply` ? "Replying" : "Reply"}
+                    </button>
+                    <button
+                      className="quiet-action"
+                      disabled={actionDisabled || !isUnread}
+                      onClick={() => onOperatorNoteAction(operatorNote.id, "mark_read")}
+                      type="button"
+                    >
+                      Mark Read
+                    </button>
+                    <button
+                      className="quiet-action"
+                      disabled={actionDisabled}
+                      onClick={() => onOperatorNoteAction(operatorNote.id, "archive")}
+                      type="button"
+                    >
+                      Archive
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+        ) : null}
+
+        {!loading && packets.length ? (
+          <section className="inbox-section" aria-label="Work Packet Rollups">
+            <div className="inbox-section-heading">
+              <div>
+                <p className="inbox-eyebrow">Work Packets</p>
+                <h3>Rollups</h3>
+              </div>
+              <span>{packets.length}</span>
+            </div>
+
+            {packets.map((packet) => {
           const rollup = packet.review_rollup ?? {};
           const evidenceHandles = githubEvidenceHandlesFromMetadata(packet.metadata);
           const note = notes[packet.id] ?? "";
-          const actionDisabled = Boolean(actionInProgress);
 
           return (
             <article className="inbox-card" key={packet.id}>
@@ -1883,6 +2090,8 @@ function OperatorInboxView({
             </article>
           );
         })}
+          </section>
+        ) : null}
       </div>
     </section>
   );
@@ -2613,6 +2822,10 @@ function participantDisplayName(participantId: string) {
     default:
       return participantId;
   }
+}
+
+function actorDisplayName(actorId: string) {
+  return participantDisplayName(actorId);
 }
 
 function isPendingOperatorRollup(packet: WorkPacket) {

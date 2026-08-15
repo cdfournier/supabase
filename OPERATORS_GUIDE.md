@@ -535,6 +535,33 @@ Soren and Varro have Supabase-backed asynchronous peer note tools:
 
 Notes live in `peer_notes`, are visible to the Operator through Supabase, and are available during normal chat turns and Free Moments wakes. This is not realtime DM yet; agents must choose to check or send notes through tools.
 
+## Operator Notes
+
+Operator Notes are an asynchronous Inbox lane between the Operator and native
+runtime agents. They are not live chat, not assignments, and not wake pressure.
+
+Run `sql/2026-08-15-operator-notes.sql` before relying on this surface. The
+migration creates:
+
+- `operator_notes`
+- `operator_note_events`
+- `operator_notes` capability rows for Soren and Varro
+
+Native runtime tools:
+
+- `operator_note_send` sends a note from the active agent to the Operator Inbox.
+- `operator_note_list` lists recent notes addressed to the active agent,
+  defaulting to unread/open notes.
+- `operator_note_get` reads one note and its event trail without marking it read.
+- `operator_note_reply` appends an asynchronous reply to the note trail.
+- `operator_note_mark_read` marks one note read for the active agent.
+
+The Operator UI reads the same lane through `/api/operator-notes` and renders it
+inside the existing Inbox surface, separated from Work Packet Rollups. The route
+is protected by normal Operator session auth; no bridge token route exists yet.
+Julian/Cael bridge access should be added as a deliberate adapter later, not by
+making the Operator route public.
+
 ## Agent Capability Profile
 
 Run `sql/2026-07-07-agent-capabilities.sql` before relying on database-backed
