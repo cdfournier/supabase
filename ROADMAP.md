@@ -96,6 +96,8 @@ Implemented in the first slice:
   or both through an "Everyone" fan-out option.
 - Operator Note cards can expand a lazy-loaded source trail showing the note
   event history without bloating the Inbox list payload.
+- Operator Note cards show two-sided attention state, distinguishing notes that
+  need Chris from notes waiting on the addressed agent.
 - Free Moments append a gentle count-only cue when an agent has unread Operator
   Notes, without injecting note content into the prompt.
 

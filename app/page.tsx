@@ -2168,10 +2168,13 @@ function OperatorInboxView({
             {operatorNotes.map((operatorNote) => {
               const reply = operatorReplies[operatorNote.id] ?? "";
               const isUnread = operatorNote.operator_status === "unread";
+              const agentLabel = participantDisplayName(`agent:${operatorNote.agent}`);
               const isTrailExpanded = Boolean(operatorNoteExpanded[operatorNote.id]);
               const trailDetail = operatorNoteDetails[operatorNote.id];
               const trailError = operatorNoteTrailErrors[operatorNote.id];
               const trailLoading = Boolean(operatorNoteTrailLoading[operatorNote.id]);
+              const latestEventLabel =
+                operatorNote.latest_event?.event_type === "reply" ? "Latest reply" : "Original note";
 
               return (
                 <article className={`inbox-card operator-note-card ${isUnread ? "unread" : ""}`} key={operatorNote.id}>
@@ -2180,17 +2183,22 @@ function OperatorInboxView({
                       <p className="inbox-eyebrow">Operator Note</p>
                       <h3>{operatorNote.subject || "Untitled note"}</h3>
                       <p>
-                        {participantDisplayName(`agent:${operatorNote.agent}`)} · Last message{" "}
-                        {actorDisplayName(operatorNote.last_message_by)} · Updated{" "}
+                        {agentLabel} · Last message {actorDisplayName(operatorNote.last_message_by)} · Updated{" "}
                         {formatMessageTime(operatorNote.updated_at)}
                       </p>
                     </div>
-                    <span className={`inbox-status ${isUnread ? "unread" : ""}`}>
-                      {isUnread ? "Unread" : "Read"}
-                    </span>
+                    <div className="inbox-status-stack">
+                      <span className={`inbox-status ${isUnread ? "unread" : ""}`}>
+                        {operatorNoteAttentionLabel(operatorNote)}
+                      </span>
+                      <span className={`inbox-status subtle ${operatorNote.agent_status === "unread" ? "unread" : ""}`}>
+                        {agentLabel} {operatorNote.agent_status}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="operator-note-preview">
+                    <span>{latestEventLabel}</span>
                     <p>{operatorNote.latest_event?.content || "No note body available."}</p>
                   </div>
 
@@ -3132,6 +3140,18 @@ function operatorNoteEventLabel(eventType: OperatorNoteEvent["event_type"]) {
     default:
       return eventType;
   }
+}
+
+function operatorNoteAttentionLabel(note: OperatorNote) {
+  if (note.operator_status === "unread") {
+    return "Needs Operator";
+  }
+
+  if (note.agent_status === "unread") {
+    return `Waiting on ${participantDisplayName(`agent:${note.agent}`)}`;
+  }
+
+  return "Settled";
 }
 
 function isPendingOperatorRollup(packet: WorkPacket) {
