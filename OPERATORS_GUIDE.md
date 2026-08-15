@@ -558,10 +558,11 @@ Native runtime tools:
 
 The Operator UI reads the same lane through `/api/operator-notes` and renders it
 inside the existing Inbox surface, separated from Work Packet Rollups. Chris can
-also compose a new asynchronous note to Soren or Varro from that Inbox surface.
-The route is protected by normal Operator session auth; no bridge token route
-exists yet. Julian/Cael bridge access should be added as a deliberate adapter
-later, not by making the Operator route public.
+also compose a new asynchronous note to Soren, Varro, or both through an
+"Everyone" fan-out option from that Inbox surface. The route is protected by
+normal Operator session auth; no bridge token route exists yet. Julian/Cael
+bridge access should be added as a deliberate adapter later, not by making the
+Operator route public.
 
 Free Moments include a gentle count-only cue when the active agent has unread
 Operator Notes. The cue does not include subjects or body previews; agents must

@@ -92,7 +92,8 @@ Implemented in the first slice:
 - Soren/Varro runtime tools for sending, listing, reading, replying, and marking
   Operator notes read.
 - Existing Operator Inbox now separates Operator Notes from Work Packet Rollups.
-- Operator Inbox composer lets Chris leave asynchronous notes for Soren or Varro.
+- Operator Inbox composer lets Chris leave asynchronous notes for Soren, Varro,
+  or both through an "Everyone" fan-out option.
 - Free Moments append a gentle count-only cue when an agent has unread Operator
   Notes, without injecting note content into the prompt.
 

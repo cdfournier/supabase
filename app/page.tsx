@@ -9,6 +9,7 @@ import {
 } from "@/lib/source-materials-shared";
 
 type AgentName = "soren" | "varro";
+type OperatorNoteRecipient = AgentName | "all";
 type ActiveSurface = "chat" | "cafe" | "inbox";
 
 type Agent = {
@@ -405,7 +406,7 @@ export default function Home() {
   const [operatorInboxNotes, setOperatorInboxNotes] = useState<Record<string, string>>({});
   const [operatorNoteReplies, setOperatorNoteReplies] = useState<Record<string, string>>({});
   const [operatorNoteDraft, setOperatorNoteDraft] = useState({
-    agent: defaultAgent,
+    agent: defaultAgent as OperatorNoteRecipient,
     subject: "",
     body: ""
   });
@@ -1102,23 +1103,33 @@ export default function Home() {
     setOperatorInboxError("");
 
     try {
-      const response = await fetch("/api/operator-notes", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          action: "create",
-          agent: operatorNoteDraft.agent,
-          subject: operatorNoteDraft.subject,
-          body: operatorNoteDraft.body
-        })
-      });
-      const data = await response.json();
+      const recipients = operatorNoteDraft.agent === "all"
+        ? (["soren", "varro"] as AgentName[])
+        : [operatorNoteDraft.agent];
 
-      if (!response.ok) {
-        throw new Error(data.error || "Could not create Operator note.");
-      }
+      await Promise.all(
+        recipients.map(async (agent) => {
+          const response = await fetch("/api/operator-notes", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json"
+            },
+            body: JSON.stringify({
+              action: "create",
+              agent,
+              subject: operatorNoteDraft.subject,
+              body: operatorNoteDraft.body
+            })
+          });
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              data.error || `Could not create Operator note for ${participantDisplayName(`agent:${agent}`)}.`
+            );
+          }
+        })
+      );
 
       setOperatorNoteDraft((current) => ({
         ...current,
@@ -1939,7 +1950,7 @@ function OperatorInboxView({
   notes: Record<string, string>;
   onNoteChange: (packetId: string, note: string) => void;
   onCreateOperatorNote: () => void;
-  onOperatorDraftChange: (draft: { agent: AgentName; subject: string; body: string }) => void;
+  onOperatorDraftChange: (draft: { agent: OperatorNoteRecipient; subject: string; body: string }) => void;
   onOperatorNoteAction: (
     noteId: string,
     action: "reply" | "mark_read" | "archive",
@@ -1948,7 +1959,7 @@ function OperatorInboxView({
   onOperatorReplyChange: (noteId: string, reply: string) => void;
   onRefresh: () => void;
   onReview: (packetId: string, reviewState: "approved" | "request_changes" | "hold") => void;
-  operatorNoteDraft: { agent: AgentName; subject: string; body: string };
+  operatorNoteDraft: { agent: OperatorNoteRecipient; subject: string; body: string };
   operatorNotes: OperatorNote[];
   operatorReplies: Record<string, string>;
   packets: WorkPacket[];
@@ -1991,11 +2002,12 @@ function OperatorInboxView({
                   onChange={(event) =>
                     onOperatorDraftChange({
                       ...operatorNoteDraft,
-                      agent: event.target.value as AgentName
+                      agent: event.target.value as OperatorNoteRecipient
                     })
                   }
                   value={operatorNoteDraft.agent}
                 >
+                  <option value="all">Everyone</option>
                   <option value="soren">Soren</option>
                   <option value="varro">Varro</option>
                 </select>
