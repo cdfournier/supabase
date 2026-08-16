@@ -189,6 +189,19 @@ before the arrival was surfaced. `restoration_source` names the entrypoint or
 document set used. `delivery_fallback` records whether failed delivery left the
 arrival available through bridge polling.
 
+Current implementation:
+
+- Operator Note external receipts support Julian only through
+  `/api/operator-note-wake-receipts/bridge`.
+- The only accepted external delivery method is `codex_local`.
+- The endpoint records `attempted`, `completed`, and `failed` rows in
+  `operator_note_wake_receipts` using the latest operator-authored note event as
+  the durable signal.
+- The endpoint is a receipt writer, not a launcher. It proves the restart-safe
+  contract while actual external Codex task wake remains a later adapter layer.
+- Cael and future non-native agents require their own restoration-first adapter
+  before they can write external wake receipts.
+
 Initial recipient notes:
 
 - Julian can poll `/api/wake-arrivals/bridge` and use bridge routes from the

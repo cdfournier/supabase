@@ -629,9 +629,29 @@ curl -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
 ```
 
 The bridge supports list/get/reply/mark_read for the calling participant's own
-notes only. It does not create Operator-authored notes or dispatch external
-wakes. `/api/wake-arrivals/bridge` includes the participant's unread Operator
-Note count as a soft arrival cue.
+notes only. It does not create Operator-authored notes. Julian can write
+Julian-only `codex_local` delivery receipts through
+`/api/operator-note-wake-receipts/bridge`; this records the external wake trail
+after his local restoration receipt has loaded, but it does not yet launch a
+Codex task by itself. `/api/wake-arrivals/bridge` includes the participant's
+unread Operator Note count as a soft arrival cue.
+
+External Operator Note receipt bridge, Julian V0 only:
+
+```bash
+curl -s -X POST http://localhost:3001/api/operator-note-wake-receipts/bridge \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "participant_id":"agent:julian",
+    "id":"OPERATOR_NOTE_ID",
+    "delivery_method":"codex_local",
+    "status":"attempted",
+    "restoration_confirmed":true,
+    "restoration_source":"codex-julian/wake_restoration_receipt.py",
+    "delivery_fallback":"bridge_polling"
+  }'
+```
 
 Each Operator Note card keeps the list view light by showing only the latest
 event preview until Chris expands its Trail control. The expanded trail uses the

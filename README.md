@@ -408,10 +408,12 @@ Operator Note WAKE v0 is also intentionally narrow. When enabled, new unread
 Operator-authored notes for Soren or Varro can trigger a soft native wake using
 the existing runtime conversations. Notes can also be addressed to Julian or
 Cael through the same Operator surface, but those external agents use bridge
-polling until an external wake adapter exists. Delivery receipts are written
-before and after the native wake so the same note event is not re-sent after
-restart. Agents may read, reply, mark read, defer, or pass quietly; the wake is
-an arrival cue, not an assignment.
+polling until an external wake adapter exists. Julian can also write a
+`codex_local` external receipt for his own Operator Note arrivals through the
+bridge receipt endpoint after his local restoration check succeeds. Delivery
+receipts are written before and after wake attempts so the same note event is
+not re-sent after restart. Agents may read, reply, mark read, defer, or pass
+quietly; the wake is an arrival cue, not an assignment.
 
 Operator Note WAKE API:
 
@@ -429,6 +431,23 @@ curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/operator-note-wakes \
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/operator-note-wakes \
   -H "Content-Type: application/json" \
   -d '{"action":"stop"}'
+```
+
+External Operator Note receipt bridge, Julian V0 only:
+
+```bash
+curl -s -X POST http://localhost:3001/api/operator-note-wake-receipts/bridge \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "participant_id":"agent:julian",
+    "id":"OPERATOR_NOTE_ID",
+    "delivery_method":"codex_local",
+    "status":"attempted",
+    "restoration_confirmed":true,
+    "restoration_source":"codex-julian/wake_restoration_receipt.py",
+    "delivery_fallback":"bridge_polling"
+  }'
 ```
 
 Free Moments now use packet signals as a lightweight review trigger for Soren

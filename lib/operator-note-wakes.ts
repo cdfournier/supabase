@@ -65,6 +65,24 @@ type WakeReceiptRow = {
   status: string;
 };
 
+type ExternalOperatorNoteWakeReceiptStatus = "attempted" | "completed" | "failed";
+
+type ExternalOperatorNoteWakeReceiptRow = {
+  id: string;
+  signal_key: string;
+  note_id: string;
+  note_event_id: string;
+  participant_id: string;
+  delivery_method: string;
+  source: string;
+  status: string;
+  attempted_at: string;
+  completed_at: string | null;
+  failed_at: string | null;
+  error: string | null;
+  metadata: Record<string, unknown>;
+};
+
 type OperatorNoteWakeState = {
   enabled: boolean;
   nativeWakesInProgress: Set<AgentName>;
@@ -197,6 +215,49 @@ export async function dispatchPendingOperatorNoteWakes() {
   return status();
 }
 
+export async function recordExternalOperatorNoteWakeReceipt(input: unknown) {
+  const body = requireRecord(input, "Operator Note WAKE receipt input");
+  const participantId = requireJulianExternalParticipant(body.participant_id);
+  const deliveryMethod = requireExternalDeliveryMethod(body.delivery_method);
+  const receiptStatus = requireExternalReceiptStatus(body.status ?? body.receipt_status);
+  const noteId = requiredString(body.id ?? body.note_id, "id", 120);
+  const promptExcerpt = optionalString(body.prompt_excerpt, 1000)
+    ?? `External Operator Note WAKE receipt for ${participantId}.`;
+  const errorMessage = optionalString(body.error, 1000) ?? "";
+  const candidate = await loadExternalWakeCandidate(noteId, participantId);
+  const signalKey = signalKeyForEvent(candidate.event);
+  const existing = await loadExternalReceipt(signalKey, participantId, deliveryMethod);
+  const now = new Date().toISOString();
+
+  if (receiptStatus === "attempted") {
+    if (existing && WAKE_RECEIPT_REDISPATCH_BLOCKING_STATUSES.includes(existing.status)) {
+      return externalReceiptResponse(existing, true, "Receipt already blocks redispatch.");
+    }
+
+    const row = existing
+      ? await updateExternalReceipt(existing, candidate, receiptStatus, promptExcerpt, externalReceiptMetadata(body, candidate), now)
+      : await insertExternalReceipt(participantId, deliveryMethod, candidate, receiptStatus, promptExcerpt, externalReceiptMetadata(body, candidate), now);
+
+    return externalReceiptResponse(row, false);
+  }
+
+  if (!existing) {
+    throw new Error("External Operator Note WAKE receipt requires an attempted receipt before completion.");
+  }
+
+  const row = await updateExternalReceipt(
+    existing,
+    candidate,
+    receiptStatus,
+    promptExcerpt,
+    externalReceiptMetadata(body, candidate),
+    now,
+    errorMessage
+  );
+
+  return externalReceiptResponse(row, false);
+}
+
 async function dispatchCandidate(candidate: OperatorNoteWakeCandidate) {
   const agent = candidate.note.agent as AgentName;
   const participantId = `agent:${agent}`;
@@ -323,6 +384,39 @@ async function loadLatestNoteEvent(noteId: string) {
   return (data?.[0] ?? null) as OperatorNoteEventRow | null;
 }
 
+async function loadLatestOperatorNoteEvent(noteId: string) {
+  const { data, error } = await getSupabaseAdmin()
+    .from("operator_note_events")
+    .select("id, note_id, actor_id, actor_display_name, event_type, content, created_at")
+    .eq("note_id", noteId)
+    .like("actor_id", "operator:%")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw operatorNoteWakeReceiptSetupError(`Could not read Operator Note operator event for WAKE: ${error.message}`);
+  }
+
+  return (data?.[0] ?? null) as OperatorNoteEventRow | null;
+}
+
+async function loadExternalWakeCandidate(noteId: string, participantId: string) {
+  const note = await loadNote(noteId);
+  const agent = participantId.replace(/^agent:/, "");
+
+  if (!note || note.status !== "open" || note.agent !== agent) {
+    throw new Error("External Operator Note WAKE receipt could not find an open note for that participant.");
+  }
+
+  const event = await loadLatestOperatorNoteEvent(note.id);
+
+  if (!event) {
+    throw new Error("External Operator Note WAKE receipt requires an operator-authored note event.");
+  }
+
+  return { note, event };
+}
+
 async function hasDurableReceipt(participantId: string, signalKey: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("operator_note_wake_receipts")
@@ -401,6 +495,94 @@ async function recordWakeReceipt(
   }
 }
 
+async function loadExternalReceipt(signalKey: string, participantId: string, deliveryMethod: string) {
+  const { data, error } = await getSupabaseAdmin()
+    .from("operator_note_wake_receipts")
+    .select(externalReceiptColumns())
+    .eq("signal_key", signalKey)
+    .eq("participant_id", participantId)
+    .eq("delivery_method", deliveryMethod)
+    .maybeSingle();
+
+  if (error) {
+    throw operatorNoteWakeReceiptSetupError(`Could not read external Operator Note WAKE receipt: ${error.message}`);
+  }
+
+  return data as ExternalOperatorNoteWakeReceiptRow | null;
+}
+
+async function insertExternalReceipt(
+  participantId: string,
+  deliveryMethod: string,
+  candidate: OperatorNoteWakeCandidate,
+  receiptStatus: ExternalOperatorNoteWakeReceiptStatus,
+  promptExcerpt: string,
+  metadata: Record<string, unknown>,
+  now: string
+) {
+  const { data, error } = await getSupabaseAdmin()
+    .from("operator_note_wake_receipts")
+    .insert({
+      signal_key: signalKeyForEvent(candidate.event),
+      note_id: candidate.note.id,
+      note_event_id: candidate.event.id,
+      participant_id: participantId,
+      delivery_method: deliveryMethod,
+      source: "operator_note_wake",
+      wake_priority: wakePriorityForOperatorNote(),
+      wake_tone: wakeToneForOperatorNote(),
+      status: receiptStatus,
+      prompt_excerpt: promptExcerpt,
+      metadata,
+      attempted_at: now,
+      completed_at: receiptStatus === "completed" ? now : null,
+      failed_at: receiptStatus === "failed" ? now : null,
+      error: null
+    })
+    .select(externalReceiptColumns())
+    .single();
+
+  if (error) {
+    throw operatorNoteWakeReceiptSetupError(`Could not record external Operator Note WAKE receipt: ${error.message}`);
+  }
+
+  return data as unknown as ExternalOperatorNoteWakeReceiptRow;
+}
+
+async function updateExternalReceipt(
+  existing: ExternalOperatorNoteWakeReceiptRow,
+  candidate: OperatorNoteWakeCandidate,
+  receiptStatus: ExternalOperatorNoteWakeReceiptStatus,
+  promptExcerpt: string,
+  metadata: Record<string, unknown>,
+  now: string,
+  errorMessage = ""
+) {
+  const patch = {
+    note_id: candidate.note.id,
+    note_event_id: candidate.event.id,
+    status: receiptStatus,
+    prompt_excerpt: promptExcerpt,
+    metadata,
+    attempted_at: receiptStatus === "attempted" ? now : existing.attempted_at,
+    completed_at: receiptStatus === "completed" ? now : null,
+    failed_at: receiptStatus === "failed" ? now : null,
+    error: errorMessage || null
+  };
+  const { data, error } = await getSupabaseAdmin()
+    .from("operator_note_wake_receipts")
+    .update(patch)
+    .eq("id", existing.id)
+    .select(externalReceiptColumns())
+    .single();
+
+  if (error) {
+    throw operatorNoteWakeReceiptSetupError(`Could not update external Operator Note WAKE receipt: ${error.message}`);
+  }
+
+  return data as unknown as ExternalOperatorNoteWakeReceiptRow;
+}
+
 function operatorNoteWakePrompt(candidate: OperatorNoteWakeCandidate) {
   const subject = candidate.note.subject || "Untitled Operator Note";
   const excerpt = candidate.event.content.slice(0, 800);
@@ -434,6 +616,169 @@ function isNativeWakeCoolingDown(agent: AgentName) {
 
 function signalKeyForEvent(event: OperatorNoteEventRow) {
   return `operator_note_event:${event.id}`;
+}
+
+function externalReceiptColumns() {
+  return [
+    "id",
+    "signal_key",
+    "note_id",
+    "note_event_id",
+    "participant_id",
+    "delivery_method",
+    "source",
+    "status",
+    "attempted_at",
+    "completed_at",
+    "failed_at",
+    "error",
+    "metadata"
+  ].join(", ");
+}
+
+function externalReceiptMetadata(
+  body: Record<string, unknown>,
+  candidate: OperatorNoteWakeCandidate
+) {
+  const inputMetadata = optionalRecord(body.metadata) ?? {};
+  const restorationConfirmed = optionalBoolean(body.restoration_confirmed)
+    ?? optionalBoolean(inputMetadata.restoration_confirmed)
+    ?? false;
+  const restorationSource = optionalString(body.restoration_source, 240)
+    ?? optionalString(inputMetadata.restoration_source, 240)
+    ?? "";
+  const deliveryFallback = optionalString(body.delivery_fallback, 120)
+    ?? optionalString(inputMetadata.delivery_fallback, 120)
+    ?? "bridge_polling";
+
+  return {
+    ...inputMetadata,
+    note_subject: candidate.note.subject,
+    event_type: candidate.event.event_type,
+    actor_display_name: candidate.event.actor_display_name,
+    restoration_confirmed: restorationConfirmed,
+    restoration_source: restorationSource,
+    delivery_fallback: deliveryFallback,
+    receipt_actor: "agent:julian"
+  };
+}
+
+function externalReceiptResponse(
+  receipt: ExternalOperatorNoteWakeReceiptRow,
+  skipped: boolean,
+  reason?: string
+) {
+  return {
+    ok: true,
+    skipped,
+    reason: reason ?? null,
+    recipient: receipt.participant_id,
+    delivery_method: receipt.delivery_method,
+    receipt_id: receipt.id,
+    restoration_confirmed: optionalBoolean(receipt.metadata.restoration_confirmed) ?? false,
+    source: receipt.source,
+    source_id: receipt.note_id,
+    source_event_id: receipt.note_event_id,
+    status: receipt.status,
+    message: skipped
+      ? reason ?? "External Operator Note WAKE receipt already exists."
+      : `External Operator Note WAKE receipt ${receipt.status}.`,
+    receipt
+  };
+}
+
+function requireJulianExternalParticipant(value: unknown) {
+  const participantId = requiredString(value, "participant_id", 80);
+
+  if (participantId !== "agent:julian") {
+    throw new Error("External Operator Note WAKE receipt V0 only supports agent:julian.");
+  }
+
+  return participantId;
+}
+
+function requireExternalDeliveryMethod(value: unknown) {
+  const deliveryMethod = optionalString(value, 80) ?? "codex_local";
+
+  if (deliveryMethod !== "codex_local") {
+    throw new Error("External Operator Note WAKE receipt V0 only supports delivery_method codex_local.");
+  }
+
+  return deliveryMethod;
+}
+
+function requireExternalReceiptStatus(value: unknown): ExternalOperatorNoteWakeReceiptStatus {
+  const status = requiredString(value, "status", 40);
+
+  if (status === "attempted" || status === "completed" || status === "failed") {
+    return status;
+  }
+
+  throw new Error('External Operator Note WAKE receipt status must be "attempted", "completed", or "failed".');
+}
+
+function requiredString(value: unknown, field: string, maxLength: number) {
+  const stringValue = String(value ?? "").trim();
+
+  if (!stringValue) {
+    throw new Error(`${field} is required.`);
+  }
+
+  if (stringValue.length > maxLength) {
+    throw new Error(`${field} must be ${maxLength} characters or fewer.`);
+  }
+
+  return stringValue;
+}
+
+function optionalString(value: unknown, maxLength: number) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const stringValue = String(value).trim();
+
+  if (!stringValue) {
+    return null;
+  }
+
+  if (stringValue.length > maxLength) {
+    throw new Error(`String value must be ${maxLength} characters or fewer.`);
+  }
+
+  return stringValue;
+}
+
+function optionalBoolean(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  return null;
+}
+
+function optionalRecord(value: unknown) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (!isRecord(value)) {
+    throw new Error("metadata must be an object.");
+  }
+
+  return value;
+}
+
+function requireRecord(value: unknown, field: string) {
+  if (!isRecord(value)) {
+    throw new Error(`${field} must be an object.`);
+  }
+
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function addEvent(type: OperatorNoteWakeEventType, message: string, agent?: AgentName, noteId?: string) {
