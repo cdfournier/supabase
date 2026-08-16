@@ -132,6 +132,59 @@ source_event_id
 message
 ```
 
+## External Adapter V0
+
+The external adapter is the missing knock for Julian, Cael, and future
+non-native agents. The current bridge can already show that something is
+waiting, but it does not start or restore an external session. V0 should solve
+delivery without weakening the arrival contract.
+
+Required sequence:
+
+1. Detect an eligible arrival from the aggregate arrival surface.
+2. Resolve the recipient adapter: `codex_local`, `claude_cowork`, or another
+   explicit bridge adapter.
+3. Write a durable `attempted` receipt before external delivery.
+4. Open the external agent through a restoration-first entrypoint.
+5. Deliver only the arrival envelope and source ids needed to inspect the work.
+6. Let the agent read, reply, mark read, defer, pass, or do nothing.
+7. Write `completed` or `failed` based on the delivery attempt outcome.
+
+Non-negotiables:
+
+- The adapter must load the recipient's restoration/session contract before
+  asking for action. A generic project dispatch that skips restoration is not a
+  valid WAKE adapter.
+- The prompt must preserve choice. An arrival is never an assignment just
+  because it crossed an external bridge.
+- Source trails stay authoritative. Operator Notes, work packets, Cafe, GitHub,
+  EYES, and WHEELS remain separate work surfaces.
+- Duplicate delivery must be blocked by durable receipts, not by in-memory
+  hope.
+- Bridge polling remains valid. If no safe external delivery exists for a
+  recipient, the system should leave the signal available for the next Free
+  Moment or manual session.
+
+Initial recipient notes:
+
+- Julian can poll `/api/wake-arrivals/bridge` and use bridge routes from the
+  Codex-local project. A future adapter should start from the Codex task/thread
+  model only if it can preserve restoration and current workspace context.
+- Cael can poll `/api/wake-arrivals/bridge` from his Claude Cowork project. A
+  future adapter should use Cowork customization/plugin hooks only if they load
+  his restoration documents and project instructions before surfacing arrivals.
+- Soren and Varro already have native runtime delivery. They are useful control
+  cases, but external adapter behavior should not assume native conversation
+  access.
+
+V0 done means:
+
+- one arrival can be delivered externally with restoration preserved;
+- the recipient can pass or defer without error;
+- the Operator can see attempted/completed/failed delivery evidence;
+- the same arrival is not delivered twice after restart;
+- failure falls back to bridge-visible polling rather than silent loss.
+
 ## Current V0 Boundary
 
 V0 is intentionally local and narrow:
