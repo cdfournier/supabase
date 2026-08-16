@@ -54,6 +54,8 @@ const READ_STATUSES: OperatorNoteReadStatus[] = ["unread", "read"];
 const LIST_READ_STATUSES = [...READ_STATUSES, "all"] as const;
 const LIST_STATUSES = ["open", "archived", "all"] as const;
 const AGENT_NAMES: Record<string, string> = {
+  cael: "Cael",
+  julian: "Julian",
   soren: "Soren",
   varro: "Varro"
 };
@@ -175,7 +177,7 @@ export async function createOperatorNote(supabase: Supabase, input: unknown, act
   const now = new Date().toISOString();
 
   if (!agent) {
-    throw new Error("agent must be soren or varro.");
+    throw invalidAgentError();
   }
 
   const { data, error } = await supabase
@@ -487,10 +489,14 @@ function normalizeAgent(value: unknown) {
   const normalized = optionalAgent(value);
 
   if (!normalized) {
-    throw new Error("agent must be soren or varro.");
+    throw invalidAgentError();
   }
 
   return normalized;
+}
+
+function invalidAgentError() {
+  return new Error("agent must be cael, julian, soren, or varro.");
 }
 
 function optionalRecord(value: unknown) {

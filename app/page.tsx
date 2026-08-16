@@ -9,9 +9,12 @@ import {
 } from "@/lib/source-materials-shared";
 
 type AgentName = "soren" | "varro";
-type OperatorNoteRecipient = AgentName | "all";
+type OperatorNoteAgent = AgentName | "julian" | "cael";
+type OperatorNoteRecipient = OperatorNoteAgent | "all";
 type OperatorNoteFilter = "active" | "needs_operator" | "waiting_agent" | "settled" | "all";
 type ActiveSurface = "chat" | "cafe" | "inbox";
+
+const OPERATOR_NOTE_RECIPIENTS: OperatorNoteAgent[] = ["soren", "varro", "julian", "cael"];
 
 type Agent = {
   name: AgentName;
@@ -361,7 +364,7 @@ type OperatorNote = {
   id: string;
   note_key: string | null;
   subject: string;
-  agent: AgentName;
+  agent: OperatorNoteAgent;
   created_by: string;
   last_message_by: string;
   status: "open" | "archived";
@@ -1309,7 +1312,7 @@ export default function Home() {
 
     try {
       const recipients = operatorNoteDraft.agent === "all"
-        ? (["soren", "varro"] as AgentName[])
+        ? OPERATOR_NOTE_RECIPIENTS
         : [operatorNoteDraft.agent];
 
       await Promise.all(
@@ -2256,6 +2259,8 @@ function OperatorInboxView({
                   <option value="all">Everyone</option>
                   <option value="soren">Soren</option>
                   <option value="varro">Varro</option>
+                  <option value="julian">Julian</option>
+                  <option value="cael">Cael</option>
                 </select>
               </label>
               <label>

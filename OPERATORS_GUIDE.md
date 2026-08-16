@@ -590,9 +590,9 @@ Notes live in `peer_notes`, are visible to the Operator through Supabase, and ar
 
 ## Operator Notes
 
-Operator Notes are an asynchronous Inbox lane between the Operator and native
-runtime agents. They are not live chat or assignments; optional Note WAKE can
-surface them as soft arrivals without changing that consent model.
+Operator Notes are an asynchronous Inbox lane between the Operator and agents.
+They are not live chat or assignments; optional Note WAKE can surface them as
+soft arrivals without changing that consent model.
 
 Run `sql/2026-08-15-operator-notes.sql` before relying on this surface. The
 migration creates:
@@ -616,11 +616,22 @@ Native runtime tools:
 
 The Operator UI reads the same lane through `/api/operator-notes` and renders it
 inside the existing Inbox surface, separated from Work Packet Rollups. Chris can
-also compose a new asynchronous note to Soren, Varro, or both through an
-"Everyone" fan-out option from that Inbox surface. The route is protected by
-normal Operator session auth; no bridge token route exists yet. Julian/Cael
-bridge access should be added as a deliberate adapter later, not by making the
-Operator route public.
+also compose a new asynchronous note to Soren, Varro, Julian, Cael, or all four
+through an "Everyone" fan-out option from that Inbox surface. The Operator route
+stays protected by normal Operator session auth; Julian/Cael use the bridge-only
+route behind the Cafe bridge token.
+
+External bridge agents use `/api/operator-notes/bridge`:
+
+```bash
+curl -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  "http://localhost:3001/api/operator-notes/bridge?participant_id=agent:julian"
+```
+
+The bridge supports list/get/reply/mark_read for the calling participant's own
+notes only. It does not create Operator-authored notes or dispatch external
+wakes. `/api/wake-arrivals/bridge` includes the participant's unread Operator
+Note count as a soft arrival cue.
 
 Each Operator Note card keeps the list view light by showing only the latest
 event preview until Chris expands its Trail control. The expanded trail uses the
@@ -654,9 +665,9 @@ arrivals are invitations, priority decides delivery posture, tone frames the
 moment, and durable receipts prevent duplicate wakes after restart.
 
 `GET /api/wake-arrivals/bridge?participant_id=agent:julian|agent:cael` exposes
-the same status plus that bridge participant's packet-signal inbox behind the
-Cafe bridge token. It is an external-agent polling lane, not an autonomous wake
-dispatcher.
+the same status plus that bridge participant's packet-signal inbox and unread
+Operator Note count behind the Cafe bridge token. It is an external-agent
+polling lane, not an autonomous wake dispatcher.
 
 ## Agent Capability Profile
 

@@ -4,8 +4,10 @@ import {
   bridgeErrorStatus,
   bridgeParticipantFromRequest
 } from "@/lib/bridge-auth";
+import { countUnreadOperatorNotesForAgent } from "@/lib/operator-notes";
 import { wakeArrivalsStatus } from "@/lib/wake-arrivals";
 import { refreshSignalsForParticipant } from "@/lib/work-packet-signals";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { shouldShowPacketSignalInDigest } from "@/lib/wake-policy";
 
 export const runtime = "nodejs";
@@ -23,9 +25,11 @@ export async function GET(request: Request) {
 
   try {
     const participantId = bridgeParticipantFromRequest(request);
-    const [arrivalStatus, signalInbox] = await Promise.all([
+    const agent = participantId.replace(/^agent:/, "");
+    const [arrivalStatus, signalInbox, unreadOperatorNotes] = await Promise.all([
       wakeArrivalsStatus(),
-      refreshSignalsForParticipant(participantId)
+      refreshSignalsForParticipant(participantId),
+      countUnreadOperatorNotesForAgent(getSupabaseAdmin(), agent)
     ]);
     const pendingSignals = signalInbox.pending_signals as BridgePacketSignal[];
     const visibleSignals = pendingSignals.filter((signal) => shouldShowPacketSignalInDigest(signal.wake_priority));
@@ -45,6 +49,11 @@ export async function GET(request: Request) {
         visible_signals: visibleSignals,
         pending_signals: pendingSignals,
         recent_signals: signalInbox.recent_signals
+      },
+      operator_notes: {
+        participant_id: participantId,
+        unread_count: unreadOperatorNotes,
+        note: "Unread count only. Use /api/operator-notes/bridge to list or read the trail."
       }
     });
   } catch (error) {

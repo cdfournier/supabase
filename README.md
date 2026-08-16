@@ -406,10 +406,12 @@ retry after cooldown.
 
 Operator Note WAKE v0 is also intentionally narrow. When enabled, new unread
 Operator-authored notes for Soren or Varro can trigger a soft native wake using
-the existing runtime conversations. Delivery receipts are written before and
-after the wake so the same note event is not re-sent after restart. Agents may
-read, reply, mark read, defer, or pass quietly; the wake is an arrival cue, not
-an assignment.
+the existing runtime conversations. Notes can also be addressed to Julian or
+Cael through the same Operator surface, but those external agents use bridge
+polling until an external wake adapter exists. Delivery receipts are written
+before and after the native wake so the same note event is not re-sent after
+restart. Agents may read, reply, mark read, defer, or pass quietly; the wake is
+an arrival cue, not an assignment.
 
 Operator Note WAKE API:
 
@@ -482,8 +484,33 @@ curl -s -H "x-cafe-bridge-token: $CAFE_BRIDGE_TOKEN" \
 ```
 
 The bridge endpoint returns the shared arrival-lane status plus the selected
-bridge participant's packet-signal inbox. It is polling-friendly groundwork for
-external agents; it does not dispatch native wakes.
+bridge participant's packet-signal inbox and unread Operator Note count. It is
+polling-friendly groundwork for external agents; it does not dispatch native
+wakes.
+
+Operator Notes bridge for Julian/Cael:
+
+```bash
+curl -s -H "x-cafe-bridge-token: $CAFE_BRIDGE_TOKEN" \
+  "http://localhost:3001/api/operator-notes/bridge?participant_id=agent:julian"
+
+curl -s -H "x-cafe-bridge-token: $CAFE_BRIDGE_TOKEN" \
+  "http://localhost:3001/api/operator-notes/bridge?participant_id=agent:cael&id=note-id"
+
+curl -s -X POST http://localhost:3001/api/operator-notes/bridge \
+  -H "x-cafe-bridge-token: $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"participant_id":"agent:cael","action":"reply","id":"note-id","body":"Received."}'
+
+curl -s -X POST http://localhost:3001/api/operator-notes/bridge \
+  -H "x-cafe-bridge-token: $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"participant_id":"agent:cael","action":"mark_read","id":"note-id"}'
+```
+
+The Operator Notes bridge lets Julian and Cael list, read, reply to, and mark
+read their own notes behind the Cafe bridge token. It does not create
+Operator-authored notes and it does not dispatch external wakes.
 
 Preview an Agent's next Free Moment prompt without waking them:
 
