@@ -126,6 +126,7 @@ ok
 recipient
 delivery_method
 receipt_id
+restoration_confirmed
 source
 source_id
 source_event_id
@@ -144,26 +145,49 @@ Required sequence:
 1. Detect an eligible arrival from the aggregate arrival surface.
 2. Resolve the recipient adapter: `codex_local`, `claude_cowork`, or another
    explicit bridge adapter.
-3. Write a durable `attempted` receipt before external delivery.
+3. Write a durable `attempted` receipt before external delivery. This receipt
+   is the dispatch gate; if it cannot be written, the adapter must not attempt
+   the external wake.
 4. Open the external agent through a restoration-first entrypoint.
-5. Deliver only the arrival envelope and source ids needed to inspect the work.
-6. Let the agent read, reply, mark read, defer, pass, or do nothing.
-7. Write `completed` or `failed` based on the delivery attempt outcome.
+5. Verify restoration completed before surfacing the arrival. If restoration is
+   not confirmed, abort delivery, write `failed`, and leave the source arrival
+   bridge-visible for later polling.
+6. Deliver only the arrival envelope and source ids needed to inspect the work.
+7. Let the agent read, reply, mark read, defer, pass, or do nothing.
+8. Write `completed` or `failed` based on the delivery attempt outcome.
 
 Non-negotiables:
 
 - The adapter must load the recipient's restoration/session contract before
   asking for action. A generic project dispatch that skips restoration is not a
-  valid WAKE adapter.
+  valid WAKE adapter. Restoration is a blocking gate, not a best-effort
+  instruction.
 - The prompt must preserve choice. An arrival is never an assignment just
   because it crossed an external bridge.
 - Source trails stay authoritative. Operator Notes, work packets, Cafe, GitHub,
-  EYES, and WHEELS remain separate work surfaces.
+  EYES, and WHEELS remain separate work surfaces. The wake prompt should carry
+  source ids and a short envelope, not inline source bodies.
 - Duplicate delivery must be blocked by durable receipts, not by in-memory
-  hope.
+  hope. `attempted` and `completed` receipts block redispatch after restart
+  unless a future retry policy explicitly reopens them.
 - Bridge polling remains valid. If no safe external delivery exists for a
   recipient, the system should leave the signal available for the next Free
   Moment or manual session.
+- Passing and deferring must close cleanly when noticed. A recipient choosing
+  not to act must not create retry storms or orphaned `attempted` receipts.
+
+Receipt metadata should include:
+
+```text
+restoration_confirmed
+restoration_source
+delivery_fallback
+```
+
+`restoration_confirmed` records whether the restoration/session contract loaded
+before the arrival was surfaced. `restoration_source` names the entrypoint or
+document set used. `delivery_fallback` records whether failed delivery left the
+arrival available through bridge polling.
 
 Initial recipient notes:
 
@@ -180,6 +204,7 @@ Initial recipient notes:
 V0 done means:
 
 - one arrival can be delivered externally with restoration preserved;
+- restoration confirmation is visible in delivery evidence;
 - the recipient can pass or defer without error;
 - the Operator can see attempted/completed/failed delivery evidence;
 - the same arrival is not delivered twice after restart;
