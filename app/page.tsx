@@ -16,6 +16,43 @@ type ActiveSurface = "chat" | "cafe" | "inbox";
 
 const OPERATOR_NOTE_RECIPIENTS: OperatorNoteAgent[] = ["soren", "varro", "julian", "cael"];
 
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get("content-type") ?? "";
+  const body = await response.text();
+  const path = responsePath(response);
+
+  if (!contentType.includes("application/json")) {
+    throw new Error(nonJsonResponseMessage(path, contentType, response.status, body));
+  }
+
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    throw new Error(`Could not parse JSON from ${path}.`);
+  }
+}
+
+function responsePath(response: Response) {
+  try {
+    return new URL(response.url).pathname;
+  } catch {
+    return "request";
+  }
+}
+
+function nonJsonResponseMessage(path: string, contentType: string, status: number, body: string) {
+  const responseKind = contentType || "a non-JSON response";
+  const compactBody = body.replace(/\s+/g, " ").trim();
+  const looksLikeHtml = compactBody.startsWith("<!DOCTYPE") || compactBody.startsWith("<html");
+
+  if (looksLikeHtml) {
+    return `Expected JSON from ${path}, but received HTML (${status}). This is usually a transient runtime/proxy error; retry after the server is healthy.`;
+  }
+
+  const preview = compactBody.slice(0, 180);
+  return `Expected JSON from ${path}, but received ${responseKind} (${status}). ${preview}`;
+}
+
 type Agent = {
   name: AgentName;
   display_name: string | null;
@@ -31,6 +68,12 @@ type ChatMessage = {
   source?: string | null;
   content: unknown;
   created_at?: string;
+};
+
+type ChatResponse = {
+  error?: string;
+  messages?: ChatMessage[];
+  tool_events?: ToolEvent[];
 };
 
 type CafeParticipant = {
@@ -1381,7 +1424,7 @@ export default function Home() {
           attachments: uploadedAttachments.map((attachment) => ({ id: attachment.id }))
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<ChatResponse>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Message failed.");

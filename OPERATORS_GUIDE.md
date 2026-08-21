@@ -478,7 +478,7 @@ curl -s -b "$COOKIE_JAR" http://localhost:3001/api/free-time
 ```
 
 Start with the configured/default cadence. By default, this starts a
-120-minute paired cadence for Soren and Varro:
+180-minute paired cadence for Soren and Varro:
 
 ```bash
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
@@ -513,7 +513,7 @@ Start with an explicit cadence while keeping the default paired mode:
 ```bash
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
-  -d '{"action":"start","intervalMinutes":120}'
+  -d '{"action":"start","intervalMinutes":180}'
 ```
 
 Override the schedule mode only when testing a different behavior:
@@ -521,7 +521,7 @@ Override the schedule mode only when testing a different behavior:
 ```bash
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
-  -d '{"action":"start","intervalMinutes":120,"scheduleMode":"round_robin"}'
+  -d '{"action":"start","intervalMinutes":180,"scheduleMode":"round_robin"}'
 ```
 
 Paired mode wakes Soren and Varro sequentially in the same scheduled cycle, then
@@ -554,7 +554,7 @@ curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
 ```
 
 The scheduler wakes Soren and Varro through their existing main conversations.
-Scheduled turns default to paired mode at a 120-minute cadence. Round-robin mode
+Scheduled turns default to paired mode at a 180-minute cadence. Round-robin mode
 remains available as an explicit override for tests. Manual UI wakes target the selected agent.
 It uses `setTimeout`, schedules the next turn only after completion, keeps a
 bounded recent event log, and treats errors as status events instead of wedging
@@ -773,10 +773,12 @@ V1 assumptions:
 - The server creates storage, metadata, and active-agent access rows. Routine
   uploads must not require SQL.
 - Agents can use `source_list_materials`, `source_get_material`, and `source_read_text`.
-- `source_read_text` only supports text-like files. Small supported PDFs/images
-  attached to the current chat turn are delivered directly to Anthropic as
-  document/image blocks. Larger or unsupported files remain metadata-only source
-  material references.
+- `source_read_text` only supports text-like files. It returns one bounded text
+  window with `total_chars`, `offset_chars`, `returned_chars`, and `next_offset`;
+  use `next_offset` as `offset_chars` to continue through long source files
+  deliberately. Small supported PDFs/images attached to the current chat turn
+  are delivered directly to Anthropic as document/image blocks. Larger or
+  unsupported files remain metadata-only source material references.
 - Do not expose signed URLs to agents in V1.
 - Upload caps are controlled by `SOURCE_UPLOAD_MAX_FILES`,
   `SOURCE_UPLOAD_MAX_FILE_BYTES`, and `SOURCE_UPLOAD_MAX_TOTAL_BYTES`.

@@ -130,7 +130,7 @@ rm "$COOKIE_JAR"
 ```
 
 Start the local in-process Free Moments scheduler. By default, this starts a
-120-minute paired cadence for Soren and Varro:
+180-minute paired cadence for Soren and Varro:
 
 ```bash
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
@@ -143,7 +143,7 @@ Override the schedule mode only when testing a different behavior:
 ```bash
 curl -s -b "$COOKIE_JAR" -X POST http://localhost:3001/api/free-time \
   -H "Content-Type: application/json" \
-  -d '{"action":"start","intervalMinutes":120,"scheduleMode":"round_robin"}'
+  -d '{"action":"start","intervalMinutes":180,"scheduleMode":"round_robin"}'
 ```
 
 Paired mode wakes both agents sequentially in the same scheduled cycle, then
@@ -733,7 +733,7 @@ Current posture:
 - Room Refreshes require a final manual threshold handshake: the Operator pastes the approved Room Note back into chat, the agent gives explicit durable-state edits, the Operator applies and saves those edits, and only then sends housekeeping.
 - Agents can inspect their own Room Review, but they cannot refresh the room themselves through that tool.
 - Anthropic prompt caching is enabled by default to reduce repeated prefix processing. Set `ANTHROPIC_PROMPT_CACHE=false` to disable it.
-- Free Moments is local, in-process, and does not auto-start on boot. It wakes Soren and Varro using their existing main conversations. Scheduled turns default to paired mode at a 120-minute cadence, waking both sequentially in one scheduled cycle. Round-robin mode remains available as an explicit override for tests. A quiet response, short response, or nothing-useful-to-report response is success.
+- Free Moments is local, in-process, and restores from durable runtime settings on status load after a server restart. It wakes Soren and Varro using their existing main conversations. Scheduled turns default to paired mode at a 180-minute cadence, waking both sequentially in one scheduled cycle. Round-robin mode remains available as an explicit override for tests. A quiet response, short response, or nothing-useful-to-report response is success.
 - Free Moment wakes include a derived context posture receipt so the agent can
   see what context was loaded, what was bounded or omitted, and which tools to
   use before concluding something did not happen.

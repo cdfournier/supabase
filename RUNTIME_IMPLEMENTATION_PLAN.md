@@ -270,7 +270,7 @@ Implemented V1 slices:
 - Wakes `soren` and `varro` through existing main conversations. Scheduled turns default to paired mode, waking both sequentially in one scheduled cycle; round-robin remains available for explicit tests.
 - Uses `setTimeout` and schedules the next turn only after completion.
 - Records a bounded recent event log and keeps errors visible without wedging the scheduler.
-- Added cadence environment variables with a default of 120 minutes and a floor of 5 minutes.
+- Added cadence environment variables with a default of 180 minutes and a floor of 5 minutes.
 - Added a small Operator panel for status, Start, Stop, and Wake One Now controls.
 - Updated the Free Moments prompt to make each wake an unprompted moment of
   agency rather than a task, while still requiring tools before describing

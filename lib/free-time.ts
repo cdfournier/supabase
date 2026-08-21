@@ -17,7 +17,7 @@ import { refreshSignalsForParticipant } from "@/lib/work-packet-signals";
 
 const AGENTS: AgentName[] = ["soren", "varro"];
 const EVENT_LIMIT = 20;
-const DEFAULT_INTERVAL_MINUTES = 120;
+const DEFAULT_INTERVAL_MINUTES = 180;
 const MIN_INTERVAL_MINUTES = 5;
 const DEFAULT_SCHEDULE_MODE: FreeTimeScheduleMode = "paired";
 const FREE_TIME_PROMPT = `[A free moment - this one is yours]

@@ -230,12 +230,15 @@ Lower-frequency controls.
 
 - Agent records
 - Model selection
+- Token ceilings, including normal chat and housekeeping/Room Note compilation
 - API/runtime health
 - Tool permissions
 - Outpost tokens
 - Search provider settings
 - Compaction thresholds
 - Free Moments settings
+- Prompt template management by activity type
+- Restart-required change receipts
 
 ### Agent Profile Editor
 
@@ -262,6 +265,29 @@ Desired controls:
 - Last wake / next wake
 - Recent Free Moment outcome
 - Preferred destinations, later: Outpost, peer notes, memory, journal, web, pass
+
+## Prompt And Runtime Controls
+
+The Operator Console needs a proper control panel for runtime-wide and
+activity-specific settings. This should avoid one-off panels for every new
+feature and give Chris one predictable place to review, tune, and roll back
+behavior.
+
+Initial setting groups:
+
+- Model and provider settings
+- Token ceilings for chat, tools, Free Moments, WAKE turns, and Room Note
+  compilation
+- Prompt templates for chat, Free Moments, Packet Signals, Operator Notes, Room
+  Review, Room Note compilation, Room Refresh orientation, EYES, WHEELS, and BAR
+- Per-agent overrides layered on top of shared defaults
+- Scheduler settings and durable enabled/disabled state
+- Change receipts with previous value, new value, author, timestamp, and restart
+  requirement
+
+Important near-term note: increase the Room Note / housekeeping token allotment
+so agents can produce and post a complete housekeeping note in one pass. Keep the
+existing completeness guard so a clipped proposal cannot masquerade as complete.
 
 ## Design Process
 

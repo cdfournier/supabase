@@ -15,12 +15,13 @@ larger architectural tracks stay visible without becoming today's obligation.
 6. Usage, cost, and cache accounting V1 follow-up
 7. Room Refresh archive browsing and collapsed-history UI
 8. Dev/prod separation V1
-9. Comparative runtime architecture discovery
-10. RLS and hosted web-readiness review
-11. Batch/background-job evaluation
-12. Bridge control plane and adapter architecture
-13. EYES session adapter
-14. WHEELS supervised-control planning
+9. Operator Runtime Control Panel planning
+10. Comparative runtime architecture discovery
+11. RLS and hosted web-readiness review
+12. Batch/background-job evaluation
+13. Bridge control plane and adapter architecture
+14. EYES session adapter
+15. WHEELS supervised-control planning
 
 ## Product Principles
 
@@ -269,10 +270,43 @@ Planned:
 - Collapse pre-refresh chat history in the UI behind an archive affordance
   without deleting raw messages.
 - Add clearer archive/refresh health receipts.
+- Increase the housekeeping/Room Note output ceiling so Soren and Varro can
+  post a complete housekeeping note in one pass. The ceiling should be high
+  enough for the whole note, while keeping the compiler completeness guard and
+  required-section checks intact.
 - Consider database RPCs for atomic archive/refresh operations if concurrency
   becomes real.
 
-### 8. Comparative Runtime Architecture Discovery
+### 8. Operator Runtime Control Panel
+
+Status: planning note.
+
+Purpose: gather runtime settings into one Operator-owned control surface instead
+of letting switches, prompts, and limits scatter across panels, docs, and env
+files.
+
+Scope to plan:
+
+- Global runtime settings: model, token ceilings, prompt-cache posture, provider
+  limits, cost warnings, and dev/prod markers.
+- Activity settings: Free Moments, Packet Signals, Operator Note WAKE, scheduled
+  cadence, tone policy, quiet hours, and manual wake controls.
+- Prompt management: editable/reviewable prompt templates for normal chat, Free
+  Moments, WAKE arrivals, Room Review, Room Note compilation, Room Refresh
+  orientation, bridge sessions, and future live-session modes.
+- Agent-specific overrides: per-agent cadence, permissions, preferred surfaces,
+  and prompt additions without duplicating the global contract.
+- Receipts and rollback: every settings change should show who changed what,
+  when, previous value, current value, and whether a restart is required.
+
+Notes:
+
+- This should become the front door for tuning the runtime.
+- It should distinguish durable settings from in-memory scheduler state.
+- It should keep "can act", "is enabled", and "is currently running" visually
+  separate.
+
+### 9. Comparative Runtime Architecture Discovery
 
 Status: planned discovery track.
 
