@@ -420,6 +420,68 @@ button {
   padding-top: 12px;
 }
 
+.wake-control-panel {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.wake-control-actions {
+  margin-top: 8px;
+}
+
+.wake-control-actions .quiet-action {
+  margin-top: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.wake-control-table {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.wake-control-row {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(58px, 1fr) repeat(5, minmax(46px, 0.72fr));
+}
+
+.wake-control-head {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.wake-control-row > strong {
+  font-size: 12px;
+}
+
+.wake-checkbox {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 5px;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 5px;
+}
+
+.wake-checkbox input {
+  accent-color: var(--accent-strong);
+}
+
+.wake-checkbox span {
+  font-size: 11px;
+  line-height: 1;
+}
+
 .arrival-preview-rows {
   display: grid;
   gap: 7px;
@@ -1364,6 +1426,14 @@ textarea {
 
   .free-time-actions {
     grid-template-columns: repeat(3, minmax(84px, 1fr));
+  }
+
+  .wake-control-table {
+    overflow-x: auto;
+  }
+
+  .wake-control-row {
+    min-width: 520px;
   }
 
   .main {

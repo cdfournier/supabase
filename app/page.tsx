@@ -356,6 +356,35 @@ type OperatorNoteWakeStatus = {
   recent_events: OperatorNoteWakeEvent[];
 };
 
+type WakeControlAgentId = "all" | "agent:soren" | "agent:varro" | "agent:julian" | "agent:cael";
+type WakeControlTrigger = "cafe" | "operator_note" | "work_packet_signal";
+
+type WakeMentionPolicy = {
+  enabled?: boolean;
+  names?: string[];
+  aliases?: string[];
+};
+
+type WakeTriggerPolicy = {
+  enabled?: boolean;
+  mentions?: WakeMentionPolicy;
+};
+
+type WakeAgentPolicy = {
+  enabled?: boolean;
+  triggers?: Partial<Record<WakeControlTrigger, WakeTriggerPolicy>>;
+};
+
+type WakeControlPolicy = {
+  all?: WakeAgentPolicy;
+  agents?: Partial<Record<Exclude<WakeControlAgentId, "all">, WakeAgentPolicy>>;
+};
+
+type WakeControlPolicyResponse = {
+  error?: string;
+  policy: WakeControlPolicy | null;
+};
+
 type WorkPacketRollup = {
   summary?: string;
   reviewed_by?: string[];
@@ -457,6 +486,18 @@ const collapsedControlPanels: ControlPanelState = {
   freeMoments: false,
   packetSignals: false
 };
+const wakeControlAgents: Array<{ id: WakeControlAgentId; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "agent:soren", label: "Soren" },
+  { id: "agent:varro", label: "Varro" },
+  { id: "agent:julian", label: "Julian" },
+  { id: "agent:cael", label: "Cael" }
+];
+const wakeControlTriggers: Array<{ id: WakeControlTrigger; label: string }> = [
+  { id: "cafe", label: "Cafe" },
+  { id: "operator_note", label: "Notes" },
+  { id: "work_packet_signal", label: "Packets" }
+];
 
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -484,6 +525,10 @@ export default function Home() {
   const [operatorNoteWakesLoading, setOperatorNoteWakesLoading] = useState(true);
   const [operatorNoteWakesRequestInProgress, setOperatorNoteWakesRequestInProgress] = useState(false);
   const [operatorNoteWakesError, setOperatorNoteWakesError] = useState("");
+  const [wakeControlPolicy, setWakeControlPolicy] = useState<WakeControlPolicy | null>(null);
+  const [wakeControlPolicyLoading, setWakeControlPolicyLoading] = useState(true);
+  const [wakeControlPolicySaving, setWakeControlPolicySaving] = useState(false);
+  const [wakeControlPolicyError, setWakeControlPolicyError] = useState("");
   const [operatorInboxPackets, setOperatorInboxPackets] = useState<WorkPacket[]>([]);
   const [operatorInboxOperatorNotes, setOperatorInboxOperatorNotes] = useState<OperatorNote[]>([]);
   const [operatorInboxLoading, setOperatorInboxLoading] = useState(true);
@@ -631,6 +676,30 @@ export default function Home() {
       );
     } finally {
       setOperatorNoteWakesLoading(false);
+    }
+  }, []);
+
+  const loadWakeControlPolicy = useCallback(async () => {
+    setWakeControlPolicyLoading(true);
+
+    try {
+      const response = await fetch("/api/wake-control-policy");
+      const data = await readJsonResponse<WakeControlPolicyResponse>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load WAKE Control Policy.");
+      }
+
+      setWakeControlPolicy(data.policy);
+      setWakeControlPolicyError("");
+    } catch (statusError) {
+      setWakeControlPolicyError(
+        statusError instanceof Error
+          ? statusError.message
+          : "Could not load WAKE Control Policy."
+      );
+    } finally {
+      setWakeControlPolicyLoading(false);
     }
   }, []);
 
@@ -926,6 +995,10 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    void loadWakeControlPolicy();
+  }, [loadWakeControlPolicy]);
+
+  useEffect(() => {
     transcriptRef.current?.scrollTo({
       top: 0,
       behavior: "smooth"
@@ -1211,6 +1284,57 @@ export default function Home() {
       setOperatorNoteWakesRequestInProgress(false);
       setOperatorNoteWakesLoading(false);
     }
+  }
+
+  async function saveWakeControlPolicy(nextPolicy: WakeControlPolicy | null) {
+    if (wakeControlPolicySaving) {
+      return;
+    }
+
+    setWakeControlPolicySaving(true);
+    setWakeControlPolicyError("");
+
+    try {
+      const response = await fetch("/api/wake-control-policy", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ policy: nextPolicy })
+      });
+      const data = await readJsonResponse<WakeControlPolicyResponse>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "WAKE Control Policy request failed.");
+      }
+
+      setWakeControlPolicy(data.policy);
+    } catch (actionError) {
+      setWakeControlPolicyError(
+        actionError instanceof Error
+          ? actionError.message
+          : "WAKE Control Policy request failed."
+      );
+    } finally {
+      setWakeControlPolicySaving(false);
+      setWakeControlPolicyLoading(false);
+    }
+  }
+
+  function updateWakeControlPolicy(updater: (policy: WakeControlPolicy) => WakeControlPolicy) {
+    void saveWakeControlPolicy(updater(cloneWakeControlPolicy(wakeControlPolicy)));
+  }
+
+  function toggleWakeAgent(scopeId: WakeControlAgentId, enabled: boolean) {
+    updateWakeControlPolicy((policy) => setWakeAgentEnabled(policy, scopeId, enabled));
+  }
+
+  function toggleWakeTrigger(scopeId: WakeControlAgentId, trigger: WakeControlTrigger, enabled: boolean) {
+    updateWakeControlPolicy((policy) => setWakeTriggerEnabled(policy, scopeId, trigger, enabled));
+  }
+
+  function toggleWakeMention(scopeId: WakeControlAgentId, trigger: WakeControlTrigger, enabled: boolean) {
+    updateWakeControlPolicy((policy) => setWakeMentionEnabled(policy, scopeId, trigger, enabled));
   }
 
   async function previewWorkPacketSignals() {
@@ -1769,9 +1893,17 @@ export default function Home() {
           noteWakeRequestInProgress={operatorNoteWakesRequestInProgress}
           noteWakeStatus={operatorNoteWakes}
           onAction={runWorkPacketSignalsAction}
+          onPolicyRefresh={loadWakeControlPolicy}
+          onPolicyToggleAgent={toggleWakeAgent}
+          onPolicyToggleMention={toggleWakeMention}
+          onPolicyToggleTrigger={toggleWakeTrigger}
           onNoteWakeAction={runOperatorNoteWakesAction}
           onPreview={previewWorkPacketSignals}
           onToggle={() => toggleControlPanel("packetSignals")}
+          policy={wakeControlPolicy}
+          policyError={wakeControlPolicyError}
+          policyLoading={wakeControlPolicyLoading}
+          policySaving={wakeControlPolicySaving}
           preview={workPacketSignalPreview}
           requestInProgress={workPacketSignalsRequestInProgress}
           selectedAgent={selectedAgent}
@@ -2911,8 +3043,16 @@ function WorkPacketSignalsPanel({
   noteWakeStatus,
   onAction,
   onNoteWakeAction,
+  onPolicyRefresh,
+  onPolicyToggleAgent,
+  onPolicyToggleMention,
+  onPolicyToggleTrigger,
   onPreview,
   onToggle,
+  policy,
+  policyError,
+  policyLoading,
+  policySaving,
   preview,
   requestInProgress,
   selectedAgent,
@@ -2927,8 +3067,16 @@ function WorkPacketSignalsPanel({
   noteWakeStatus: OperatorNoteWakeStatus | null;
   onAction: (action: "start" | "stop" | "start_wakes" | "stop_wakes" | "tick") => void;
   onNoteWakeAction: (action: "start" | "stop" | "check") => void;
+  onPolicyRefresh: () => void;
+  onPolicyToggleAgent: (scopeId: WakeControlAgentId, enabled: boolean) => void;
+  onPolicyToggleMention: (scopeId: WakeControlAgentId, trigger: WakeControlTrigger, enabled: boolean) => void;
+  onPolicyToggleTrigger: (scopeId: WakeControlAgentId, trigger: WakeControlTrigger, enabled: boolean) => void;
   onPreview: () => void;
   onToggle: () => void;
+  policy: WakeControlPolicy | null;
+  policyError: string;
+  policyLoading: boolean;
+  policySaving: boolean;
   preview: WorkPacketSignalPreview | null;
   requestInProgress: boolean;
   selectedAgent: AgentName;
@@ -3134,6 +3282,17 @@ function WorkPacketSignalsPanel({
 
             {noteWakeError ? <p className="health-error">{noteWakeError}</p> : null}
 
+            <WakeControlPolicyPanel
+              error={policyError}
+              loading={policyLoading}
+              onRefresh={onPolicyRefresh}
+              onToggleAgent={onPolicyToggleAgent}
+              onToggleMention={onPolicyToggleMention}
+              onToggleTrigger={onPolicyToggleTrigger}
+              policy={policy}
+              saving={policySaving}
+            />
+
             {noteWakeEvents.length > 0 ? (
               <ol>
                 {noteWakeEvents.slice(-5).map((event) => (
@@ -3214,6 +3373,213 @@ function WorkPacketSignalsPanel({
         {error ? <p className="health-error">{error}</p> : null}
       </div>
     </section>
+  );
+}
+
+function cloneWakeControlPolicy(policy: WakeControlPolicy | null): WakeControlPolicy {
+  return JSON.parse(JSON.stringify(policy ?? {})) as WakeControlPolicy;
+}
+
+function wakeAgentEnabled(policy: WakeControlPolicy | null, scopeId: WakeControlAgentId) {
+  return wakeScopePolicy(policy, scopeId)?.enabled !== false;
+}
+
+function wakeTriggerEnabled(
+  policy: WakeControlPolicy | null,
+  scopeId: WakeControlAgentId,
+  trigger: WakeControlTrigger
+) {
+  return wakeScopePolicy(policy, scopeId)?.triggers?.[trigger]?.enabled !== false;
+}
+
+function wakeMentionEnabled(
+  policy: WakeControlPolicy | null,
+  scopeId: WakeControlAgentId,
+  trigger: WakeControlTrigger
+) {
+  return wakeScopePolicy(policy, scopeId)?.triggers?.[trigger]?.mentions?.enabled === true;
+}
+
+function setWakeAgentEnabled(
+  policy: WakeControlPolicy,
+  scopeId: WakeControlAgentId,
+  enabled: boolean
+) {
+  wakeMutableScopePolicy(policy, scopeId).enabled = enabled;
+
+  return policy;
+}
+
+function setWakeTriggerEnabled(
+  policy: WakeControlPolicy,
+  scopeId: WakeControlAgentId,
+  trigger: WakeControlTrigger,
+  enabled: boolean
+) {
+  wakeMutableTriggerPolicy(policy, scopeId, trigger).enabled = enabled;
+
+  return policy;
+}
+
+function setWakeMentionEnabled(
+  policy: WakeControlPolicy,
+  scopeId: WakeControlAgentId,
+  trigger: WakeControlTrigger,
+  enabled: boolean
+) {
+  const triggerPolicy = wakeMutableTriggerPolicy(policy, scopeId, trigger);
+  triggerPolicy.mentions = {
+    ...(triggerPolicy.mentions ?? {}),
+    enabled,
+    names: wakeMentionNamesForScope(scopeId)
+  };
+
+  return policy;
+}
+
+function wakeScopePolicy(policy: WakeControlPolicy | null, scopeId: WakeControlAgentId) {
+  if (scopeId === "all") {
+    return policy?.all;
+  }
+
+  return policy?.agents?.[scopeId];
+}
+
+function wakeMutableScopePolicy(policy: WakeControlPolicy, scopeId: WakeControlAgentId): WakeAgentPolicy {
+  if (scopeId === "all") {
+    policy.all = policy.all ?? {};
+    return policy.all;
+  }
+
+  policy.agents = policy.agents ?? {};
+  policy.agents[scopeId] = policy.agents[scopeId] ?? {};
+
+  return policy.agents[scopeId];
+}
+
+function wakeMutableTriggerPolicy(
+  policy: WakeControlPolicy,
+  scopeId: WakeControlAgentId,
+  trigger: WakeControlTrigger
+): WakeTriggerPolicy {
+  const scopePolicy = wakeMutableScopePolicy(policy, scopeId);
+  scopePolicy.triggers = scopePolicy.triggers ?? {};
+  scopePolicy.triggers[trigger] = scopePolicy.triggers[trigger] ?? {};
+
+  return scopePolicy.triggers[trigger];
+}
+
+function wakeMentionNamesForScope(scopeId: WakeControlAgentId) {
+  if (scopeId === "all") {
+    return ["Soren", "Varro", "Julian", "Cael"];
+  }
+
+  return [scopeId.replace(/^agent:/, "").replace(/^\w/, (match) => match.toUpperCase())];
+}
+
+function WakeControlPolicyPanel({
+  error,
+  loading,
+  onRefresh,
+  onToggleAgent,
+  onToggleMention,
+  onToggleTrigger,
+  policy,
+  saving
+}: {
+  error: string;
+  loading: boolean;
+  onRefresh: () => void;
+  onToggleAgent: (scopeId: WakeControlAgentId, enabled: boolean) => void;
+  onToggleMention: (scopeId: WakeControlAgentId, trigger: WakeControlTrigger, enabled: boolean) => void;
+  onToggleTrigger: (scopeId: WakeControlAgentId, trigger: WakeControlTrigger, enabled: boolean) => void;
+  policy: WakeControlPolicy | null;
+  saving: boolean;
+}) {
+  const disabled = loading || saving;
+
+  return (
+    <div className="wake-control-panel">
+      <div className="pressure-row">
+        <span>WAKE Control Policy</span>
+        <strong>{saving ? "saving" : loading ? "loading" : policy ? "custom" : "default"}</strong>
+      </div>
+
+      <div className="wake-control-actions">
+        <button
+          className="quiet-action"
+          disabled={disabled}
+          onClick={onRefresh}
+          type="button"
+        >
+          Refresh Policy
+        </button>
+      </div>
+
+      <div className="wake-control-table" role="table" aria-label="WAKE Control Policy">
+        <div className="wake-control-row wake-control-head" role="row">
+          <span role="columnheader">Scope</span>
+          <span role="columnheader">WAKE</span>
+          {wakeControlTriggers.map((trigger) => (
+            <span key={trigger.id} role="columnheader">{trigger.label}</span>
+          ))}
+          <span role="columnheader">Cafe mentions</span>
+        </div>
+
+        {wakeControlAgents.map((agent) => (
+          <div className="wake-control-row" key={agent.id} role="row">
+            <strong role="cell">{agent.label}</strong>
+            <WakeCheckbox
+              checked={wakeAgentEnabled(policy, agent.id)}
+              disabled={disabled}
+              label={`${agent.label} WAKE`}
+              onChange={(checked) => onToggleAgent(agent.id, checked)}
+            />
+            {wakeControlTriggers.map((trigger) => (
+              <WakeCheckbox
+                checked={wakeTriggerEnabled(policy, agent.id, trigger.id)}
+                disabled={disabled}
+                key={trigger.id}
+                label={`${agent.label} ${trigger.label}`}
+                onChange={(checked) => onToggleTrigger(agent.id, trigger.id, checked)}
+              />
+            ))}
+            <WakeCheckbox
+              checked={wakeMentionEnabled(policy, agent.id, "cafe")}
+              disabled={disabled}
+              label={`${agent.label} Cafe mentions`}
+              onChange={(checked) => onToggleMention(agent.id, "cafe", checked)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {error ? <p className="health-error">{error}</p> : null}
+    </div>
+  );
+}
+
+function WakeCheckbox({
+  checked,
+  disabled,
+  label,
+  onChange
+}: {
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="wake-checkbox" role="cell" title={label}>
+      <input
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.currentTarget.checked)}
+        type="checkbox"
+      />
+      <span>{checked ? "on" : "off"}</span>
+    </label>
   );
 }
 
