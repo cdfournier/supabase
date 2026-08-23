@@ -3,10 +3,12 @@ import "server-only";
 import { type AgentName } from "@/lib/agent-context";
 import {
   readOperatorNoteWakesEnabled,
+  readWakeControlPolicy,
   writeOperatorNoteWakesEnabled
 } from "@/lib/runtime-settings";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
+  decideWakeFromControlPolicy,
   WAKE_RECEIPT_REDISPATCH_BLOCKING_STATUSES,
   wakePriorityForOperatorNote,
   wakeToneForOperatorNote
@@ -262,6 +264,10 @@ async function dispatchCandidate(candidate: OperatorNoteWakeCandidate) {
   const agent = candidate.note.agent as AgentName;
   const participantId = `agent:${agent}`;
 
+  if (!(await shouldWakeCandidateByControlPolicy(agent, candidate))) {
+    return;
+  }
+
   if (state.nativeWakesInProgress.has(agent) || isNativeWakeCoolingDown(agent)) {
     return;
   }
@@ -271,6 +277,27 @@ async function dispatchCandidate(candidate: OperatorNoteWakeCandidate) {
   }
 
   await dispatchNativeWake(agent, candidate);
+}
+
+async function shouldWakeCandidateByControlPolicy(agent: AgentName, candidate: OperatorNoteWakeCandidate) {
+  const policy = await readWakeControlPolicy();
+  const decision = decideWakeFromControlPolicy({
+    policy,
+    agentId: `agent:${agent}`,
+    trigger: "operator_note",
+    content: [candidate.note.subject, candidate.event.content].filter(Boolean).join("\n")
+  });
+
+  if (!decision.shouldWake) {
+    addEvent(
+      "wake_skipped",
+      `WAKE Control Policy skipped Operator Note WAKE for ${agent}: ${decision.reason}.`,
+      agent,
+      candidate.note.id
+    );
+  }
+
+  return decision.shouldWake;
 }
 
 async function dispatchNativeWake(agent: AgentName, candidate: OperatorNoteWakeCandidate) {

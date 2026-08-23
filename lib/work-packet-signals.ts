@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  readWakeControlPolicy,
   readWorkPacketSignalWakesEnabled,
   readWorkPacketSignalsEnabled,
   readWorkPacketSignalsSettings,
@@ -10,8 +11,10 @@ import {
 import { type AgentName } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
+  decideWakeFromControlPolicy,
   shouldDispatchNativePacketSignalWake,
   WAKE_RECEIPT_REDISPATCH_BLOCKING_STATUSES,
+  type WakeControlPolicy,
   wakeToneForWorkPacketSignal,
   type WakeTone
 } from "@/lib/wake-policy";
@@ -585,6 +588,7 @@ async function wakeNativeAgentsFromPendingSignals() {
   }
 
   state.autoWakeEnabled = true;
+  const wakeControlPolicy = await readWakeControlPolicy();
 
   for (const agent of NATIVE_AGENTS) {
     if (state.nativeWakesInProgress.has(agent) || isNativeWakeCoolingDown(agent)) {
@@ -593,7 +597,7 @@ async function wakeNativeAgentsFromPendingSignals() {
 
     const participantId = `agent:${agent}`;
     const candidateSignals = state.recentEvents
-      .filter((event) => shouldAutoWakeForSignal(event, participantId))
+      .filter((event) => shouldAutoWakeForSignal(event, participantId, wakeControlPolicy))
       .slice(0, 5);
     const signals = await filterSignalsWithoutDurableReceipt(participantId, candidateSignals);
 
@@ -651,7 +655,11 @@ async function dispatchNativeWake(agent: AgentName, signals: SignalEvent[]) {
   }
 }
 
-function shouldAutoWakeForSignal(event: SignalEvent, participantId: string) {
+function shouldAutoWakeForSignal(
+  event: SignalEvent,
+  participantId: string,
+  wakeControlPolicy: WakeControlPolicy | null
+) {
   if (event.type !== "signal_detected" || !event.target_ids.includes(participantId)) {
     return false;
   }
@@ -664,7 +672,16 @@ function shouldAutoWakeForSignal(event: SignalEvent, participantId: string) {
     return false;
   }
 
-  return shouldDispatchNativePacketSignalWake(event.wake_priority);
+  if (!shouldDispatchNativePacketSignalWake(event.wake_priority)) {
+    return false;
+  }
+
+  return decideWakeFromControlPolicy({
+    policy: wakeControlPolicy,
+    agentId: participantId,
+    trigger: "work_packet_signal",
+    content: [event.packet_title, event.message].filter(Boolean).join("\n")
+  }).shouldWake;
 }
 
 async function filterSignalsWithoutDurableReceipt(participantId: string, signals: SignalEvent[]) {

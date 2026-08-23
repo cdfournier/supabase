@@ -8,16 +8,19 @@ export type WakeTone =
   | "curiosity"
   | "maintenance";
 
-export type WakeControlTrigger =
-  | "cafe"
-  | "operator_note"
-  | "work_packet_signal"
-  | "peer_note"
-  | "outpost"
-  | "housekeeping"
-  | "eyes"
-  | "wheels"
-  | "bar";
+export const WAKE_CONTROL_TRIGGERS = [
+  "cafe",
+  "operator_note",
+  "work_packet_signal",
+  "peer_note",
+  "outpost",
+  "housekeeping",
+  "eyes",
+  "wheels",
+  "bar"
+] as const;
+
+export type WakeControlTrigger = typeof WAKE_CONTROL_TRIGGERS[number];
 
 export type WakeControlSwitch = {
   enabled?: boolean;

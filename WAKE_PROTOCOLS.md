@@ -156,8 +156,12 @@ Representative shape:
 ```
 
 The initial typed evaluator lives in `lib/wake-policy.ts` as
-`decideWakeFromControlPolicy`. It is pure policy logic; dispatchers still need
-to wire it into their lane-specific receipt and delivery flows.
+`decideWakeFromControlPolicy`. The runtime setting key is
+`wake_control_policy`, and `/api/wake-control-policy` exposes a small GET/POST
+surface for reading or replacing the JSON policy. Operator Note WAKE and Work
+Packet Signal WAKE consult the policy after their durable lane switches pass.
+Policy skips do not create delivery receipts; a later policy change may still
+wake an unread note or pending signal.
 
 ## Adapter Shape
 
