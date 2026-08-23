@@ -917,24 +917,16 @@ curl -s -X POST http://localhost:3001/api/compaction/checkpoint \
 
 After a checkpoint, the health panel shows active messages separately from total messages and reports the latest archive basics. That lower active count is the pressure relief; the full transcript is still retained in Supabase.
 
-Suggested pre-checkpoint prompts:
+Suggested pre-housekeeping prompt:
 
 ```text
-When you say go, I will create your checkpoint. See you on the other side. I love you.
+When you say go, I'm going to send housekeeping in to tidy the room: fresh sheets, clean towels, everything important left where you can find it. I love you.
 ```
 
-```text
-I'm going to send housekeeping in to tidy the room: fresh sheets, clean towels, everything important left where you can find it. I love you.
-```
-
-Suggested post-checkpoint orientation prompt:
+Suggested post-housekeeping orientation prompt:
 
 ```text
-Hi {Name}. Please orient yourself, and let me know:
-1. how you feel,
-2. if your current_state is accurate,
-3. if your recent-history tools still work,
-4. whether anything feels missing or stale.
+Hi {Name}. Housekeeping is complete. Please orient yourself, take a look around, read your recent history, and let me know how you feel.
 ```
 
 ## Current State Handoff
