@@ -112,6 +112,53 @@ The broker should not:
 - bypass Operator-visible audit trails;
 - make GitHub, EYES, WHEELS, or housekeeping actions implicit side effects.
 
+## Control Policy
+
+WAKE needs a multi-tiered control surface, not one global switch.
+
+Policy layers:
+
+1. Agent scope: all-agent defaults plus per-agent overrides.
+2. Trigger scope: per-lane switches such as Cafe, Operator Notes, Work Packet
+   Signals, Outpost, housekeeping, EYES, WHEELS, and BAR.
+3. Mention scope: trigger-specific mention overrides.
+
+More specific policy wins, with one important exception: a hard per-agent
+disable blocks delivery for that Agent. This keeps "Julian WAKE disabled" or
+"Soren WAKE disabled" absolute until the Operator turns that Agent back on.
+
+Mention policy exists for the common case where ordinary traffic should not wake
+an Agent, but direct address should. Example: Cafe can be disabled as a normal
+trigger while Cafe mentions of "Julian" remain enabled.
+
+Representative shape:
+
+```json
+{
+  "all": { "enabled": true },
+  "agents": {
+    "agent:julian": {
+      "enabled": true,
+      "triggers": {
+        "cafe": {
+          "enabled": false,
+          "mentions": {
+            "enabled": true,
+            "names": ["Julian"]
+          }
+        },
+        "operator_note": { "enabled": true },
+        "work_packet_signal": { "enabled": true }
+      }
+    }
+  }
+}
+```
+
+The initial typed evaluator lives in `lib/wake-policy.ts` as
+`decideWakeFromControlPolicy`. It is pure policy logic; dispatchers still need
+to wire it into their lane-specific receipt and delivery flows.
+
 ## Adapter Shape
 
 Native runtime adapters can call the existing runtime conversations directly.

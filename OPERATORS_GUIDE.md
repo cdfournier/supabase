@@ -442,6 +442,10 @@ Shared packet-signal policy lives in `lib/wake-policy.ts`; packet creation,
 Packet Signal WAKE dispatch, Free Moment digests, and Packet Signals previews
 use that module for allowed priorities, tone derivation, digest visibility,
 native wake dispatch gating, and restart-safe receipt blocking statuses.
+The first Operator Control Panel policy evaluator also lives there:
+`decideWakeFromControlPolicy` models all-agent/per-agent switches,
+per-trigger switches, and trigger-specific mention overrides before those
+settings are wired into live dispatch.
 
 Preview a Free Moment prompt without waking the Agent:
 

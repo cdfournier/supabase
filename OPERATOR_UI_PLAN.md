@@ -281,6 +281,12 @@ Initial setting groups:
 - Prompt templates for chat, Free Moments, Packet Signals, Operator Notes, Room
   Review, Room Note compilation, Room Refresh orientation, EYES, WHEELS, and BAR
 - Per-agent overrides layered on top of shared defaults
+- WAKE control policy:
+  - all-agent and per-agent WAKE switches
+  - per-trigger switches for Cafe, Operator Notes, Work Packet Signals, Outpost,
+    housekeeping, EYES, WHEELS, and BAR
+  - per-trigger mention switches, so ordinary Cafe traffic can stay quiet while
+    direct Cafe mentions still wake the addressed Agent
 - Scheduler settings and durable enabled/disabled state
 - Change receipts with previous value, new value, author, timestamp, and restart
   requirement
