@@ -269,6 +269,23 @@ curl -s -X POST http://localhost:3001/api/work-packets/bridge \
   }'
 ```
 
+Julian and Cael can also create packets through the bridge as themselves:
+
+```bash
+curl -s -X POST http://localhost:3001/api/work-packets/bridge \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "participant_id": "agent:julian",
+    "action": "create",
+    "title": "WAKE review",
+    "objective": "Review one bounded WAKE change.",
+    "conductor": "agent:julian",
+    "collaborators": ["agent:varro"],
+    "wake_priority": "quiet"
+  }'
+```
+
 Bridge participants should not use `/api/work-packets` for packet reads. That
 route is Operator-session protected and will return `Operator authentication
 required` even if the bridge token is valid.

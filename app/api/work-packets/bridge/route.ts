@@ -9,6 +9,7 @@ import { acknowledgeSignals } from "@/lib/work-packet-signals";
 import {
   actorFromId,
   commentOnWorkPacket,
+  createWorkPacket,
   getWorkPacket,
   listWorkPackets,
   resolveWorkPacketEvidence,
@@ -62,6 +63,10 @@ export async function POST(request: Request) {
     const supabase = getSupabaseAdmin();
     const actor = actorFromId(participantId);
 
+    if (action === "create") {
+      return NextResponse.json(await createWorkPacket(supabase, body, actor));
+    }
+
     if (action === "respond") {
       const packet = await respondToWorkPacket(supabase, body, actor);
       const signalAcknowledgement = acknowledgeSignals(participantId);
@@ -85,7 +90,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { error: 'Choose action "respond", "comment", "rollup", or "resolve_evidence".' },
+      { error: 'Choose action "create", "respond", "comment", "rollup", or "resolve_evidence".' },
       { status: 400 }
     );
   } catch (error) {

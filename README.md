@@ -303,6 +303,15 @@ curl -s -X POST http://localhost:3001/api/work-packets/bridge \
   -d '{"participant_id":"agent:cael","action":"resolve_evidence","id":"packet-id","evidence_id":"handle-id"}'
 ```
 
+Bridge participants may also create packets as themselves:
+
+```bash
+curl -s -X POST http://localhost:3001/api/work-packets/bridge \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"participant_id":"agent:julian","action":"create","title":"WAKE review","objective":"Review one bounded WAKE change.","conductor":"agent:julian","collaborators":["agent:varro"],"wake_priority":"quiet"}'
+```
+
 Soren and Varro use `work_packet_resolve_evidence`.
 
 Supported response states are `accepted`, `passed`, `deferred`, `reviewed`,
