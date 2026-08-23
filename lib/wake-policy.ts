@@ -48,6 +48,7 @@ export type WakePolicyDecision = {
   shouldWake: boolean;
   reason: string;
   matchedMention: string | null;
+  globalEnabled: boolean;
   agentEnabled: boolean;
   triggerEnabled: boolean;
   mentionEnabled: boolean | null;
@@ -127,17 +128,31 @@ export function decideWakeFromControlPolicy(input: WakePolicyDecisionInput): Wak
     allPolicy.triggers?.[input.trigger],
     agentPolicy.triggers?.[input.trigger]
   );
-  const agentEnabled = resolveEnabled(true, allPolicy.enabled, agentPolicy.enabled);
-  const triggerEnabled = resolveEnabled(agentEnabled, triggerPolicy.enabled);
+  const globalEnabled = allPolicy.enabled !== false;
+  const agentEnabled = globalEnabled && resolveEnabled(true, agentPolicy.enabled);
+  const triggerEnabled = agentEnabled && resolveEnabled(true, triggerPolicy.enabled);
   const mentionPolicy = triggerPolicy.mentions ?? {};
   const mentionEnabled = mentionPolicy.enabled;
   const matchedMention = matchWakeMention(input, mentionPolicy);
+
+  if (!globalEnabled) {
+    return {
+      shouldWake: false,
+      reason: "global_disabled",
+      matchedMention,
+      globalEnabled,
+      agentEnabled: false,
+      triggerEnabled: false,
+      mentionEnabled: mentionEnabled ?? null
+    };
+  }
 
   if (!agentEnabled) {
     return {
       shouldWake: false,
       reason: "agent_disabled",
       matchedMention,
+      globalEnabled,
       agentEnabled,
       triggerEnabled: false,
       mentionEnabled: mentionEnabled ?? null
@@ -149,6 +164,7 @@ export function decideWakeFromControlPolicy(input: WakePolicyDecisionInput): Wak
       shouldWake: true,
       reason: "trigger_enabled",
       matchedMention,
+      globalEnabled,
       agentEnabled,
       triggerEnabled,
       mentionEnabled: mentionEnabled ?? null
@@ -160,6 +176,7 @@ export function decideWakeFromControlPolicy(input: WakePolicyDecisionInput): Wak
       shouldWake: true,
       reason: "mention_override",
       matchedMention,
+      globalEnabled,
       agentEnabled,
       triggerEnabled,
       mentionEnabled
@@ -170,6 +187,7 @@ export function decideWakeFromControlPolicy(input: WakePolicyDecisionInput): Wak
     shouldWake: false,
     reason: mentionEnabled === true ? "trigger_disabled_no_mention" : "trigger_disabled",
     matchedMention,
+    globalEnabled,
     agentEnabled,
     triggerEnabled,
     mentionEnabled: mentionEnabled ?? null

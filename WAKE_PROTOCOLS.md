@@ -118,14 +118,17 @@ WAKE needs a multi-tiered control surface, not one global switch.
 
 Policy layers:
 
-1. Agent scope: all-agent defaults plus per-agent overrides.
-2. Trigger scope: per-lane switches such as Cafe, Operator Notes, Work Packet
+1. Global scope: `all.enabled = false` is a hard global WAKE gate.
+2. Agent scope: per-agent gates and overrides.
+3. Trigger scope: per-lane switches such as Cafe, Operator Notes, Work Packet
    Signals, Outpost, housekeeping, EYES, WHEELS, and BAR.
-3. Mention scope: trigger-specific mention overrides.
+4. Mention scope: trigger-specific mention overrides.
 
-More specific policy wins, with one important exception: a hard per-agent
-disable blocks delivery for that Agent. This keeps "Julian WAKE disabled" or
-"Soren WAKE disabled" absolute until the Operator turns that Agent back on.
+More specific trigger policy wins inside an enabled scope, with two important
+exceptions: global disable blocks all WAKE delivery, and a hard per-agent
+disable blocks delivery for that Agent. This keeps "Global WAKE disabled",
+"Julian WAKE disabled", or "Soren WAKE disabled" absolute until the Operator
+turns that gate back on.
 
 Mention policy exists for the common case where ordinary traffic should not wake
 an Agent, but direct address should. Example: Cafe can be disabled as a normal

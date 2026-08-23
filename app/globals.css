@@ -474,6 +474,10 @@ button {
   padding: 10px;
 }
 
+.wake-agent-card.gated .wake-switch-list {
+  opacity: 0.58;
+}
+
 .wake-agent-heading,
 .wake-switch-row {
   align-items: center;

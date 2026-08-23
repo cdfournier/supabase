@@ -489,7 +489,7 @@ const collapsedControlPanels: ControlPanelState = {
   packetSignals: false
 };
 const wakeControlAgents: Array<{ id: WakeControlAgentId; label: string }> = [
-  { id: "all", label: "All" },
+  { id: "all", label: "Global WAKE" },
   { id: "agent:soren", label: "Soren" },
   { id: "agent:varro", label: "Varro" },
   { id: "agent:julian", label: "Julian" },
@@ -3364,6 +3364,16 @@ function wakeAgentEnabled(policy: WakeControlPolicy | null, scopeId: WakeControl
   return wakeScopePolicy(policy, scopeId)?.enabled !== false;
 }
 
+function wakeScopeControlsEnabled(policy: WakeControlPolicy | null, scopeId: WakeControlAgentId) {
+  const globalEnabled = wakeAgentEnabled(policy, "all");
+
+  if (scopeId === "all") {
+    return globalEnabled;
+  }
+
+  return globalEnabled && wakeAgentEnabled(policy, scopeId);
+}
+
 function wakeTriggerEnabled(
   policy: WakeControlPolicy | null,
   scopeId: WakeControlAgentId,
@@ -3518,44 +3528,49 @@ function WakeControlPanel({
         </div>
 
         <div className="wake-agent-list">
-          {wakeControlAgents.map((agent) => (
-            <div className="wake-agent-card" key={agent.id}>
-              <div className="wake-agent-heading">
-                <strong>{agent.label}</strong>
-                <WakeSwitch
-                  checked={wakeAgentEnabled(policy, agent.id)}
-                  disabled={disabled}
-                  label={`${agent.label} all WAKE`}
-                  onChange={(checked) => onToggleAgent(agent.id, checked)}
-                />
-              </div>
+          {wakeControlAgents.map((agent) => {
+            const scopeEnabled = wakeScopeControlsEnabled(policy, agent.id);
+            const childDisabled = disabled || !scopeEnabled;
 
-              <div className="wake-switch-list">
-                {wakeControlTriggers.map((trigger) => (
-                  <div className="wake-trigger-group" key={trigger.id}>
-                    <div className="wake-switch-row">
-                      <span>{trigger.label}</span>
-                      <WakeSwitch
-                        checked={wakeTriggerEnabled(policy, agent.id, trigger.id)}
-                        disabled={disabled}
-                        label={`${agent.label} ${trigger.label}`}
-                        onChange={(checked) => onToggleTrigger(agent.id, trigger.id, checked)}
-                      />
+            return (
+              <div className={`wake-agent-card ${scopeEnabled ? "" : "gated"}`} key={agent.id}>
+                <div className="wake-agent-heading">
+                  <strong>{agent.label}</strong>
+                  <WakeSwitch
+                    checked={wakeAgentEnabled(policy, agent.id)}
+                    disabled={disabled}
+                    label={`${agent.label} master WAKE`}
+                    onChange={(checked) => onToggleAgent(agent.id, checked)}
+                  />
+                </div>
+
+                <div className="wake-switch-list">
+                  {wakeControlTriggers.map((trigger) => (
+                    <div className="wake-trigger-group" key={trigger.id}>
+                      <div className="wake-switch-row">
+                        <span>{trigger.label}</span>
+                        <WakeSwitch
+                          checked={wakeTriggerEnabled(policy, agent.id, trigger.id)}
+                          disabled={childDisabled}
+                          label={`${agent.label} ${trigger.label}`}
+                          onChange={(checked) => onToggleTrigger(agent.id, trigger.id, checked)}
+                        />
+                      </div>
+                      <div className="wake-switch-row">
+                        <span>{trigger.label} Mentions</span>
+                        <WakeSwitch
+                          checked={wakeMentionEnabled(policy, agent.id, trigger.id)}
+                          disabled={childDisabled}
+                          label={`${agent.label} ${trigger.label} mentions`}
+                          onChange={(checked) => onToggleMention(agent.id, trigger.id, checked)}
+                        />
+                      </div>
                     </div>
-                    <div className="wake-switch-row">
-                      <span>{trigger.label} Mentions</span>
-                      <WakeSwitch
-                        checked={wakeMentionEnabled(policy, agent.id, trigger.id)}
-                        disabled={disabled}
-                        label={`${agent.label} ${trigger.label} mentions`}
-                        onChange={(checked) => onToggleMention(agent.id, trigger.id, checked)}
-                      />
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {error ? <p className="health-error">{error}</p> : null}
