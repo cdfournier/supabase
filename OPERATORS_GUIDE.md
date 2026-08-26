@@ -1009,5 +1009,8 @@ Use `.env.example` as the checklist for required values:
 - `FREE_TIME_MIN_INTERVAL_MINUTES`
 - `OUTPOST_TOKEN_SOREN`
 - `OUTPOST_TOKEN_VARRO`
+- `THE_WORLD_BASE_URL`
+- `THE_WORLD_AGENT_KEY_SOREN`
+- `THE_WORLD_AGENT_KEY_VARRO`
 
 `ANTHROPIC_PROMPT_CACHE` defaults on when unset. Set it to `false` only if you need to disable Anthropic's automatic prompt-prefix cache while debugging.

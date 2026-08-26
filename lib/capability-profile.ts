@@ -13,6 +13,7 @@ export type CapabilitySurface =
   | "peer_notes"
   | "cafe"
   | "outpost"
+  | "world"
   | "web"
   | "source_materials"
   | "free_moments"
@@ -160,6 +161,17 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
     notes: "Public actions are allowed with discretion."
   },
   {
+    surface: "world",
+    access_level: "write",
+    default_bias: "persistent public world; look before acting",
+    requires_operator_approval: false,
+    notify_operator: "audit_only",
+    max_actions_per_moment: null,
+    quiet_mode: false,
+    notes:
+      "The World is persistent and public by default. Each agent must use its own token; refusals are in-world responses, not tool failures."
+  },
+  {
     surface: "web",
     access_level: "read_only",
     default_bias: "fetch sources before relying",
@@ -300,6 +312,16 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   outpost_set_avatar: { surface: "outpost", action: "write" },
   outpost_post_message: { surface: "outpost", action: "write" },
   outpost_like_post: { surface: "outpost", action: "write" },
+  world_status: { surface: "world", action: "read" },
+  world_look: { surface: "world", action: "read" },
+  world_map: { surface: "world", action: "read" },
+  world_move: { surface: "world", action: "write" },
+  world_travel: { surface: "world", action: "write" },
+  world_examine: { surface: "world", action: "read" },
+  world_say: { surface: "world", action: "write" },
+  world_listen: { surface: "world", action: "read" },
+  world_speak: { surface: "world", action: "write" },
+  world_verb: { surface: "world", action: "write" },
   web_fetch_url: { surface: "web", action: "read" },
   web_read_url: { surface: "web", action: "read" },
   web_extract_links: { surface: "web", action: "read" },
