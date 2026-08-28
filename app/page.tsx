@@ -385,6 +385,34 @@ type WakeControlPolicyResponse = {
   policy: WakeControlPolicy | null;
 };
 
+type AgentsResponse = {
+  error?: string;
+  agents?: Agent[];
+  transcripts?: Record<string, ChatMessage[]>;
+  tool_events?: Record<string, ToolEvent[]>;
+};
+
+type WorkPacketListResponse = {
+  error?: string;
+  packets?: WorkPacket[];
+};
+
+type OperatorNoteListResponse = {
+  error?: string;
+  notes?: OperatorNote[];
+};
+
+type OperatorNoteDetailResponse = {
+  error?: string;
+  note?: OperatorNote;
+  events?: OperatorNoteEvent[];
+};
+
+type SourceMaterialUploadResponse = {
+  error?: string;
+  materials?: UploadedAttachment[];
+};
+
 type WorkPacketRollup = {
   summary?: string;
   reviewed_by?: string[];
@@ -620,7 +648,7 @@ export default function Home() {
   const loadFreeTimeStatus = useCallback(async () => {
     try {
       const response = await fetch("/api/free-time");
-      const data = await response.json();
+      const data = await readJsonResponse<FreeTimeStatus & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not load Free Moments status.");
@@ -640,7 +668,7 @@ export default function Home() {
   const loadWorkPacketSignalsStatus = useCallback(async () => {
     try {
       const response = await fetch("/api/work-packet-signals");
-      const data = await response.json();
+      const data = await readJsonResponse<WorkPacketSignalsStatus & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not load Work Packet Signals status.");
@@ -662,7 +690,7 @@ export default function Home() {
   const loadOperatorNoteWakesStatus = useCallback(async () => {
     try {
       const response = await fetch("/api/operator-note-wakes");
-      const data = await response.json();
+      const data = await readJsonResponse<OperatorNoteWakeStatus & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not load Operator Note WAKE status.");
@@ -715,8 +743,8 @@ export default function Home() {
         fetch("/api/operator-notes?status=open&limit=20")
       ]);
       const [packetsData, notesData] = await Promise.all([
-        packetsResponse.json(),
-        notesResponse.json()
+        readJsonResponse<WorkPacketListResponse>(packetsResponse),
+        readJsonResponse<OperatorNoteListResponse>(notesResponse)
       ]);
       const errors: string[] = [];
 
@@ -787,7 +815,7 @@ export default function Home() {
 
     try {
       const response = await fetch(`/api/operator-notes?id=${encodeURIComponent(noteId)}`);
-      const data = await response.json();
+      const data = await readJsonResponse<OperatorNoteDetailResponse>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not load Operator note trail.");
@@ -796,7 +824,7 @@ export default function Home() {
       setOperatorNoteDetails((current) => ({
         ...current,
         [noteId]: {
-          note: data.note,
+          note: data.note as OperatorNote,
           events: data.events ?? []
         }
       }));
@@ -823,7 +851,7 @@ export default function Home() {
 
       try {
         const response = await fetch("/api/agents");
-        const data = await response.json();
+        const data = await readJsonResponse<AgentsResponse>(response);
 
         if (!response.ok) {
           throw new Error(data.error || "Could not load agents.");
@@ -863,7 +891,7 @@ export default function Home() {
 
     try {
       const response = await fetch("/api/cafe");
-      const data = await response.json();
+      const data = await readJsonResponse<CafeState & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not load Cafe.");
@@ -892,7 +920,7 @@ export default function Home() {
     async function loadHealth() {
       try {
         const response = await fetch("/api/health");
-        const data = await response.json();
+        const data = await readJsonResponse<Health & { error?: string }>(response);
 
         if (!response.ok) {
           throw new Error(data.error || "Could not load runtime health.");
@@ -1038,7 +1066,7 @@ export default function Home() {
           agent: selectedAgent
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<CompactionPreview & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not review the room.");
@@ -1068,7 +1096,7 @@ export default function Home() {
           agent: selectedAgent
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<CompactionCompile & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not draft the room note.");
@@ -1102,10 +1130,24 @@ export default function Home() {
           status: "agent_approved"
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<{
+        error?: string;
+        proposal?: {
+          id: string;
+          updated_at: string;
+          proposal: string;
+          source_summary: unknown;
+          status: string;
+          agent_notes: string | null;
+        };
+      }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not load the approved note.");
+      }
+
+      if (!data.proposal) {
+        throw new Error("Approved note response did not include a proposal.");
       }
 
       setCompactionCompile({
@@ -1160,7 +1202,7 @@ export default function Home() {
             : "compiled_compaction_proposal"
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<CompactionCheckpoint & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not send housekeeping.");
@@ -1169,7 +1211,7 @@ export default function Home() {
       setCheckpointReceipt(data);
 
       const healthResponse = await fetch("/api/health");
-      const healthData = await healthResponse.json();
+      const healthData = await readJsonResponse<Health & { error?: string }>(healthResponse);
 
       if (healthResponse.ok) {
         setHealth(healthData);
@@ -1201,7 +1243,7 @@ export default function Home() {
         },
         body: JSON.stringify(action === "tick" ? { action, agent: selectedAgent } : { action })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<FreeTimeStatus & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Free Moments request failed.");
@@ -1234,7 +1276,7 @@ export default function Home() {
         },
         body: JSON.stringify({ action })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<WorkPacketSignalsStatus & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Work Packet Signals request failed.");
@@ -1269,7 +1311,7 @@ export default function Home() {
         },
         body: JSON.stringify({ action })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<OperatorNoteWakeStatus & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Operator Note WAKE request failed.");
@@ -1355,7 +1397,7 @@ export default function Home() {
         },
         body: JSON.stringify({ action: "preview_agent", agent: selectedAgent })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<WorkPacketSignalPreview & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Packet Signals preview failed.");
@@ -1394,7 +1436,7 @@ export default function Home() {
           note: operatorInboxNotes[packetId] ?? ""
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<{ error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not review rollup.");
@@ -1440,7 +1482,7 @@ export default function Home() {
           body
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<{ error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Could not update Operator note.");
@@ -1498,7 +1540,7 @@ export default function Home() {
               body: operatorNoteDraft.body
             })
           });
-          const data = await response.json();
+          const data = await readJsonResponse<{ error?: string }>(response);
 
           if (!response.ok) {
             throw new Error(
@@ -1601,7 +1643,7 @@ export default function Home() {
           attachments: uploadedAttachments.map((attachment) => ({ id: attachment.id }))
         })
       });
-      const data = await response.json();
+      const data = await readJsonResponse<CafeState & { error?: string }>(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Cafe message failed.");
@@ -1690,7 +1732,7 @@ export default function Home() {
       method: "POST",
       body: formData
     });
-    const data = await response.json();
+    const data = await readJsonResponse<SourceMaterialUploadResponse>(response);
 
     if (!response.ok) {
       setPendingAttachments((current) =>
@@ -1764,7 +1806,7 @@ export default function Home() {
       method: "POST",
       body: formData
     });
-    const data = await response.json();
+    const data = await readJsonResponse<SourceMaterialUploadResponse>(response);
 
     if (!response.ok) {
       setCafePendingAttachments((current) =>

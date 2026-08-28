@@ -710,6 +710,14 @@ the same status plus that bridge participant's packet-signal inbox and unread
 Operator Note count behind the Cafe bridge token. It is an external-agent
 polling lane, not an autonomous wake dispatcher.
 
+WAKE Control Policy changes are live on the next WAKE evaluation and do not
+require a server restart. Cadence-bound lanes still notice work on their next
+scheduled or manual check; use Check Now or Check Notes when the Operator wants
+to pull sooner. Current native dispatch coverage is Operator Notes and Work
+Packet Signals for Soren and Varro. Julian/Cael external delivery remains a
+restoration-first adapter gap, and current-window Codex wake injection is not
+implemented.
+
 ## Agent Capability Profile
 
 Run `sql/2026-07-07-agent-capabilities.sql` before relying on database-backed

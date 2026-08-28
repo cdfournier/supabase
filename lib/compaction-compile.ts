@@ -179,7 +179,7 @@ async function compileWithAnthropic({
       ]
     })
   });
-  const data = (await response.json()) as AnthropicResponse;
+  const data = await readAnthropicResponse(response);
 
   if (!response.ok) {
     const errorMessage =
@@ -210,6 +210,29 @@ async function compileWithAnthropic({
   validateProposalComplete(proposal, data.stop_reason, maxTokens);
 
   return proposal;
+}
+
+async function readAnthropicResponse(response: Response): Promise<AnthropicResponse> {
+  const contentType = response.headers.get("content-type") ?? "";
+  const body = await response.text();
+
+  if (!contentType.includes("application/json")) {
+    const compactBody = body.replace(/\s+/g, " ").trim();
+    const looksLikeHtml = compactBody.startsWith("<!DOCTYPE") || compactBody.startsWith("<html");
+    const bodyPreview = looksLikeHtml ? "HTML error page" : compactBody.slice(0, 180);
+
+    return {
+      message: `Anthropic returned ${contentType || "a non-JSON response"} (${response.status}): ${bodyPreview}`
+    };
+  }
+
+  try {
+    return JSON.parse(body) as AnthropicResponse;
+  } catch {
+    return {
+      message: `Anthropic returned invalid JSON (${response.status}).`
+    };
+  }
 }
 
 function extractText(data: AnthropicResponse) {

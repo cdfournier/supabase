@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:wake": "node --experimental-strip-types --test tests/wake-policy.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

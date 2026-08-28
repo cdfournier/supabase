@@ -288,7 +288,26 @@ V0 is intentionally local and narrow:
 - `/api/wake-arrivals` is read-only broker groundwork, not a control plane.
 - `/api/wake-arrivals/bridge` is a token-authenticated polling lane for Julian
   and Cael. It does not dispatch native wakes.
+- WAKE Control Policy is live at evaluation time. Policy changes do not require
+  a server restart, but cadence-bound lanes still notice work on their next
+  check unless the Operator runs a manual check action.
+- Global and per-agent master gates are hard stops. Mention overrides can wake
+  through a disabled trigger only while the global and recipient agent gates
+  remain enabled.
+- Operator UI requests should translate non-JSON responses into readable
+  runtime/proxy/provider errors instead of exposing raw HTML parse failures.
 
 The next meaningful step is to make bridge delivery use the same arrival
 contract without giving runtime agents direct repository, shell, or production
 authority.
+
+Known remaining gaps:
+
+- The Codex-local launcher can queue a handoff only into an explicit existing
+  task. Automatic current-window discovery or in-place wake injection is not
+  implemented.
+- Julian/Cael external WAKE delivery still needs a restoration-first adapter
+  before it can become autonomous.
+- Cafe, Outpost, housekeeping, EYES, WHEELS, and BAR are policy vocabulary
+  today; only Operator Note and Work Packet Signal native dispatch currently
+  consult the policy.

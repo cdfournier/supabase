@@ -516,6 +516,15 @@ bridge participant's packet-signal inbox and unread Operator Note count. It is
 polling-friendly groundwork for external agents; it does not dispatch native
 wakes.
 
+WAKE Control Policy changes take effect on the next WAKE evaluation without a
+server restart. Cadence-bound lanes still evaluate on their next scheduled or
+manual check, so use the control panel check actions when the Operator wants to
+pull sooner. The policy evaluator can be smoke-tested with:
+
+```bash
+npm run test:wake
+```
+
 Operator Notes bridge for Julian/Cael:
 
 ```bash
