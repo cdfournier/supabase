@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:wake": "node --experimental-strip-types --test tests/wake-policy.test.ts"
+    "test:wake": "node --experimental-strip-types --test tests/wake-policy.test.ts",
+    "test:presence": "node --experimental-strip-types --test tests/presence.test.ts",
+    "test:runtime": "NODE_ENV=test node --experimental-strip-types --test tests/wake-policy.test.ts tests/presence.test.ts tests/live-sessions.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

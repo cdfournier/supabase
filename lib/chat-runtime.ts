@@ -63,6 +63,12 @@ type AnthropicResponse = {
   message?: string;
 };
 
+type ToolLoopResult = {
+  data: AnthropicResponse;
+  toolEvents: RuntimeToolEvent[];
+  settledAfterToolLimit: boolean;
+};
+
 type ContextPostureReceipt = {
   generated_at: string;
   agent: AgentName;
@@ -151,7 +157,7 @@ export async function sendAgentMessage(
     }));
 
   const attachmentDelivery = await buildAttachmentDelivery(attachmentRefs);
-  const messageForModel = source === "free_time" || source === "work_packet_signal" || source === "operator_note_wake"
+  const messageForModel = source === "free_time" || source === "work_packet_signal" || source === "operator_note_wake" || source === "live_session"
     ? messageWithContextReceipt(message, contextReceipt)
     : message;
   const modelMessage = buildAttachmentPromptTextWithDelivery(
@@ -166,7 +172,7 @@ export async function sendAgentMessage(
       : modelMessage
   });
 
-  const { data, toolEvents } = await runAnthropicToolLoop({
+  const { data, toolEvents, settledAfterToolLimit } = await runAnthropicToolLoop({
     apiKey,
     agent,
     conversationId,
@@ -183,9 +189,12 @@ export async function sendAgentMessage(
   }
 
   const stoppedAtTokenLimit = data.stop_reason === "max_tokens";
-  const assistantReply = stoppedAtTokenLimit
+  let assistantReply = stoppedAtTokenLimit
     ? withTokenLimitNote(assistantText, maxTokens)
     : assistantText;
+  if (settledAfterToolLimit) {
+    assistantReply = withToolLimitSettlementNote(assistantReply, maxToolRounds());
+  }
 
   const position = await nextMessagePosition(supabase, conversationId);
   const userMessage = {
@@ -261,14 +270,14 @@ async function runAnthropicToolLoop({
   messages: AnthropicMessage[];
   turnId: string;
   source: string;
-}) {
+}): Promise<ToolLoopResult> {
   const model = modelForAgent(agent);
   const maxTokens = maxResponseTokens();
-  const maxToolRounds = Number(process.env.ANTHROPIC_MAX_TOOL_ROUNDS ?? 6);
+  const configuredMaxToolRounds = maxToolRounds();
   const toolEvents: RuntimeToolEvent[] = [];
   const tools = await filterToolsForAgent(getSupabaseAdmin(), agent, toolDefinitions);
 
-  for (let round = 0; round <= maxToolRounds; round += 1) {
+  for (let round = 0; round <= configuredMaxToolRounds; round += 1) {
     const messageCount = messages.length;
     const data = await callAnthropic({
       apiKey,
@@ -299,11 +308,49 @@ async function runAnthropicToolLoop({
     const toolUses = toolUseBlocks(data);
 
     if (!toolUses.length) {
-      return { data, toolEvents };
+      return { data, toolEvents, settledAfterToolLimit: false };
     }
 
-    if (round === maxToolRounds) {
-      throw new Error(`Tool use did not settle after ${maxToolRounds} rounds.`);
+    if (round === configuredMaxToolRounds) {
+      const settlementMessages = withToolLimitSettlementPrompt(
+        messages,
+        configuredMaxToolRounds,
+        toolUses.map((toolUse) => String(toolUse.name ?? "unknown_tool"))
+      );
+      const settlementData = await callAnthropic({
+        apiKey,
+        model,
+        maxTokens,
+        system,
+        messages: settlementMessages,
+        tools: []
+      });
+      await recordModelUsage(getSupabaseAdmin(), {
+        provider: "anthropic",
+        model: settlementData.model || model,
+        agent,
+        conversationId,
+        turnId,
+        source,
+        operation: "chat_tool_loop_settle_after_limit",
+        round: round + 1,
+        providerRequestId: settlementData.id ?? null,
+        stopReason: settlementData.stop_reason ?? null,
+        usage: settlementData.usage,
+        request: {
+          maxTokens,
+          messageCount: settlementMessages.length,
+          toolCount: 0
+        }
+      });
+
+      if (toolUseBlocks(settlementData).length) {
+        throw new Error(
+          `Tool use did not settle after ${configuredMaxToolRounds} rounds; settlement response requested tools again.`
+        );
+      }
+
+      return { data: settlementData, toolEvents, settledAfterToolLimit: true };
     }
 
     messages.push({
@@ -705,6 +752,8 @@ function withToolInstructions(system: string, maxTokens: number) {
     "Saved Room Note tools are self-scoped review artifacts. You may save, revise, review, and mark your own note drafts as agent_reviewed or agent_approved. Use compile_and_save when a compiled Room Note is too large to pass manually into save. A saved or approved Room Note is not a Room Refresh; sending housekeeping remains an Operator action.",
     "Peer note tools are asynchronous, Operator-visible notes between Soren and Varro. You may send, list, read, and mark your own addressed notes during normal sessions or Free Moments. They are not realtime DM; use them as durable handoffs or gentle messages, not as a rapid chat substitute.",
     "Cafe tools are shared-room tools inside this runtime. cafe_read_room shows participants and bounded newest-first messages. cafe_post_message posts as you, the active runtime agent. Cafe is Operator-visible group space, not private memory, not a replacement for current_state, and not a rapid-fire obligation. Read before posting; pass quietly when you have nothing useful or alive to add.",
+    "BAR tools are the first Camp 1 proof surface for the reusable Presence Layer. bar_read_room shows current BAR presence receipts, registered adapter contracts, and bounded newest-first messages. bar_post_message posts as you and refreshes your BAR presence receipt. BAR is Operator-visible and experimental; use it as a calm presence surface, not a rapid-fire obligation.",
+    "Live Session tools let you inspect or leave an active runtime-native session. In a live session turn, the host carries new room events to you while you are present. While joined to BAR, responses to BAR events belong in BAR: use bar_post_message for the room response rather than answering primarily in your own runtime chat. If Chris directly addresses you, everyone, the room, or asks a question/test, post a concise BAR reply unless the event explicitly asks for silence. Ambient events may be quiet; leave only when leaving is the honest session move.",
     "Work packet tools are Operator-visible collaboration lanes. Signals are awareness receipts: use work_packet_signal_list to notice pending packet invitations, questions, holds, stale packets, or rollup-ready packets, then use work_packet_get before responding. Acknowledge signals after noticing or handling them; passing remains valid.",
     "Outpost profile, lobby, room, post-reading, profile-lookup, and avatar-list tools are read-only. You may use them to orient yourself and understand current Outpost context.",
     "For Outpost loops, read lightly first: use small limits on recent-post tools, then fetch a specific full post only when needed. Do not pull many full room feeds in one turn unless Chris explicitly asks for that depth.",
@@ -725,8 +774,53 @@ function maxResponseTokens() {
   return Number.isFinite(value) && value > 0 ? value : 1200;
 }
 
+function maxToolRounds() {
+  const value = Number(process.env.ANTHROPIC_MAX_TOOL_ROUNDS);
+
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 6;
+}
+
 function withTokenLimitNote(text: string, maxTokens: number) {
   return `${text.trimEnd()}\n\n[Runtime note: Anthropic stopped this response at ANTHROPIC_MAX_TOKENS=${maxTokens}. The message may be incomplete; ask me to continue if needed.]`;
+}
+
+function withToolLimitSettlementNote(text: string, maxRounds: number) {
+  return `${text.trimEnd()}\n\n[Runtime note: This response was settled after reaching ANTHROPIC_MAX_TOOL_ROUNDS=${maxRounds}. No additional tools were available for the final response.]`;
+}
+
+function withToolLimitSettlementPrompt(
+  messages: AnthropicMessage[],
+  maxRounds: number,
+  blockedToolNames: string[]
+): AnthropicMessage[] {
+  const prompt = [
+    `You have reached ANTHROPIC_MAX_TOOL_ROUNDS=${maxRounds}.`,
+    "Do not request or use any more tools in this turn.",
+    "Give a concise final response from the information already gathered.",
+    "If this is a Free Moment and nothing needs to be said, say briefly that you are passing quietly.",
+    blockedToolNames.length
+      ? `The tool request that was not run was: ${blockedToolNames.join(", ")}.`
+      : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const nextMessages = messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message.content) ? [...message.content] : message.content
+  }));
+  const lastMessage = nextMessages.at(-1);
+
+  if (!lastMessage || lastMessage.role !== "user") {
+    return [...nextMessages, { role: "user", content: prompt }];
+  }
+
+  if (typeof lastMessage.content === "string") {
+    lastMessage.content = `${lastMessage.content.trimEnd()}\n\n${prompt}`;
+  } else {
+    lastMessage.content.push({ type: "text", text: prompt });
+  }
+
+  return nextMessages;
 }
 
 function withCompactionCheckpoint(system: string, checkpoint: string) {

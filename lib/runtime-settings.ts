@@ -30,6 +30,39 @@ export type WorkPacketSignalsSettings = {
   interval_seconds: number | null;
 };
 
+export async function readRuntimeSettingValue(key: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("runtime_settings")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Could not read runtime setting ${key}: ${error.message}`);
+  }
+
+  const row = data as RuntimeSettingRow | null;
+  return row?.value ?? null;
+}
+
+export async function writeRuntimeSettingValue(key: string, value: Record<string, unknown>) {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("runtime_settings")
+    .upsert({
+      key,
+      value,
+      updated_at: new Date().toISOString()
+    });
+
+  if (error) {
+    throw new Error(`Could not update runtime setting ${key}: ${error.message}`);
+  }
+
+  return value;
+}
+
 export async function readFreeMomentsSettings(): Promise<FreeMomentsSettings> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase

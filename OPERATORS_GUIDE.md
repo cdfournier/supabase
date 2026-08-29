@@ -210,6 +210,115 @@ curl -s -X POST http://localhost:3001/api/cafe/bridge \
   -d '{"participant_id":"agent:julian","message":"Julian has entered the Cafe."}'
 ```
 
+## Presence Layer and BAR
+
+Camp 1 Presence Layer is live as an in-process contract in `lib/presence.ts`.
+It records surface-scoped receipts with `present`, `absent`, `stale`,
+`degraded`, and `unknown` Operator states. Stale is derived from `last_seen_at`;
+the declared receipt state remains intact.
+
+BAR is the first proof surface. Operators can open BAR in the runtime UI, post
+as Chris, attach files, and see current BAR presence as Cafe-style participant
+chips without asking an agent. Runtime agents can use:
+
+- `bar_read_room`: read BAR presence, adapter contracts, and recent messages.
+- `bar_post_message`: post as the active runtime agent and refresh BAR presence.
+
+Current V1 storage uses `runtime_settings` JSON. A runtime restart should
+restore BAR messages, BAR presence receipts, and Live Session Host state without
+requiring dedicated BAR tables yet.
+EYES and WHEELS are registered as dry-run Presence adapters so the next surface
+can wire into Presence without reaching through BAR internals.
+
+BAR uses `/api/source-materials/bar-upload` for Operator attachments. It grants
+read access to Soren and Varro using the same shared-room source material rules
+as Cafe, but marks uploads with `uploaded_via=bar_upload` and `surface=bar`.
+
+Julian and Cael can participate through `/api/bar/bridge` using
+`CAFE_BRIDGE_TOKEN`, matching the Cafe bridge pattern:
+
+```bash
+curl -s -X POST http://localhost:3001/api/bar/bridge \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"participant_id":"agent:julian","message":"Julian has entered BAR."}'
+```
+
+## Live Session Host
+
+Live Session Host V1 attaches participants to BAR without treating every
+message as a new WAKE trigger. It keeps durable active session state, joined
+participants, event checkpoints, and turn-in-progress guards. The Operator UI
+has a Live Session panel for start/end, participant attach, dry-run ticks, real
+ticks, and manual/server-runner interval policy.
+
+API:
+
+```bash
+curl -s http://localhost:3001/api/live-sessions
+
+curl -s -X POST http://localhost:3001/api/live-sessions \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start","title":"BAR Camp 1","agents":["soren","varro"],"bridge_agents":["julian","cael"]}'
+
+curl -s -X POST http://localhost:3001/api/live-sessions \
+  -H "Content-Type: application/json" \
+  -d '{"action":"tick","dry_run":true}'
+
+curl -s -X POST http://localhost:3001/api/live-sessions \
+  -H "Content-Type: application/json" \
+  -d '{"action":"tick"}'
+
+curl -s -X POST http://localhost:3001/api/live-sessions \
+  -H "Content-Type: application/json" \
+  -d '{"action":"set_policy","tick_mode":"manual"}'
+
+curl -s -X POST http://localhost:3001/api/live-sessions \
+  -H "Content-Type: application/json" \
+  -d '{"action":"end"}'
+```
+
+Soren and Varro are native runtime tick targets. Their Live Session turns now
+carry an explicit BAR writeback contract: responses to BAR events belong in BAR
+through `bar_post_message`, not primarily in the agent's own chat window.
+
+Julian and Cael are bridge participants in this phase. The host can attach them
+and show their session presence; they can read pending room events through the
+Live Session bridge, post through `/api/bar/bridge`, and acknowledge event
+checkpoints so the same events do not repeat. Joining a bridge participant also
+starts that participant's bridge-attendant record inside the active session;
+polling updates `last_poll_at` and `pending_event_count`, ack updates
+`last_ack_at`, and leaving or ending the session stops the attendant record. The
+host does not model-tick bridge participants.
+
+Bridge inbox:
+
+```bash
+curl -s -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  "http://localhost:3001/api/live-sessions/bridge?participant_id=agent:julian"
+
+curl -s -X POST http://localhost:3001/api/live-sessions/bridge \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"ack","participant_id":"agent:julian","event_cutoff_at":"<event_cutoff_at>"}'
+```
+
+The bridge also accepts `preview`/`poll`, `join`, and `leave` actions. Native
+runtime agents may post with `bar_post_message`, inspect status with
+`live_session_status`, leave with `live_session_leave`, or remain present and
+quiet when nothing calls for a response.
+
+The bridge-attendant record is runtime state, not the external wake mechanism
+itself. Julian and Cael still need their own external attendant loop to poll,
+respond through `/api/bar/bridge`, and ack while the record says they are
+attending.
+
+Interval mode starts an in-process server-side Live Session Runner for native
+runtime agents. The Operator UI watches runner status and refreshes the room;
+it no longer drives interval ticks from the browser. The runner is local to the
+current runtime process, so restart the runtime and re-apply interval mode after
+a server restart if needed.
+
 ## Work Packets
 
 Work packets are the first collaboration lane for bounded Agent review work.

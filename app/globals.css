@@ -169,6 +169,7 @@ button {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 10px;
+  min-width: 0;
 }
 
 .health-panel.collapsed .health-heading {
@@ -180,6 +181,7 @@ button {
   letter-spacing: 0.08em;
   line-height: 1.2;
   margin: 0;
+  min-width: 0;
   text-transform: uppercase;
 }
 
@@ -193,9 +195,19 @@ button {
   font: inherit;
   gap: 8px;
   letter-spacing: inherit;
+  max-width: 100%;
+  min-width: 0;
   padding: 0;
   text-align: left;
   text-transform: inherit;
+}
+
+.health-toggle > span:first-child {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .health-toggle:hover,
@@ -245,12 +257,14 @@ button {
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
+  flex: 0 0 auto;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   line-height: 1;
   padding: 5px 8px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .status-pill.ok {
@@ -348,13 +362,20 @@ button {
 }
 
 .quiet-action {
+  align-items: center;
   background: transparent;
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--text);
+  display: inline-flex;
   font-size: 12px;
+  justify-content: center;
+  line-height: 1.15;
   margin-top: 12px;
+  min-height: 34px;
+  min-width: 0;
   padding: 8px 10px;
+  text-align: center;
   width: 100%;
 }
 
@@ -426,8 +447,7 @@ button {
 
 .free-time-actions .quiet-action {
   margin-top: 0;
-  min-height: 38px;
-  padding: 7px 6px;
+  padding: 7px 8px;
 }
 
 .free-time-events {
@@ -447,13 +467,15 @@ button {
 }
 
 .wake-control-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr;
   margin-top: 8px;
 }
 
 .wake-control-actions .quiet-action {
   margin-top: 0;
-  min-height: 34px;
-  padding: 6px 8px;
+  padding: 7px 8px;
 }
 
 .wake-agent-list {
@@ -483,7 +505,7 @@ button {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, auto);
   min-width: 0;
 }
 
@@ -491,7 +513,9 @@ button {
   font-size: 14px;
   line-height: 1.2;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wake-switch-list {
@@ -512,16 +536,18 @@ button {
   font-size: 12px;
   line-height: 1.25;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wake-switch {
   align-items: center;
   display: inline-flex;
-  gap: 7px;
+  gap: 6px;
   justify-self: end;
   max-width: 100%;
-  min-width: 76px;
+  min-width: 72px;
 }
 
 .wake-switch input {
@@ -536,10 +562,10 @@ button {
   border-radius: 999px;
   display: inline-flex;
   flex: 0 0 auto;
-  height: 24px;
+  height: 22px;
   padding: 2px;
   transition: background 120ms ease, border-color 120ms ease;
-  width: 44px;
+  width: 38px;
 }
 
 .wake-switch-thumb {
@@ -547,9 +573,9 @@ button {
   border-radius: 999px;
   box-shadow: 0 1px 2px rgba(33, 31, 27, 0.22);
   display: block;
-  height: 18px;
+  height: 16px;
   transition: transform 120ms ease;
-  width: 18px;
+  width: 16px;
 }
 
 .wake-switch input:checked + .wake-switch-track {
@@ -558,7 +584,7 @@ button {
 }
 
 .wake-switch input:checked + .wake-switch-track .wake-switch-thumb {
-  transform: translateX(20px);
+  transform: translateX(16px);
 }
 
 .wake-switch input:focus-visible + .wake-switch-track {
@@ -574,7 +600,7 @@ button {
 .wake-switch-text {
   color: var(--muted);
   flex: 0 0 22px;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
   text-align: right;
 }
@@ -638,6 +664,127 @@ button {
   font-size: 12px;
   line-height: 1.35;
   margin: 8px 0 0;
+}
+
+.live-session-summary {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.live-session-summary strong,
+.live-session-summary span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.live-session-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.live-session-groups {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.live-session-groups h3 {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.live-session-policy {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(76px, 1fr) minmax(58px, 64px);
+  margin-top: 12px;
+}
+
+.live-session-policy label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.live-session-policy span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.live-session-policy input,
+.live-session-policy select {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.2;
+  min-height: 34px;
+  min-width: 0;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.live-session-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.live-session-actions button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--accent);
+  display: inline-flex;
+  font-size: 12px;
+  justify-content: center;
+  line-height: 1.15;
+  min-height: 34px;
+  min-width: 0;
+  padding: 7px 8px;
+  text-align: center;
+}
+
+.live-session-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.live-session-actions button:last-child {
+  grid-column: 1 / -1;
+}
+
+.live-session-events {
+  margin-top: 12px;
+}
+
+.bar-main {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.bar-header .quiet-action {
+  margin-top: 0;
+  max-width: 140px;
+}
+
+.participant-chip.stale,
+.participant-chip.absent,
+.participant-chip.unknown {
+  opacity: 0.68;
 }
 
 .main {

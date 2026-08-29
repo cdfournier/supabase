@@ -12,7 +12,7 @@ type AgentName = "soren" | "varro";
 type OperatorNoteAgent = AgentName | "julian" | "cael";
 type OperatorNoteRecipient = OperatorNoteAgent | "all";
 type OperatorNoteFilter = "active" | "needs_operator" | "waiting_agent" | "settled" | "all";
-type ActiveSurface = "chat" | "cafe" | "inbox";
+type ActiveSurface = "chat" | "cafe" | "bar" | "inbox";
 
 const OPERATOR_NOTE_RECIPIENTS: OperatorNoteAgent[] = ["soren", "varro", "julian", "cael"];
 
@@ -112,6 +112,135 @@ type CafeState = {
   participants: CafeParticipant[];
   messages: CafeMessage[];
   message_limit: number;
+};
+
+type PresenceState = "present" | "absent" | "stale" | "degraded" | "unknown";
+
+type PresenceReceipt = {
+  id: string;
+  surface: string;
+  participant_id: string;
+  participant_type: "operator" | "agent" | "system" | "external_agent";
+  display_name: string;
+  declared_state: Exclude<PresenceState, "stale">;
+  state: PresenceState;
+  source: string;
+  since: string;
+  last_seen_at: string;
+  updated_at: string;
+  stale_after_ms: number;
+  metadata: Record<string, unknown>;
+};
+
+type PresenceAdapter = {
+  surface: string;
+  label: string;
+  capability: string;
+  status: "live" | "dry_run" | "planned";
+  accepts: Array<"upsert" | "leave" | "observe">;
+  notes: string;
+};
+
+type BarMessage = {
+  id: string;
+  room_id: string;
+  author_id: string;
+  author_type: "operator" | "agent" | "system" | "external_agent";
+  author_display_name: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+type BarState = {
+  generated_at: string;
+  room: {
+    id: string;
+    title: string;
+    status: string;
+    metadata: Record<string, unknown>;
+  };
+  adapters: PresenceAdapter[];
+  presence: PresenceReceipt[];
+  messages: BarMessage[];
+  message_limit: number;
+};
+
+type LiveSessionAgent = OperatorNoteAgent;
+type LiveSessionNativeAgent = AgentName;
+type LiveSessionBridgeAgent = "julian" | "cael";
+type LiveSessionParticipant = {
+  participant_id: `agent:${LiveSessionAgent}`;
+  agent: LiveSessionAgent;
+  adapter: "runtime_native" | "external_bridge";
+  status: "joined" | "left" | "degraded";
+  joined_at: string;
+  left_at: string | null;
+  last_seen_at: string;
+  last_checked_event_at: string | null;
+  turn_in_progress: boolean;
+  last_error: string | null;
+};
+type LiveSessionBridgeAttendant = {
+  participant_id: `agent:${LiveSessionBridgeAgent}`;
+  agent: LiveSessionBridgeAgent;
+  status: "attending" | "stopped";
+  session_id: string;
+  interval_seconds: number;
+  started_at: string;
+  stopped_at: string | null;
+  last_poll_at: string | null;
+  last_ack_at: string | null;
+  last_error: string | null;
+  pending_event_count: number;
+};
+type LiveSessionTickPolicy = {
+  mode: "manual" | "interval";
+  interval_seconds: number | null;
+  last_tick_at: string | null;
+  next_tick_at: string | null;
+};
+type LiveSession = {
+  id: string;
+  surface: "bar";
+  status: "active" | "ended";
+  title: string;
+  tick_policy: LiveSessionTickPolicy;
+  created_at: string;
+  updated_at: string;
+  ended_at: string | null;
+  participants: Partial<Record<LiveSessionAgent, LiveSessionParticipant>>;
+  bridge_attendants: Partial<Record<LiveSessionBridgeAgent, LiveSessionBridgeAttendant>>;
+  events: Array<{
+    id: string;
+    session_id: string;
+    type: string;
+    at: string;
+    participant_id?: string;
+    message: string;
+  }>;
+};
+type LiveSessionStatus = {
+  generated_at: string;
+  active_session: LiveSession | null;
+  runner: {
+    status: "running" | "stopped";
+    session_id: string | null;
+    interval_seconds: number;
+    started_at: string | null;
+    last_run_at: string | null;
+    next_run_at: string | null;
+    last_error: string | null;
+    tick_in_progress: boolean;
+    tick_count: number;
+  };
+  sessions: LiveSession[];
+};
+type LiveSessionDraft = {
+  nativeAgents: Record<LiveSessionNativeAgent, boolean>;
+  bridgeAgents: Record<LiveSessionBridgeAgent, boolean>;
+  tickMode: "manual" | "interval";
+  intervalSeconds: number;
 };
 
 type ToolEvent = {
@@ -497,7 +626,7 @@ type GitHubEvidenceHandle = {
   max_bytes?: number;
 };
 
-type ControlPanelKey = "runtime" | "freeMoments" | "wake" | "packetSignals";
+type ControlPanelKey = "runtime" | "freeMoments" | "liveSession" | "wake" | "packetSignals";
 type ControlPanelState = Record<ControlPanelKey, boolean>;
 
 const defaultAgent: AgentName = "soren";
@@ -507,15 +636,25 @@ const liveTranscriptLimit = 120;
 const expandedControlPanels: ControlPanelState = {
   runtime: true,
   freeMoments: true,
+  liveSession: true,
   wake: true,
   packetSignals: true
 };
 const collapsedControlPanels: ControlPanelState = {
   runtime: false,
   freeMoments: false,
+  liveSession: false,
   wake: false,
   packetSignals: false
 };
+const liveSessionNativeAgents: Array<{ id: LiveSessionNativeAgent; label: string }> = [
+  { id: "soren", label: "Soren" },
+  { id: "varro", label: "Varro" }
+];
+const liveSessionBridgeAgents: Array<{ id: LiveSessionBridgeAgent; label: string }> = [
+  { id: "julian", label: "Julian" },
+  { id: "cael", label: "Cael" }
+];
 const wakeControlAgents: Array<{ id: WakeControlAgentId; label: string }> = [
   { id: "all", label: "Global WAKE" },
   { id: "agent:soren", label: "Soren" },
@@ -540,6 +679,28 @@ export default function Home() {
   const [cafeLoading, setCafeLoading] = useState(true);
   const [cafeSending, setCafeSending] = useState(false);
   const [cafeError, setCafeError] = useState("");
+  const [bar, setBar] = useState<BarState | null>(null);
+  const [barMessage, setBarMessage] = useState("");
+  const [barPendingAttachments, setBarPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [barLoading, setBarLoading] = useState(true);
+  const [barSending, setBarSending] = useState(false);
+  const [barError, setBarError] = useState("");
+  const [liveSession, setLiveSession] = useState<LiveSessionStatus | null>(null);
+  const [liveSessionLoading, setLiveSessionLoading] = useState(true);
+  const [liveSessionRequestInProgress, setLiveSessionRequestInProgress] = useState(false);
+  const [liveSessionError, setLiveSessionError] = useState("");
+  const [liveSessionDraft, setLiveSessionDraft] = useState<LiveSessionDraft>({
+    nativeAgents: {
+      soren: true,
+      varro: true
+    },
+    bridgeAgents: {
+      julian: true,
+      cael: true
+    },
+    tickMode: "manual",
+    intervalSeconds: 30
+  });
   const [health, setHealth] = useState<Health | null>(null);
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
   const [toolEvents, setToolEvents] = useState<Record<string, ToolEvent[]>>({});
@@ -608,6 +769,13 @@ export default function Home() {
   const pendingOperatorRollups = operatorInboxPackets.filter(isPendingOperatorRollup);
   const unreadOperatorNotes = operatorInboxOperatorNotes.filter((note) => note.operator_status === "unread");
   const operatorInboxCount = pendingOperatorRollups.length + unreadOperatorNotes.length;
+  const barActivePresenceCount = (bar?.presence ?? []).filter((receipt) =>
+    ["present", "degraded"].includes(receipt.state)
+  ).length;
+  const activeLiveSession = liveSession?.active_session ?? null;
+  const liveSessionJoinedCount = activeLiveSession
+    ? Object.values(activeLiveSession.participants).filter((participant) => participant?.status === "joined").length
+    : 0;
   const activeHealth = health?.agents.find((agent) => agent.agent === selectedAgent);
   const activeMessageCount = activeHealth?.conversation.message_count ?? activeMessages.length;
   const hiddenOlderMessageCount = activeHealth
@@ -906,9 +1074,69 @@ export default function Home() {
     }
   }, []);
 
+  const loadBar = useCallback(async () => {
+    setBarError("");
+
+    try {
+      const response = await fetch("/api/bar");
+      const data = await readJsonResponse<BarState & { error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load BAR.");
+      }
+
+      setBar(data);
+    } catch (loadBarError) {
+      setBarError(loadBarError instanceof Error ? loadBarError.message : "Could not load BAR.");
+      setBar(null);
+    } finally {
+      setBarLoading(false);
+    }
+  }, []);
+
+  const loadLiveSessionStatus = useCallback(async () => {
+    setLiveSessionError("");
+
+    try {
+      const response = await fetch("/api/live-sessions");
+      const data = await readJsonResponse<LiveSessionStatus & { error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load Live Session Host.");
+      }
+
+      setLiveSession(data);
+      const policy = data.active_session?.tick_policy;
+      if (policy) {
+        setLiveSessionDraft((current) => ({
+          ...current,
+          tickMode: policy.mode,
+          intervalSeconds: policy.interval_seconds ?? current.intervalSeconds
+        }));
+      }
+    } catch (loadLiveSessionError) {
+      setLiveSessionError(
+        loadLiveSessionError instanceof Error
+          ? loadLiveSessionError.message
+          : "Could not load Live Session Host."
+      );
+      setLiveSession(null);
+    } finally {
+      setLiveSessionLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadCafe();
   }, [loadCafe]);
+
+  useEffect(() => {
+    void loadBar();
+  }, [loadBar]);
+
+  useEffect(() => {
+    void loadLiveSessionStatus();
+  }, [loadLiveSessionStatus]);
 
   useEffect(() => {
     void loadOperatorInbox();
@@ -1027,6 +1255,28 @@ export default function Home() {
   useEffect(() => {
     void loadWakeControlPolicy();
   }, [loadWakeControlPolicy]);
+
+  useEffect(() => {
+    const activeSession = liveSession?.active_session;
+
+    if (!activeSession || liveSession?.runner.status !== "running") {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadLiveSessionStatus();
+      void loadBar();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [
+    liveSession?.active_session?.id,
+    liveSession?.runner.status,
+    loadBar,
+    loadLiveSessionStatus
+  ]);
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({
@@ -1327,6 +1577,102 @@ export default function Home() {
     } finally {
       setOperatorNoteWakesRequestInProgress(false);
       setOperatorNoteWakesLoading(false);
+    }
+  }
+
+  async function runLiveSessionAction(action: "start" | "end" | "tick" | "dry_run" | "set_policy") {
+    if (liveSessionRequestInProgress) {
+      return;
+    }
+
+    setLiveSessionRequestInProgress(true);
+    setLiveSessionError("");
+
+    try {
+      const response = await fetch("/api/live-sessions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(liveSessionRequestBody(action, liveSessionDraft))
+      });
+      const data = await readJsonResponse<
+        (LiveSessionStatus & { error?: string }) | { session?: LiveSession | null; results?: unknown[]; error?: string }
+      >(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Live Session request failed.");
+      }
+
+      await loadLiveSessionStatus();
+      await loadBar();
+    } catch (actionError) {
+      setLiveSessionError(
+        actionError instanceof Error ? actionError.message : "Live Session request failed."
+      );
+    } finally {
+      setLiveSessionRequestInProgress(false);
+      setLiveSessionLoading(false);
+    }
+  }
+
+  async function toggleLiveSessionAgent(agent: LiveSessionAgent, enabled: boolean) {
+    const activeSession = liveSession?.active_session;
+
+    if (agent === "soren" || agent === "varro") {
+      setLiveSessionDraft((current) => ({
+        ...current,
+        nativeAgents: {
+          ...current.nativeAgents,
+          [agent]: enabled
+        }
+      }));
+    } else {
+      setLiveSessionDraft((current) => ({
+        ...current,
+        bridgeAgents: {
+          ...current.bridgeAgents,
+          [agent]: enabled
+        }
+      }));
+    }
+
+    if (!activeSession || liveSessionRequestInProgress) {
+      return;
+    }
+
+    setLiveSessionRequestInProgress(true);
+    setLiveSessionError("");
+
+    try {
+      const response = await fetch("/api/live-sessions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          action: enabled ? "join" : "leave",
+          session_id: activeSession.id,
+          agent
+        })
+      });
+      const data = await readJsonResponse<{ session?: LiveSession | null; error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Live Session participant update failed.");
+      }
+
+      await loadLiveSessionStatus();
+      await loadBar();
+    } catch (actionError) {
+      setLiveSessionError(
+        actionError instanceof Error
+          ? actionError.message
+          : "Live Session participant update failed."
+      );
+    } finally {
+      setLiveSessionRequestInProgress(false);
+      setLiveSessionLoading(false);
     }
   }
 
@@ -1659,6 +2005,52 @@ export default function Home() {
     }
   }
 
+  async function sendBarMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = barMessage.trim();
+    const hasAttachments = barPendingAttachments.length > 0;
+
+    if ((!trimmed && !hasAttachments) || barSending) {
+      return;
+    }
+
+    setBarSending(true);
+    setBarError("");
+    setBarMessage("");
+
+    try {
+      const uploadedAttachments = await uploadQueuedBarAttachments();
+      const response = await fetch("/api/bar", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "post",
+          content: trimmed,
+          participant_id: "operator:chris",
+          participant_type: "operator",
+          display_name: "Chris",
+          attachments: uploadedAttachments.map((attachment) => ({ id: attachment.id }))
+        })
+      });
+      const data = await readJsonResponse<BarState & { error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not post to BAR.");
+      }
+
+      setBar(data);
+      setBarPendingAttachments([]);
+    } catch (sendBarError) {
+      setBarMessage(trimmed);
+      setBarError(sendBarError instanceof Error ? sendBarError.message : "Could not post to BAR.");
+    } finally {
+      setBarSending(false);
+      setBarLoading(false);
+    }
+  }
+
   function addCafeFiles(files: FileList | File[]) {
     const nextFiles = Array.from(files);
 
@@ -1678,6 +2070,29 @@ export default function Home() {
 
   function removeCafeAttachment(localId: string) {
     setCafePendingAttachments((current) =>
+      current.filter((attachment) => attachment.localId !== localId)
+    );
+  }
+
+  function addBarFiles(files: FileList | File[]) {
+    const nextFiles = Array.from(files);
+
+    if (!nextFiles.length) {
+      return;
+    }
+
+    setBarPendingAttachments((current) => [
+      ...current,
+      ...nextFiles.map((file) => ({
+        localId: createLocalId(),
+        file,
+        status: "queued" as const
+      }))
+    ]);
+  }
+
+  function removeBarAttachment(localId: string) {
+    setBarPendingAttachments((current) =>
       current.filter((attachment) => attachment.localId !== localId)
     );
   }
@@ -1854,6 +2269,82 @@ export default function Home() {
     return [...uploaded, ...materials];
   }
 
+  async function uploadQueuedBarAttachments() {
+    const queued = barPendingAttachments.filter((attachment) => attachment.status !== "uploaded");
+    const uploaded = barPendingAttachments
+      .filter((attachment) => attachment.status === "uploaded" && attachment.material)
+      .map((attachment) => attachment.material as UploadedAttachment);
+
+    if (!queued.length) {
+      return uploaded;
+    }
+
+    setBarPendingAttachments((current) =>
+      current.map((attachment) =>
+        queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+          ? { ...attachment, status: "uploading", error: undefined }
+          : attachment
+      )
+    );
+
+    const formData = new FormData();
+
+    for (const attachment of queued) {
+      formData.append("files", attachment.file);
+    }
+
+    const response = await fetch("/api/source-materials/bar-upload", {
+      method: "POST",
+      body: formData
+    });
+    const data = await readJsonResponse<SourceMaterialUploadResponse>(response);
+
+    if (!response.ok) {
+      setBarPendingAttachments((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: data.error || "Upload failed." }
+            : attachment
+        )
+      );
+      throw new Error(data.error || "Upload failed.");
+    }
+
+    const materials = (data.materials ?? []) as UploadedAttachment[];
+
+    if (materials.length !== queued.length) {
+      setBarPendingAttachments((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: "Upload response did not match selected files." }
+            : attachment
+        )
+      );
+      throw new Error("Upload response did not match selected files.");
+    }
+
+    setBarPendingAttachments((current) =>
+      current.map((attachment) => {
+        const queuedIndex = queued.findIndex(
+          (queuedAttachment) => queuedAttachment.localId === attachment.localId
+        );
+
+        if (queuedIndex === -1) {
+          return attachment;
+        }
+
+        return {
+          ...attachment,
+          status: "uploaded",
+          material: materials[queuedIndex],
+          error: undefined
+        };
+      })
+    );
+
+    return [...uploaded, ...materials];
+  }
+
   return (
     <main className="shell">
       <aside className="sidebar">
@@ -1866,6 +2357,18 @@ export default function Home() {
           <strong>Cafe</strong>
           <br />
           <span>shared room</span>
+        </button>
+        <button
+          className={`cafe-button ${activeSurface === "bar" ? "active" : ""}`}
+          onClick={() => {
+            setActiveSurface("bar");
+            void loadBar();
+          }}
+          type="button"
+        >
+          <strong>BAR</strong>
+          <br />
+          <span>{barActivePresenceCount} here</span>
         </button>
         <button
           className={`cafe-button ${activeSurface === "inbox" ? "active" : ""}`}
@@ -1928,6 +2431,19 @@ export default function Home() {
           status={freeTime}
         />
 
+        <LiveSessionPanel
+          draft={liveSessionDraft}
+          error={liveSessionError}
+          expanded={controlPanels.liveSession}
+          loading={liveSessionLoading}
+          onAction={runLiveSessionAction}
+          onDraftChange={setLiveSessionDraft}
+          onToggle={() => toggleControlPanel("liveSession")}
+          onToggleAgent={toggleLiveSessionAgent}
+          requestInProgress={liveSessionRequestInProgress}
+          status={liveSession}
+        />
+
         <WakeControlPanel
           error={wakeControlPolicyError}
           expanded={controlPanels.wake}
@@ -1973,6 +2489,20 @@ export default function Home() {
           onSubmit={sendCafeMessage}
           pendingAttachments={cafePendingAttachments}
           sending={cafeSending}
+        />
+      ) : activeSurface === "bar" ? (
+        <BarView
+          bar={bar}
+          error={barError}
+          loading={barLoading}
+          message={barMessage}
+          onAddFiles={addBarFiles}
+          onMessageChange={setBarMessage}
+          onRemoveAttachment={removeBarAttachment}
+          onRefresh={loadBar}
+          onSubmit={sendBarMessage}
+          pendingAttachments={barPendingAttachments}
+          sending={barSending}
         />
       ) : activeSurface === "inbox" ? (
         <OperatorInboxView
@@ -2351,6 +2881,166 @@ function CafeView({
               <div>{cafeMessage.content}</div>
               {messageAttachments.length > 0 ? (
                 <div className="message-attachments" aria-label="Cafe message attachments">
+                  {messageAttachments.map((attachment) => (
+                    <span className="message-attachment" key={attachment.id}>
+                      {attachment.title}
+                      <small>
+                        {attachment.material_type} · {formatBytes(attachment.size_bytes)}
+                        {attachment.readable_as_text ? " · text-readable" : ""}
+                      </small>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function BarView({
+  bar,
+  error,
+  loading,
+  message,
+  onAddFiles,
+  onMessageChange,
+  onRemoveAttachment,
+  onRefresh,
+  onSubmit,
+  pendingAttachments,
+  sending
+}: {
+  bar: BarState | null;
+  error: string;
+  loading: boolean;
+  message: string;
+  onAddFiles: (files: FileList | File[]) => void;
+  onMessageChange: (message: string) => void;
+  onRemoveAttachment: (localId: string) => void;
+  onRefresh: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  pendingAttachments: PendingAttachment[];
+  sending: boolean;
+}) {
+  const barFileInputRef = useRef<HTMLInputElement | null>(null);
+  const presence = bar?.presence ?? [];
+  const messages = bar?.messages ?? [];
+
+  return (
+    <section className="main bar-main">
+      <header className="header cafe-header bar-header">
+        <h2 className="visually-hidden">{bar?.room.title ?? "BAR"}</h2>
+        <div className="cafe-participants" aria-label="BAR participants">
+          {presence.length ? (
+            presence.map((receipt) => (
+              <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
+                <strong>{receipt.display_name}</strong>
+                <small>{presenceStateLabel(receipt.state)}</small>
+              </span>
+            ))
+          ) : (
+            <span className="participant-chip muted">No participants loaded</span>
+          )}
+        </div>
+        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
+          Refresh
+        </button>
+      </header>
+
+      <form
+        className="composer cafe-composer bar-composer"
+        onDragOver={(event) => {
+          event.preventDefault();
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          onAddFiles(event.dataTransfer.files);
+        }}
+        onSubmit={onSubmit}
+      >
+        {error ? <p className="error">{error}</p> : null}
+        <div className="composer-row">
+          <textarea
+            disabled={loading || sending}
+            onChange={(event) => onMessageChange(event.target.value)}
+            placeholder="Message BAR"
+            value={message}
+          />
+          <div className="composer-actions">
+            <input
+              multiple
+              onChange={(event) => {
+                if (event.target.files) {
+                  onAddFiles(event.target.files);
+                }
+                event.target.value = "";
+              }}
+              ref={barFileInputRef}
+              type="file"
+            />
+            <button
+              className="attach"
+              disabled={loading || sending}
+              onClick={() => barFileInputRef.current?.click()}
+              type="button"
+            >
+              Attach
+            </button>
+            <button
+              className="send"
+              disabled={loading || sending || (!message.trim() && pendingAttachments.length === 0)}
+              type="submit"
+            >
+              {sending ? "Posting" : "Post"}
+            </button>
+          </div>
+        </div>
+        {pendingAttachments.length ? (
+          <div className="attachment-tray" aria-label="Pending BAR attachments">
+            {pendingAttachments.map((attachment) => (
+              <span className={`attachment-chip ${attachment.status}`} key={attachment.localId}>
+                <span>
+                  {attachment.file.name}
+                  <small>{formatBytes(attachment.file.size)} · {attachment.status}</small>
+                  {attachment.error ? <small className="attachment-error">{attachment.error}</small> : null}
+                </span>
+                <button
+                  aria-label={`Remove ${attachment.file.name}`}
+                  disabled={sending}
+                  onClick={() => onRemoveAttachment(attachment.localId)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </form>
+
+      <div className="transcript cafe-transcript bar-transcript">
+        {loading ? <p className="empty">Loading BAR...</p> : null}
+        {!loading && !messages.length ? (
+          <p className="empty">No BAR messages yet.</p>
+        ) : null}
+        {messages.map((barMessage) => {
+          const messageAttachments = attachmentsFromCafeMetadata(barMessage.metadata);
+
+          return (
+            <article
+              className={`message ${barMessage.author_type === "operator" ? "user" : "assistant"}`}
+              key={barMessage.id}
+            >
+              <div className="message-meta">
+                <span>{barMessage.author_display_name}</span>
+                <time dateTime={barMessage.created_at}>{formatMessageTime(barMessage.created_at)}</time>
+              </div>
+              <div>{barMessage.content}</div>
+              {messageAttachments.length > 0 ? (
+                <div className="message-attachments" aria-label="BAR message attachments">
                   {messageAttachments.map((attachment) => (
                     <span className="message-attachment" key={attachment.id}>
                       {attachment.title}
@@ -3509,6 +4199,241 @@ function wakeMentionNamesForScope(scopeId: WakeControlAgentId) {
   return [scopeId.replace(/^agent:/, "").replace(/^\w/, (match) => match.toUpperCase())];
 }
 
+function liveSessionRequestBody(action: "start" | "end" | "tick" | "dry_run" | "set_policy", draft: LiveSessionDraft) {
+  if (action === "start") {
+    return {
+      action,
+      title: "BAR Live Session",
+      agents: liveSessionNativeAgents
+        .filter((agent) => draft.nativeAgents[agent.id])
+        .map((agent) => agent.id),
+      bridge_agents: liveSessionBridgeAgents
+        .filter((agent) => draft.bridgeAgents[agent.id])
+        .map((agent) => agent.id),
+      tick_mode: draft.tickMode,
+      interval_seconds: draft.intervalSeconds
+    };
+  }
+
+  if (action === "dry_run") {
+    return {
+      action: "tick",
+      dry_run: true
+    };
+  }
+
+  if (action === "set_policy") {
+    return {
+      action: "set_policy",
+      tick_mode: draft.tickMode,
+      interval_seconds: draft.intervalSeconds
+    };
+  }
+
+  return { action };
+}
+
+function liveSessionParticipantJoined(session: LiveSession | null, agent: LiveSessionAgent, draft: LiveSessionDraft) {
+  const participant = session?.participants[agent];
+
+  if (session) {
+    return participant?.status === "joined";
+  }
+
+  return agent === "soren" || agent === "varro"
+    ? draft.nativeAgents[agent]
+    : draft.bridgeAgents[agent];
+}
+
+function LiveSessionPanel({
+  draft,
+  error,
+  expanded,
+  loading,
+  onAction,
+  onDraftChange,
+  onToggle,
+  onToggleAgent,
+  requestInProgress,
+  status
+}: {
+  draft: LiveSessionDraft;
+  error: string;
+  expanded: boolean;
+  loading: boolean;
+  onAction: (action: "start" | "end" | "tick" | "dry_run" | "set_policy") => void;
+  onDraftChange: (draft: LiveSessionDraft) => void;
+  onToggle: () => void;
+  onToggleAgent: (agent: LiveSessionAgent, enabled: boolean) => void;
+  requestInProgress: boolean;
+  status: LiveSessionStatus | null;
+}) {
+  const activeSession = status?.active_session ?? null;
+  const runner = status?.runner ?? null;
+  const bridgeAttendants = Object.values(activeSession?.bridge_attendants ?? {})
+    .filter((attendant) => attendant?.status === "attending").length;
+  const disabled = loading || requestInProgress;
+
+  return (
+    <section className={`health-panel live-session-panel ${expanded ? "" : "collapsed"}`} aria-label="Live Session Host controls">
+      <div className="health-heading">
+        <h2>
+          <button
+            aria-expanded={expanded}
+            className="health-toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            <span>LIVE SESSION</span>
+            <span className="health-toggle-icon" aria-hidden="true">
+              {expanded ? "-" : "+"}
+            </span>
+          </button>
+        </h2>
+        <span className={`status-pill ${activeSession ? "ok" : "warn"}`}>
+          {requestInProgress ? "working" : activeSession ? "active" : "idle"}
+        </span>
+      </div>
+
+      <div className="health-panel-body" hidden={!expanded}>
+        {activeSession ? (
+          <div className="live-session-summary">
+            <strong>{activeSession.title}</strong>
+            <span>{Object.values(activeSession.participants).filter((participant) => participant?.status === "joined").length} in</span>
+            <span>
+              {runner?.status === "running"
+                ? `runner ${runner.interval_seconds}s`
+                : activeSession.tick_policy.mode === "interval"
+                  ? "runner stopped"
+                  : "manual tick"}
+            </span>
+            {bridgeAttendants ? <span>{bridgeAttendants} bridge attending</span> : null}
+          </div>
+        ) : (
+          <p className="health-empty">Start a BAR room session. Native agents tick; bridge agents poll and acknowledge.</p>
+        )}
+
+        <div className="live-session-groups">
+          <div>
+            <h3>Native</h3>
+            {liveSessionNativeAgents.map((agent) => (
+              <div className="wake-switch-row" key={agent.id}>
+                <span title={agent.label}>{agent.label}</span>
+                <WakeSwitch
+                  checked={liveSessionParticipantJoined(activeSession, agent.id, draft)}
+                  disabled={disabled}
+                  label={`${agent.label} live session`}
+                  offText="Out"
+                  onChange={(checked) => onToggleAgent(agent.id, checked)}
+                  onText="In"
+                />
+              </div>
+            ))}
+          </div>
+          <div>
+            <h3>Bridge</h3>
+            {liveSessionBridgeAgents.map((agent) => (
+              <div className="wake-switch-row" key={agent.id}>
+                <span title={agent.label}>{agent.label}</span>
+                <WakeSwitch
+                  checked={liveSessionParticipantJoined(activeSession, agent.id, draft)}
+                  disabled={disabled}
+                  label={`${agent.label} live session bridge`}
+                  offText="Out"
+                  onChange={(checked) => onToggleAgent(agent.id, checked)}
+                  onText="In"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="live-session-policy">
+          <label>
+            <span>Mode</span>
+            <select
+              disabled={disabled}
+              onChange={(event) => onDraftChange({
+                ...draft,
+                tickMode: event.target.value === "interval" ? "interval" : "manual"
+              })}
+              value={draft.tickMode}
+            >
+              <option value="manual">Manual</option>
+              <option value="interval">Interval</option>
+            </select>
+          </label>
+          <label>
+            <span>Seconds</span>
+            <input
+              disabled={disabled || draft.tickMode !== "interval"}
+              min={10}
+              max={300}
+              onChange={(event) => onDraftChange({
+                ...draft,
+                intervalSeconds: Math.min(300, Math.max(10, Number(event.target.value) || 30))
+              })}
+              type="number"
+              value={draft.intervalSeconds}
+            />
+          </label>
+        </div>
+
+        <div className="health-actions live-session-actions">
+          <button
+            disabled={disabled || Boolean(activeSession)}
+            onClick={() => onAction("start")}
+            type="button"
+          >
+            Start
+          </button>
+          <button
+            disabled={disabled || !activeSession}
+            onClick={() => onAction("dry_run")}
+            type="button"
+          >
+            Dry Run
+          </button>
+          <button
+            disabled={disabled || !activeSession}
+            onClick={() => onAction("tick")}
+            type="button"
+          >
+            Tick
+          </button>
+          <button
+            disabled={disabled || !activeSession}
+            onClick={() => onAction("set_policy")}
+            type="button"
+          >
+            Apply
+          </button>
+          <button
+            disabled={disabled || !activeSession}
+            onClick={() => onAction("end")}
+            type="button"
+          >
+            End
+          </button>
+        </div>
+
+        {activeSession?.events.length ? (
+          <ol className="free-time-events live-session-events">
+            {activeSession.events.slice(0, 4).map((event) => (
+              <li key={event.id}>
+                <time dateTime={event.at}>{formatMessageTime(event.at)}</time>
+                <span>{event.message}</span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+
+        {error ? <p className="health-error">{error}</p> : null}
+      </div>
+    </section>
+  );
+}
+
 function WakeControlPanel({
   error,
   expanded,
@@ -3577,7 +4502,7 @@ function WakeControlPanel({
             return (
               <div className={`wake-agent-card ${scopeEnabled ? "" : "gated"}`} key={agent.id}>
                 <div className="wake-agent-heading">
-                  <strong>{agent.label}</strong>
+                  <strong title={agent.label}>{agent.label}</strong>
                   <WakeSwitch
                     checked={wakeAgentEnabled(policy, agent.id)}
                     disabled={disabled}
@@ -3590,7 +4515,7 @@ function WakeControlPanel({
                   {wakeControlTriggers.map((trigger) => (
                     <div className="wake-trigger-group" key={trigger.id}>
                       <div className="wake-switch-row">
-                        <span>{trigger.label}</span>
+                        <span title={trigger.label}>{trigger.label}</span>
                         <WakeSwitch
                           checked={wakeTriggerEnabled(policy, agent.id, trigger.id)}
                           disabled={childDisabled}
@@ -3599,7 +4524,7 @@ function WakeControlPanel({
                         />
                       </div>
                       <div className="wake-switch-row">
-                        <span>{trigger.label} Mentions</span>
+                        <span title={`${trigger.label} Mentions`}>{trigger.label} Mentions</span>
                         <WakeSwitch
                           checked={wakeMentionEnabled(policy, agent.id, trigger.id)}
                           disabled={childDisabled}
@@ -3625,12 +4550,16 @@ function WakeSwitch({
   checked,
   disabled,
   label,
-  onChange
+  offText = "Off",
+  onChange,
+  onText = "On"
 }: {
   checked: boolean;
   disabled: boolean;
   label: string;
+  offText?: string;
   onChange: (checked: boolean) => void;
+  onText?: string;
 }) {
   return (
     <label className="wake-switch" title={label}>
@@ -3647,7 +4576,7 @@ function WakeSwitch({
       <span aria-hidden="true" className="wake-switch-track">
         <span className="wake-switch-thumb" />
       </span>
-      <span aria-hidden="true" className="wake-switch-text">{checked ? "On" : "Off"}</span>
+      <span aria-hidden="true" className="wake-switch-text">{checked ? onText : offText}</span>
     </label>
   );
 }
@@ -3888,6 +4817,23 @@ function participantAdapterLabel(participant: CafeParticipant) {
       return "Bridge";
     default:
       return participant.participant_adapter;
+  }
+}
+
+function presenceStateLabel(state: PresenceState) {
+  switch (state) {
+    case "present":
+      return "Present";
+    case "absent":
+      return "Absent";
+    case "stale":
+      return "Stale";
+    case "degraded":
+      return "Degraded";
+    case "unknown":
+      return "Unknown";
+    default:
+      return state;
   }
 }
 

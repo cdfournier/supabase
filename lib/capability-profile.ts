@@ -12,11 +12,13 @@ export type CapabilitySurface =
   | "journal"
   | "peer_notes"
   | "cafe"
+  | "bar"
   | "outpost"
   | "world"
   | "web"
   | "source_materials"
   | "free_moments"
+  | "live_sessions"
   | "work_packets"
   | "operator_notes"
   | "bridge"
@@ -151,6 +153,16 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
     notes: "Operator-visible shared runtime room for lightweight group conversation."
   },
   {
+    surface: "bar",
+    access_level: "write",
+    default_bias: "presence proof; read before posting",
+    requires_operator_approval: false,
+    notify_operator: "audit_only",
+    max_actions_per_moment: null,
+    quiet_mode: false,
+    notes: "First Camp 1 proof surface for the reusable Presence Layer contract."
+  },
+  {
     surface: "outpost",
     access_level: "write",
     default_bias: "read lightly, post deliberately",
@@ -200,6 +212,16 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
     max_actions_per_moment: null,
     quiet_mode: false,
     notes: "Unprompted time; a quiet pass is success."
+  },
+  {
+    surface: "live_sessions",
+    access_level: "write",
+    default_bias: "presence with explicit exit",
+    requires_operator_approval: false,
+    notify_operator: "audit_only",
+    max_actions_per_moment: null,
+    quiet_mode: false,
+    notes: "Runtime-native live session status and leave controls."
   },
   {
     surface: "work_packets",
@@ -291,6 +313,10 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   operator_note_mark_read: { surface: "operator_notes", action: "write" },
   cafe_read_room: { surface: "cafe", action: "read" },
   cafe_post_message: { surface: "cafe", action: "write" },
+  bar_read_room: { surface: "bar", action: "read" },
+  bar_post_message: { surface: "bar", action: "write" },
+  live_session_status: { surface: "live_sessions", action: "read" },
+  live_session_leave: { surface: "live_sessions", action: "write" },
   work_packet_list: { surface: "work_packets", action: "read" },
   work_packet_get: { surface: "work_packets", action: "read" },
   work_packet_resolve_evidence: { surface: "work_packets", action: "read" },

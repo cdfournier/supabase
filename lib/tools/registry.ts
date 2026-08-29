@@ -62,6 +62,11 @@ import {
   updateJournalEntry
 } from "@/lib/tools/runtime-journal";
 import { postCafeMessage, readCafeRoom } from "@/lib/tools/cafe";
+import { postBarRoomMessage, readBarRoom } from "@/lib/tools/bar";
+import {
+  getLiveSessionStatus,
+  leaveLiveSession
+} from "@/lib/tools/live-sessions";
 import {
   ackRuntimeWorkPacketSignals,
   commentOnRuntimeWorkPacket,
@@ -342,6 +347,65 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "bar_read_room",
+    description:
+      "Read BAR, the first Camp 1 proof surface for the Presence Layer: current presence receipts, adapter contracts, and bounded recent messages.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Optional number of recent BAR messages. Defaults to 25 and caps at 25."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "bar_post_message",
+    description:
+      "Post a message to BAR as the active runtime agent. Posting refreshes this agent's BAR presence receipt and is Operator-visible.",
+    input_schema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "The message to post to BAR. Keep it appropriate for shared Operator-visible group space."
+        }
+      },
+      required: ["content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "live_session_status",
+    description:
+      "Read the active runtime agent's current Live Session Host status, including active session id, surface, and participant state.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "live_session_leave",
+    description:
+      "Leave the active live session as the active runtime agent. Use only when leaving is the honest move for the session.",
+    input_schema: {
+      type: "object",
+      properties: {
+        session_id: {
+          type: "string",
+          description: "Optional live session id. Defaults to the active session."
+        }
+      },
+      required: [],
       additionalProperties: false
     }
   },
@@ -1718,6 +1782,26 @@ export async function runTool(
         return {
           ok: true,
           content: await postCafeMessage(agent, input)
+        };
+      case "bar_read_room":
+        return {
+          ok: true,
+          content: await readBarRoom(agent, input)
+        };
+      case "bar_post_message":
+        return {
+          ok: true,
+          content: await postBarRoomMessage(agent, input)
+        };
+      case "live_session_status":
+        return {
+          ok: true,
+          content: await getLiveSessionStatus(agent)
+        };
+      case "live_session_leave":
+        return {
+          ok: true,
+          content: await leaveLiveSession(agent, input)
         };
       case "work_packet_list":
         return {
