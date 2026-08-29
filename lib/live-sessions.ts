@@ -12,6 +12,8 @@ export type LiveSessionSurface = "bar";
 export type LiveSessionStatus = "active" | "ended";
 export type LiveSessionParticipantStatus = "joined" | "left" | "degraded";
 export type LiveSessionTickMode = "manual" | "interval";
+export type LiveSessionBridgeDeliveryStatus = "pending" | "claimed" | "delivered" | "skipped" | "failed" | "cancelled";
+export type LiveSessionBridgeDeliveryMethod = "codex_task" | "cowork_connector" | "manual";
 
 export type LiveSessionTickPolicy = {
   mode: LiveSessionTickMode;
@@ -36,7 +38,28 @@ export type LiveSessionParticipant = {
 export type LiveSessionEvent = {
   id: string;
   session_id: string;
-  type: "created" | "joined" | "left" | "ended" | "policy_updated" | "runner_started" | "runner_stopped" | "tick_started" | "tick_completed" | "tick_skipped" | "tick_failed" | "bridge_attendant_started" | "bridge_attendant_stopped" | "bridge_read" | "bridge_ack";
+  type:
+    | "created"
+    | "joined"
+    | "left"
+    | "ended"
+    | "policy_updated"
+    | "runner_started"
+    | "runner_stopped"
+    | "tick_started"
+    | "tick_completed"
+    | "tick_skipped"
+    | "tick_failed"
+    | "bridge_attendant_started"
+    | "bridge_attendant_stopped"
+    | "bridge_read"
+    | "bridge_ack"
+    | "bridge_delivery_queued"
+    | "bridge_delivery_claimed"
+    | "bridge_delivery_completed"
+    | "bridge_delivery_failed"
+    | "bridge_delivery_skipped"
+    | "bridge_delivery_cancelled";
   at: string;
   participant_id?: string;
   message: string;
@@ -54,8 +77,45 @@ export type LiveSessionBridgeAttendant = {
   stopped_at: string | null;
   last_poll_at: string | null;
   last_ack_at: string | null;
+  last_delivery_queued_at: string | null;
+  last_delivery_completed_at: string | null;
   last_error: string | null;
   pending_event_count: number;
+  pending_delivery_count: number;
+};
+
+export type LiveSessionBridgeDeliveryTarget = {
+  method: LiveSessionBridgeDeliveryMethod;
+  label: string;
+  status: "configured" | "adapter_required";
+  metadata: Record<string, string | boolean | null>;
+};
+
+export type LiveSessionBridgeDelivery = {
+  id: string;
+  session_id: string;
+  participant_id: `agent:${BridgeAgentName}`;
+  agent: BridgeAgentName;
+  status: LiveSessionBridgeDeliveryStatus;
+  delivery_method: LiveSessionBridgeDeliveryMethod;
+  target: LiveSessionBridgeDeliveryTarget;
+  event_cutoff_at: string;
+  event_count: number;
+  pending_events: Array<{
+    id: string;
+    author_id: string;
+    author_display_name: string;
+    content: string;
+    created_at: string;
+  }>;
+  prompt: string;
+  created_at: string;
+  updated_at: string;
+  claimed_at: string | null;
+  claim_id: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  last_error: string | null;
 };
 
 export type LiveSession = {
@@ -69,6 +129,7 @@ export type LiveSession = {
   ended_at: string | null;
   participants: Partial<Record<LiveSessionAgentName, LiveSessionParticipant>>;
   bridge_attendants: Partial<Record<BridgeAgentName, LiveSessionBridgeAttendant>>;
+  bridge_deliveries: LiveSessionBridgeDelivery[];
   events: LiveSessionEvent[];
 };
 
@@ -111,6 +172,7 @@ const NATIVE_AGENTS: NativeAgentName[] = ["soren", "varro"];
 const BRIDGE_AGENTS: BridgeAgentName[] = ["julian", "cael"];
 const ALL_SESSION_AGENTS: LiveSessionAgentName[] = [...NATIVE_AGENTS, ...BRIDGE_AGENTS];
 const EVENT_LIMIT = 80;
+const BRIDGE_DELIVERY_LIMIT = 120;
 const LIVE_SESSION_STATE_KEY = "live_sessions_state_v1";
 const state = globalLiveSessionState();
 const runner = globalLiveSessionRunnerState();
@@ -178,6 +240,7 @@ export async function startLiveSessionAsync(input: {
     ended_at: null,
     participants: {},
     bridge_attendants: {},
+    bridge_deliveries: [],
     events: []
   };
 
@@ -226,8 +289,17 @@ export async function endLiveSession(sessionId?: string) {
         ...barParticipantForSessionAgent(participant.agent),
         source: "live_session_end"
       });
+      if (isBridgeAgent(participant.agent)) {
+        stopBridgeAttendant(session, participant.agent, now);
+        cancelBridgeDeliveries(session, participant.agent, now, "Live session ended.");
+      }
       addEvent(session, "left", `${displayName(participant.agent)} left the live session.`, participant.participant_id);
     }
+  }
+
+  for (const agent of BRIDGE_AGENTS) {
+    stopBridgeAttendant(session, agent, now);
+    cancelBridgeDeliveries(session, agent, now, "Live session ended.");
   }
 
   addEvent(session, "ended", "Live session ended.");
@@ -296,6 +368,7 @@ export async function leaveLiveSessionAgent(sessionId: string, agent: LiveSessio
   });
   if (isBridgeAgent(agent)) {
     stopBridgeAttendant(session, agent);
+    cancelBridgeDeliveries(session, agent, now, `${displayName(agent)} left the live session.`);
   }
   addEvent(session, "left", `${displayName(agent)} left the live session.`, participant.participant_id);
   await persistSessionState();
@@ -423,6 +496,8 @@ async function runLiveSessionRunnerTick() {
     await tickLiveSession({
       sessionId: runner.session_id
     });
+    const { deliverPendingLiveSessionBridgeDeliveries } = await import("@/lib/live-session-bridge-adapters");
+    await deliverPendingLiveSessionBridgeDeliveries(runner.session_id);
     runner.tick_count += 1;
   } catch (error) {
     runner.last_error = error instanceof Error ? error.message : "Unknown Live Session Runner error.";
@@ -447,12 +522,16 @@ export async function tickLiveSession(input: {
     throw new Error("Cannot tick an ended live session.");
   }
 
-  const agents = input.agent ? [input.agent] : joinedAgents(session);
+  const agents = input.agent ? [input.agent] : joinedNativeAgents(session);
+  const bridgeAgents = input.agent ? [] : joinedBridgeAgents(session);
   const eventCutoffAt = new Date().toISOString();
   const results = [];
 
   for (const agent of agents) {
     results.push(await tickAgent(session, agent, input.dryRun === true, eventCutoffAt));
+  }
+  for (const agent of bridgeAgents) {
+    results.push(await enqueueBridgeDelivery(session, agent, input.dryRun === true, eventCutoffAt));
   }
 
   if (!input.dryRun) {
@@ -559,6 +638,139 @@ export async function acknowledgeLiveSessionBridgeAgent(input: {
   };
 }
 
+export async function claimLiveSessionBridgeDelivery(input: {
+  sessionId?: string;
+  agent: BridgeAgentName;
+}) {
+  await ensureSessionHydrated();
+  const session = sessionFor(input.sessionId) ?? activeSession("bar");
+
+  if (!session) {
+    throw new Error("No active live session.");
+  }
+
+  const participant = requiredJoinedParticipant(session, input.agent);
+  const delivery = session.bridge_deliveries
+    .filter((candidate) => candidate.agent === input.agent && candidate.status === "pending")
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
+
+  if (!delivery) {
+    return {
+      session_id: session.id,
+      agent: input.agent,
+      participant: { ...participant },
+      delivery: null
+    };
+  }
+
+  const now = new Date().toISOString();
+  delivery.status = "claimed";
+  delivery.claimed_at = now;
+  delivery.claim_id = crypto.randomUUID();
+  delivery.updated_at = now;
+  participant.last_seen_at = now;
+  const attendant = markBridgeAttendantPoll(
+    session,
+    input.agent,
+    now,
+    delivery.event_count
+  );
+  attendant.pending_delivery_count = bridgePendingDeliveryCount(session, input.agent);
+  addEvent(session, "bridge_delivery_claimed", `${displayName(input.agent)} bridge delivery claimed.`, participant.participant_id);
+  await persistSessionState();
+
+  return {
+    session_id: session.id,
+    agent: input.agent,
+    participant: { ...participant },
+    attendant: { ...attendant },
+    delivery: cloneBridgeDelivery(delivery)
+  };
+}
+
+export async function completeLiveSessionBridgeDelivery(input: {
+  sessionId?: string;
+  agent: BridgeAgentName;
+  deliveryId: string;
+  claimId?: string;
+  outcome: "delivered" | "skipped" | "failed";
+  error?: string;
+}) {
+  await ensureSessionHydrated();
+  const session = sessionFor(input.sessionId) ?? activeSession("bar");
+
+  if (!session) {
+    throw new Error("No active live session.");
+  }
+
+  const participant = requiredJoinedParticipant(session, input.agent);
+  const delivery = session.bridge_deliveries.find((candidate) =>
+    candidate.id === input.deliveryId &&
+    candidate.agent === input.agent
+  );
+
+  if (!delivery) {
+    throw new Error("Bridge delivery not found.");
+  }
+
+  if (input.claimId && delivery.claim_id && delivery.claim_id !== input.claimId) {
+    throw new Error("Bridge delivery claim_id does not match.");
+  }
+
+  const now = new Date().toISOString();
+  const attendant = requireBridgeAttendant(session, input.agent);
+
+  if (input.outcome === "failed") {
+    const error = input.error?.trim() || "Bridge delivery failed.";
+    delivery.status = "failed";
+    delivery.failed_at = now;
+    delivery.updated_at = now;
+    delivery.last_error = error;
+    participant.last_seen_at = now;
+    participant.last_error = error;
+    attendant.last_error = error;
+    attendant.pending_delivery_count = bridgePendingDeliveryCount(session, input.agent);
+    addEvent(session, "bridge_delivery_failed", `${displayName(input.agent)} bridge delivery failed: ${error}`, participant.participant_id);
+    await persistSessionState();
+
+    return {
+      session_id: session.id,
+      agent: input.agent,
+      participant: { ...participant },
+      attendant: { ...attendant },
+      delivery: cloneBridgeDelivery(delivery)
+    };
+  }
+
+  delivery.status = input.outcome;
+  delivery.completed_at = now;
+  delivery.updated_at = now;
+  delivery.last_error = null;
+  participant.last_seen_at = now;
+  participant.last_checked_event_at = delivery.event_cutoff_at;
+  participant.last_error = null;
+  attendant.last_ack_at = now;
+  attendant.last_delivery_completed_at = now;
+  attendant.last_error = null;
+  attendant.pending_event_count = 0;
+  attendant.pending_delivery_count = bridgePendingDeliveryCount(session, input.agent);
+  addEvent(
+    session,
+    input.outcome === "delivered" ? "bridge_delivery_completed" : "bridge_delivery_skipped",
+    `${displayName(input.agent)} bridge delivery ${input.outcome}.`,
+    participant.participant_id
+  );
+  await persistSessionState();
+
+  return {
+    session_id: session.id,
+    agent: input.agent,
+    participant: { ...participant },
+    attendant: { ...attendant },
+    delivery: cloneBridgeDelivery(delivery)
+  };
+}
+
 async function tickAgent(
   session: LiveSession,
   agent: NativeAgentName,
@@ -641,6 +853,133 @@ async function tickAgent(
   }
 }
 
+async function enqueueBridgeDelivery(
+  session: LiveSession,
+  agent: BridgeAgentName,
+  dryRun: boolean,
+  eventCutoffAt: string
+) {
+  const participant = requiredJoinedParticipant(session, agent);
+  const messages = newBarMessagesFor(participant, eventCutoffAt);
+  const now = new Date().toISOString();
+
+  if (!messages.length) {
+    participant.last_seen_at = now;
+    participant.last_checked_event_at = eventCutoffAt;
+    const attendant = markBridgeAttendantPoll(session, agent, now, 0);
+    attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
+    addEvent(session, "tick_skipped", `${displayName(agent)} bridge delivery skipped; no new BAR events.`, participant.participant_id);
+    if (!dryRun) {
+      await persistSessionState();
+    }
+
+    return {
+      agent,
+      status: "skipped",
+      adapter: "external_bridge",
+      reason: "no_new_events",
+      pending_events: 0,
+      pending_deliveries: attendant.pending_delivery_count
+    };
+  }
+
+  const prompt = bridgeDeliveryPrompt(session, agent, messages, eventCutoffAt);
+
+  if (dryRun) {
+    return {
+      agent,
+      status: "dry_run",
+      adapter: "external_bridge",
+      pending_events: messages.length,
+      prompt
+    };
+  }
+
+  const claimedDelivery = session.bridge_deliveries.find((delivery) =>
+    delivery.agent === agent && delivery.status === "claimed"
+  );
+
+  if (claimedDelivery) {
+    const attendant = markBridgeAttendantPoll(session, agent, now, messages.length);
+    attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
+    addEvent(session, "tick_skipped", `${displayName(agent)} bridge delivery skipped; delivery already claimed.`, participant.participant_id);
+    await persistSessionState();
+
+    return {
+      agent,
+      status: "skipped",
+      adapter: "external_bridge",
+      reason: "delivery_claimed",
+      pending_events: messages.length,
+      pending_deliveries: attendant.pending_delivery_count
+    };
+  }
+
+  const pendingDelivery = session.bridge_deliveries.find((delivery) =>
+    delivery.agent === agent && delivery.status === "pending"
+  );
+
+  if (pendingDelivery) {
+    pendingDelivery.event_cutoff_at = eventCutoffAt;
+    pendingDelivery.event_count = messages.length;
+    pendingDelivery.pending_events = messages;
+    pendingDelivery.prompt = prompt;
+    pendingDelivery.updated_at = now;
+    pendingDelivery.target = bridgeDeliveryTarget(agent);
+    const attendant = markBridgeAttendantPoll(session, agent, now, messages.length);
+    attendant.last_delivery_queued_at = now;
+    attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
+    addEvent(session, "bridge_delivery_queued", `${displayName(agent)} bridge delivery updated with ${messages.length} BAR event(s).`, participant.participant_id);
+    await persistSessionState();
+
+    return {
+      agent,
+      status: "queued",
+      adapter: "external_bridge",
+      delivery_id: pendingDelivery.id,
+      pending_events: messages.length,
+      pending_deliveries: attendant.pending_delivery_count
+    };
+  }
+
+  const delivery: LiveSessionBridgeDelivery = {
+    id: crypto.randomUUID(),
+    session_id: session.id,
+    participant_id: participant.participant_id as `agent:${BridgeAgentName}`,
+    agent,
+    status: "pending",
+    delivery_method: bridgeDeliveryMethod(agent),
+    target: bridgeDeliveryTarget(agent),
+    event_cutoff_at: eventCutoffAt,
+    event_count: messages.length,
+    pending_events: messages,
+    prompt,
+    created_at: now,
+    updated_at: now,
+    claimed_at: null,
+    claim_id: null,
+    completed_at: null,
+    failed_at: null,
+    last_error: null
+  };
+
+  session.bridge_deliveries = [delivery, ...session.bridge_deliveries].slice(0, BRIDGE_DELIVERY_LIMIT);
+  const attendant = markBridgeAttendantPoll(session, agent, now, messages.length);
+  attendant.last_delivery_queued_at = now;
+  attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
+  addEvent(session, "bridge_delivery_queued", `${displayName(agent)} bridge delivery queued with ${messages.length} BAR event(s).`, participant.participant_id);
+  await persistSessionState();
+
+  return {
+    agent,
+    status: "queued",
+    adapter: "external_bridge",
+    delivery_id: delivery.id,
+    pending_events: messages.length,
+    pending_deliveries: attendant.pending_delivery_count
+  };
+}
+
 function liveSessionPrompt(
   session: LiveSession,
   agent: LiveSessionAgentName,
@@ -662,6 +1001,99 @@ function liveSessionPrompt(
       `- ${message.created_at} ${message.author_display_name}: ${message.content}`
     )
   ].join("\n");
+}
+
+function bridgeDeliveryPrompt(
+  session: LiveSession,
+  agent: BridgeAgentName,
+  messages: ReturnType<typeof newBarMessagesFor>,
+  eventCutoffAt: string
+) {
+  return [
+    "BAR Live Session delivery.",
+    `Session: ${session.id}.`,
+    `Event cutoff: ${eventCutoffAt}.`,
+    `Active bridge agent: ${displayName(agent)}.`,
+    "",
+    "Pending BAR events:",
+    ...messages.map((message) =>
+      `- ${message.created_at} ${message.author_display_name}: ${message.content}`
+    ),
+    "",
+    "Please respond in BAR if a response belongs there. Direct room invitations from Chris are response-worthy unless the event explicitly asks for silence."
+  ].join("\n");
+}
+
+function bridgeDeliveryMethod(agent: BridgeAgentName): LiveSessionBridgeDeliveryMethod {
+  return agent === "julian" ? "codex_task" : "cowork_connector";
+}
+
+function bridgeDeliveryTarget(agent: BridgeAgentName): LiveSessionBridgeDeliveryTarget {
+  if (agent === "julian") {
+    const threadId = process.env.JULIAN_CODEX_THREAD_ID?.trim() || null;
+    const hostId = process.env.JULIAN_CODEX_HOST_ID?.trim() || "local";
+
+    return {
+      method: "codex_task",
+      label: "Julian Codex task",
+      status: threadId ? "configured" : "adapter_required",
+      metadata: {
+        thread_id: threadId,
+        host_id: hostId,
+        env_var: "JULIAN_CODEX_THREAD_ID"
+      }
+    };
+  }
+
+  const connectorConfigured = Boolean(process.env.CAEL_COWORK_CONNECTOR_URL?.trim());
+
+  return {
+    method: "cowork_connector",
+    label: "Cael Cowork connector",
+    status: connectorConfigured ? "configured" : "adapter_required",
+    metadata: {
+      connector_url_configured: connectorConfigured,
+      env_var: "CAEL_COWORK_CONNECTOR_URL"
+    }
+  };
+}
+
+function bridgePendingDeliveryCount(session: LiveSession, agent: BridgeAgentName) {
+  return session.bridge_deliveries.filter((delivery) =>
+    delivery.agent === agent &&
+    (delivery.status === "pending" || delivery.status === "claimed")
+  ).length;
+}
+
+function cancelBridgeDeliveries(
+  session: LiveSession,
+  agent: BridgeAgentName,
+  cancelledAt: string,
+  reason: string
+) {
+  for (const delivery of session.bridge_deliveries) {
+    if (
+      delivery.agent === agent &&
+      (delivery.status === "pending" || delivery.status === "claimed")
+    ) {
+      delivery.status = "cancelled";
+      delivery.updated_at = cancelledAt;
+      delivery.completed_at = cancelledAt;
+      delivery.last_error = reason;
+      addEvent(session, "bridge_delivery_cancelled", `${displayName(agent)} bridge delivery cancelled: ${reason}`, delivery.participant_id);
+    }
+  }
+}
+
+function cloneBridgeDelivery(delivery: LiveSessionBridgeDelivery): LiveSessionBridgeDelivery {
+  return {
+    ...delivery,
+    target: {
+      ...delivery.target,
+      metadata: { ...delivery.target.metadata }
+    },
+    pending_events: delivery.pending_events.map((event) => ({ ...event }))
+  };
 }
 
 function newBarMessagesFor(participant: LiveSessionParticipant, eventCutoffAt: string) {
@@ -728,8 +1160,12 @@ function requiredJoinedParticipant(session: LiveSession, agent: LiveSessionAgent
   return participant;
 }
 
-function joinedAgents(session: LiveSession): NativeAgentName[] {
+function joinedNativeAgents(session: LiveSession): NativeAgentName[] {
   return NATIVE_AGENTS.filter((agent) => session.participants[agent]?.status === "joined");
+}
+
+function joinedBridgeAgents(session: LiveSession): BridgeAgentName[] {
+  return BRIDGE_AGENTS.filter((agent) => session.participants[agent]?.status === "joined");
 }
 
 function startBridgeAttendant(session: LiveSession, agent: BridgeAgentName) {
@@ -746,15 +1182,30 @@ function startBridgeAttendant(session: LiveSession, agent: BridgeAgentName) {
     stopped_at: null,
     last_poll_at: existing?.last_poll_at ?? null,
     last_ack_at: existing?.last_ack_at ?? null,
+    last_delivery_queued_at: existing?.last_delivery_queued_at ?? null,
+    last_delivery_completed_at: existing?.last_delivery_completed_at ?? null,
     last_error: null,
-    pending_event_count: existing?.pending_event_count ?? 0
+    pending_event_count: existing?.pending_event_count ?? 0,
+    pending_delivery_count: existing?.pending_delivery_count ?? 0
   };
   addEvent(session, "bridge_attendant_started", `${displayName(agent)} bridge attendant started.`, `agent:${agent}`);
 
   return session.bridge_attendants[agent];
 }
 
-function stopBridgeAttendant(session: LiveSession, agent: BridgeAgentName) {
+function requireBridgeAttendant(session: LiveSession, agent: BridgeAgentName) {
+  const attendant = session.bridge_attendants[agent]?.status === "attending"
+    ? session.bridge_attendants[agent]
+    : startBridgeAttendant(session, agent);
+
+  if (!attendant) {
+    throw new Error(`${displayName(agent)} bridge attendant unavailable.`);
+  }
+
+  return attendant;
+}
+
+function stopBridgeAttendant(session: LiveSession, agent: BridgeAgentName, stoppedAt = new Date().toISOString()) {
   const existing = session.bridge_attendants[agent];
 
   if (!existing || existing.status === "stopped") {
@@ -762,8 +1213,9 @@ function stopBridgeAttendant(session: LiveSession, agent: BridgeAgentName) {
   }
 
   existing.status = "stopped";
-  existing.stopped_at = new Date().toISOString();
+  existing.stopped_at = stoppedAt;
   existing.pending_event_count = 0;
+  existing.pending_delivery_count = 0;
   addEvent(session, "bridge_attendant_stopped", `${displayName(agent)} bridge attendant stopped.`, existing.participant_id);
 
   return existing;
@@ -865,6 +1317,7 @@ function cloneSession(session: LiveSession): LiveSession {
         { ...attendant }
       ])
     ) as Partial<Record<BridgeAgentName, LiveSessionBridgeAttendant>>,
+    bridge_deliveries: session.bridge_deliveries.map(cloneBridgeDelivery),
     events: session.events.map((event) => ({ ...event }))
   };
 }
@@ -988,6 +1441,7 @@ function normalizeSession(value: unknown): LiveSession | null {
     ended_at: normalizeIso(record.ended_at),
     participants,
     bridge_attendants: normalizeBridgeAttendants(id, record.bridge_attendants, participants),
+    bridge_deliveries: normalizeBridgeDeliveries(id, record.bridge_deliveries),
     events: normalizeEvents(record.events)
   };
 }
@@ -1085,9 +1539,158 @@ function normalizeBridgeAttendant(
     stopped_at: normalizeIso(record.stopped_at),
     last_poll_at: normalizeIso(record.last_poll_at),
     last_ack_at: normalizeIso(record.last_ack_at),
+    last_delivery_queued_at: normalizeIso(record.last_delivery_queued_at),
+    last_delivery_completed_at: normalizeIso(record.last_delivery_completed_at),
     last_error: typeof record.last_error === "string" ? record.last_error : null,
-    pending_event_count: normalizeNonNegativeInteger(record.pending_event_count) ?? 0
+    pending_event_count: normalizeNonNegativeInteger(record.pending_event_count) ?? 0,
+    pending_delivery_count: normalizeNonNegativeInteger(record.pending_delivery_count) ?? 0
   };
+}
+
+function normalizeBridgeDeliveries(sessionId: string, value: unknown): LiveSessionBridgeDelivery[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => normalizeBridgeDelivery(sessionId, item))
+    .filter((delivery): delivery is LiveSessionBridgeDelivery => Boolean(delivery))
+    .slice(0, BRIDGE_DELIVERY_LIMIT);
+}
+
+function normalizeBridgeDelivery(sessionId: string, value: unknown): LiveSessionBridgeDelivery | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const agent = normalizeBridgeAgent(record.agent);
+  const status = normalizeBridgeDeliveryStatus(record.status);
+  const eventCutoffAt = normalizeIso(record.event_cutoff_at);
+  const createdAt = normalizeIso(record.created_at) ?? new Date().toISOString();
+
+  if (!agent || !status || !eventCutoffAt) {
+    return null;
+  }
+
+  const pendingEvents = normalizeBridgeDeliveryEvents(record.pending_events);
+  const target = normalizeBridgeDeliveryTarget(agent, record.target);
+
+  return {
+    id: String(record.id ?? crypto.randomUUID()),
+    session_id: String(record.session_id ?? sessionId),
+    participant_id: `agent:${agent}`,
+    agent,
+    status,
+    delivery_method: target.method,
+    target,
+    event_cutoff_at: eventCutoffAt,
+    event_count: normalizeNonNegativeInteger(record.event_count) ?? pendingEvents.length,
+    pending_events: pendingEvents,
+    prompt: typeof record.prompt === "string" ? record.prompt : bridgeDeliveryPromptForNormalizedRecord(sessionId, agent, pendingEvents, eventCutoffAt),
+    created_at: createdAt,
+    updated_at: normalizeIso(record.updated_at) ?? createdAt,
+    claimed_at: normalizeIso(record.claimed_at),
+    claim_id: typeof record.claim_id === "string" ? record.claim_id : null,
+    completed_at: normalizeIso(record.completed_at),
+    failed_at: normalizeIso(record.failed_at),
+    last_error: typeof record.last_error === "string" ? record.last_error : null
+  };
+}
+
+function normalizeBridgeDeliveryEvents(value: unknown): LiveSessionBridgeDelivery["pending_events"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const createdAt = normalizeIso(record.created_at);
+      const id = String(record.id ?? "").trim();
+      const authorId = String(record.author_id ?? "").trim();
+
+      if (!createdAt || !id || !authorId) {
+        return null;
+      }
+
+      return {
+        id,
+        author_id: authorId,
+        author_display_name: String(record.author_display_name ?? authorId),
+        content: String(record.content ?? ""),
+        created_at: createdAt
+      };
+    })
+    .filter((event): event is LiveSessionBridgeDelivery["pending_events"][number] => Boolean(event));
+}
+
+function normalizeBridgeDeliveryTarget(
+  agent: BridgeAgentName,
+  value: unknown
+): LiveSessionBridgeDeliveryTarget {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return bridgeDeliveryTarget(agent);
+  }
+
+  const record = value as Record<string, unknown>;
+  const method = normalizeBridgeDeliveryMethod(record.method) ?? bridgeDeliveryMethod(agent);
+  const fallback = bridgeDeliveryTarget(agent);
+
+  return {
+    method,
+    label: typeof record.label === "string" ? record.label : fallback.label,
+    status: record.status === "configured" ? "configured" : "adapter_required",
+    metadata: normalizeBridgeDeliveryMetadata(record.metadata, fallback.metadata)
+  };
+}
+
+function normalizeBridgeDeliveryMetadata(
+  value: unknown,
+  fallback: LiveSessionBridgeDeliveryTarget["metadata"]
+): LiveSessionBridgeDeliveryTarget["metadata"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ...fallback };
+  }
+
+  const metadata: LiveSessionBridgeDeliveryTarget["metadata"] = {};
+
+  for (const [key, rawValue] of Object.entries(value)) {
+    if (
+      typeof rawValue === "string" ||
+      typeof rawValue === "boolean" ||
+      rawValue === null
+    ) {
+      metadata[key] = rawValue;
+    }
+  }
+
+  return metadata;
+}
+
+function bridgeDeliveryPromptForNormalizedRecord(
+  sessionId: string,
+  agent: BridgeAgentName,
+  messages: LiveSessionBridgeDelivery["pending_events"],
+  eventCutoffAt: string
+) {
+  return [
+    "BAR Live Session delivery.",
+    `Session: ${sessionId}.`,
+    `Event cutoff: ${eventCutoffAt}.`,
+    `Active bridge agent: ${displayName(agent)}.`,
+    "",
+    "Pending BAR events:",
+    ...messages.map((message) =>
+      `- ${message.created_at} ${message.author_display_name}: ${message.content}`
+    ),
+    "",
+    "Please respond in BAR if a response belongs there."
+  ].join("\n");
 }
 
 function normalizeEvents(value: unknown): LiveSessionEvent[] {
@@ -1140,7 +1743,13 @@ function normalizeEventType(value: unknown): LiveSessionEvent["type"] | null {
     value === "bridge_attendant_started" ||
     value === "bridge_attendant_stopped" ||
     value === "bridge_read" ||
-    value === "bridge_ack"
+    value === "bridge_ack" ||
+    value === "bridge_delivery_queued" ||
+    value === "bridge_delivery_claimed" ||
+    value === "bridge_delivery_completed" ||
+    value === "bridge_delivery_failed" ||
+    value === "bridge_delivery_skipped" ||
+    value === "bridge_delivery_cancelled"
   ) {
     return value;
   }
@@ -1151,6 +1760,35 @@ function normalizeEventType(value: unknown): LiveSessionEvent["type"] | null {
 function normalizeSessionAgent(value: unknown): LiveSessionAgentName | null {
   return typeof value === "string" && ALL_SESSION_AGENTS.includes(value as LiveSessionAgentName)
     ? value as LiveSessionAgentName
+    : null;
+}
+
+function normalizeBridgeAgent(value: unknown): BridgeAgentName | null {
+  return typeof value === "string" && BRIDGE_AGENTS.includes(value as BridgeAgentName)
+    ? value as BridgeAgentName
+    : null;
+}
+
+function normalizeBridgeDeliveryStatus(value: unknown): LiveSessionBridgeDeliveryStatus | null {
+  return (
+    value === "pending" ||
+    value === "claimed" ||
+    value === "delivered" ||
+    value === "skipped" ||
+    value === "failed" ||
+    value === "cancelled"
+  )
+    ? value
+    : null;
+}
+
+function normalizeBridgeDeliveryMethod(value: unknown): LiveSessionBridgeDeliveryMethod | null {
+  return (
+    value === "codex_task" ||
+    value === "cowork_connector" ||
+    value === "manual"
+  )
+    ? value
     : null;
 }
 

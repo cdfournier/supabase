@@ -3,14 +3,21 @@ import test from "node:test";
 
 import {
   acknowledgeLiveSessionBridgeAgent,
+  claimLiveSessionBridgeDelivery,
+  completeLiveSessionBridgeDelivery,
   endLiveSession,
   leaveLiveSessionAgent,
   liveSessionStatus,
   previewLiveSessionBridgeAgent,
   previewLiveSessionAgent,
-  startLiveSession
+  startLiveSession,
+  tickLiveSession
 } from "../lib/live-sessions.ts";
 import { postBarMessage } from "../lib/bar.ts";
+
+async function nextTick() {
+  await new Promise((resolve) => setTimeout(resolve, 2));
+}
 
 test("Live Session Host previews new BAR events for joined runtime agents", async () => {
   const session = await startLiveSession({
@@ -76,7 +83,12 @@ test("Live Session Host can attach bridge participants without ticking them", as
   assert.equal(session.bridge_attendants.julian?.status, "attending");
   assert.equal(session.bridge_attendants.cael?.status, "attending");
 
-  await endLiveSession(session.id);
+  const endedSession = await endLiveSession(session.id);
+
+  assert.equal(endedSession?.participants.julian?.status, "left");
+  assert.equal(endedSession?.participants.cael?.status, "left");
+  assert.equal(endedSession?.bridge_attendants.julian?.status, "stopped");
+  assert.equal(endedSession?.bridge_attendants.cael?.status, "stopped");
 });
 
 test("Live Session Host respects explicit bridge-only starts", async () => {
@@ -91,7 +103,10 @@ test("Live Session Host respects explicit bridge-only starts", async () => {
   assert.equal(session.participants.julian?.status, "joined");
   assert.equal(session.bridge_attendants.julian?.status, "attending");
 
-  await endLiveSession(session.id);
+  const endedSession = await endLiveSession(session.id);
+
+  assert.equal(endedSession?.participants.julian?.status, "left");
+  assert.equal(endedSession?.bridge_attendants.julian?.status, "stopped");
 });
 
 test("Live Session Host bridge participants can preview and acknowledge BAR events", async () => {
@@ -137,6 +152,100 @@ test("Live Session Host bridge participants can preview and acknowledge BAR even
 
   assert.equal(emptyPreview.pending_events.length, 0);
   assert.equal(emptyPreview.prompt, null);
+
+  await endLiveSession(session.id);
+});
+
+test("Live Session Host queues and completes bridge delivery jobs", async () => {
+  const session = await startLiveSession({
+    title: "Test BAR Bridge Delivery",
+    agents: [],
+    bridgeAgents: ["julian"]
+  });
+  await nextTick();
+
+  await postBarMessage({
+    participant_id: "operator:chris",
+    participant_type: "operator",
+    display_name: "Chris",
+    source: "test",
+    content: "Julian, delivery queue check."
+  });
+
+  const tick = await tickLiveSession({
+    sessionId: session.id
+  });
+  const queued = tick.results.find((result) => result.agent === "julian");
+
+  assert.equal(queued?.status, "queued");
+  assert.equal((queued as { adapter?: string } | undefined)?.adapter, "external_bridge");
+  assert.equal(queued?.pending_events, 1);
+
+  const status = await liveSessionStatus();
+  const activeSession = status.active_session;
+
+  assert.equal(activeSession?.bridge_deliveries.length, 1);
+  assert.equal(activeSession?.bridge_deliveries[0]?.status, "pending");
+  assert.equal(activeSession?.participants.julian?.last_checked_event_at, session.participants.julian?.last_checked_event_at);
+
+  const claimed = await claimLiveSessionBridgeDelivery({
+    sessionId: session.id,
+    agent: "julian"
+  });
+
+  assert.equal(claimed.delivery?.status, "claimed");
+  assert.equal(claimed.delivery?.pending_events[0]?.content, "Julian, delivery queue check.");
+  assert.match(claimed.delivery?.prompt ?? "", /BAR Live Session delivery/);
+
+  const completed = await completeLiveSessionBridgeDelivery({
+    sessionId: session.id,
+    agent: "julian",
+    deliveryId: claimed.delivery?.id ?? "",
+    claimId: claimed.delivery?.claim_id ?? undefined,
+    outcome: "delivered"
+  });
+
+  assert.equal(completed.delivery.status, "delivered");
+  assert.equal(completed.participant.last_checked_event_at, completed.delivery.event_cutoff_at);
+  assert.equal(completed.attendant.pending_delivery_count, 0);
+
+  await endLiveSession(session.id);
+});
+
+test("Live Session Host keeps bridge cursor open when delivery fails", async () => {
+  const session = await startLiveSession({
+    title: "Test BAR Bridge Delivery Failure",
+    agents: [],
+    bridgeAgents: ["cael"]
+  });
+  const initialCursor = session.participants.cael?.last_checked_event_at ?? null;
+  await nextTick();
+
+  await postBarMessage({
+    participant_id: "operator:chris",
+    participant_type: "operator",
+    display_name: "Chris",
+    source: "test",
+    content: "Cael, failed delivery queue check."
+  });
+
+  await tickLiveSession({ sessionId: session.id });
+  const claimed = await claimLiveSessionBridgeDelivery({
+    sessionId: session.id,
+    agent: "cael"
+  });
+  const failed = await completeLiveSessionBridgeDelivery({
+    sessionId: session.id,
+    agent: "cael",
+    deliveryId: claimed.delivery?.id ?? "",
+    claimId: claimed.delivery?.claim_id ?? undefined,
+    outcome: "failed",
+    error: "Cowork connector unavailable."
+  });
+
+  assert.equal(failed.delivery.status, "failed");
+  assert.equal(failed.participant.last_checked_event_at, initialCursor);
+  assert.equal(failed.participant.last_error, "Cowork connector unavailable.");
 
   await endLiveSession(session.id);
 });

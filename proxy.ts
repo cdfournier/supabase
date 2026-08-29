@@ -9,12 +9,15 @@ import {
 const PUBLIC_PATHS = new Set([
   "/operator-login",
   "/api/operator/session",
+  "/api/bar/bridge",
   "/api/cafe/bridge",
   "/api/operator-note-wake-receipts/bridge",
   "/api/operator-notes/bridge",
   "/api/wake-arrivals/bridge",
   "/api/work-packets/bridge",
-  "/api/work-packet-signals/bridge"
+  "/api/work-packet-signals/bridge",
+  "/api/live-sessions/bridge",
+  "/api/live-sessions/bridge-deliveries"
 ]);
 
 export async function proxy(request: NextRequest) {

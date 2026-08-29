@@ -701,6 +701,35 @@ button {
   text-transform: uppercase;
 }
 
+.live-session-bridge-agent {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.live-session-bridge-agent + .live-session-bridge-agent {
+  margin-top: 6px;
+}
+
+.live-session-bridge-status {
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  gap: 4px 8px;
+  line-height: 1.25;
+  min-width: 0;
+  padding-left: 2px;
+}
+
+.live-session-bridge-status span,
+.live-session-bridge-status time {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .live-session-policy {
   display: grid;
   gap: 8px;

@@ -68,11 +68,24 @@ export async function POST(request: Request) {
     }
 
     if (action === "tick") {
-      return NextResponse.json(await tickLiveSession({
+      const tick = await tickLiveSession({
         sessionId: optionalString(body.session_id),
         agent: optionalNativeAgent(body.agent),
         dryRun: body.dry_run === true
-      }));
+      });
+      const bridgeAdapterResults = body.dry_run === true
+        ? []
+        : await deliverPendingBridgeDeliveries(tick.session.id);
+      const status = body.dry_run === true ? undefined : await liveSessionStatus();
+      const session = status?.active_session?.id === tick.session.id
+        ? status.active_session
+        : tick.session;
+
+      return NextResponse.json({
+        ...tick,
+        session,
+        bridge_adapter_results: bridgeAdapterResults
+      });
     }
 
     if (action === "preview_agent") {
@@ -180,4 +193,10 @@ function optionalNumber(value: unknown) {
   const numeric = Number(value);
 
   return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+async function deliverPendingBridgeDeliveries(sessionId: string) {
+  const { deliverPendingLiveSessionBridgeDeliveries } = await import("@/lib/live-session-bridge-adapters");
+
+  return deliverPendingLiveSessionBridgeDeliveries(sessionId);
 }

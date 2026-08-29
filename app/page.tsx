@@ -191,8 +191,33 @@ type LiveSessionBridgeAttendant = {
   stopped_at: string | null;
   last_poll_at: string | null;
   last_ack_at: string | null;
+  last_delivery_queued_at: string | null;
+  last_delivery_completed_at: string | null;
   last_error: string | null;
   pending_event_count: number;
+  pending_delivery_count: number;
+};
+type LiveSessionBridgeDelivery = {
+  id: string;
+  session_id: string;
+  participant_id: `agent:${LiveSessionBridgeAgent}`;
+  agent: LiveSessionBridgeAgent;
+  status: "pending" | "claimed" | "delivered" | "skipped" | "failed" | "cancelled";
+  delivery_method: "codex_task" | "cowork_connector" | "manual";
+  target: {
+    method: "codex_task" | "cowork_connector" | "manual";
+    label: string;
+    status: "configured" | "adapter_required";
+    metadata: Record<string, string | boolean | null>;
+  };
+  event_cutoff_at: string;
+  event_count: number;
+  created_at: string;
+  updated_at: string;
+  claimed_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  last_error: string | null;
 };
 type LiveSessionTickPolicy = {
   mode: "manual" | "interval";
@@ -211,6 +236,7 @@ type LiveSession = {
   ended_at: string | null;
   participants: Partial<Record<LiveSessionAgent, LiveSessionParticipant>>;
   bridge_attendants: Partial<Record<LiveSessionBridgeAgent, LiveSessionBridgeAttendant>>;
+  bridge_deliveries: LiveSessionBridgeDelivery[];
   events: Array<{
     id: string;
     session_id: string;
@@ -4272,6 +4298,8 @@ function LiveSessionPanel({
   const runner = status?.runner ?? null;
   const bridgeAttendants = Object.values(activeSession?.bridge_attendants ?? {})
     .filter((attendant) => attendant?.status === "attending").length;
+  const pendingBridgeDeliveries = activeSession?.bridge_deliveries
+    .filter((delivery) => delivery.status === "pending" || delivery.status === "claimed").length ?? 0;
   const disabled = loading || requestInProgress;
 
   return (
@@ -4308,9 +4336,10 @@ function LiveSessionPanel({
                   : "manual tick"}
             </span>
             {bridgeAttendants ? <span>{bridgeAttendants} bridge attending</span> : null}
+            {pendingBridgeDeliveries ? <span>{pendingBridgeDeliveries} bridge queued</span> : null}
           </div>
         ) : (
-          <p className="health-empty">Start a BAR room session. Native agents tick; bridge agents poll and acknowledge.</p>
+          <p className="health-empty">Start a BAR room session. Native agents tick; bridge agents receive delivery jobs.</p>
         )}
 
         <div className="live-session-groups">
@@ -4333,16 +4362,21 @@ function LiveSessionPanel({
           <div>
             <h3>Bridge</h3>
             {liveSessionBridgeAgents.map((agent) => (
-              <div className="wake-switch-row" key={agent.id}>
-                <span title={agent.label}>{agent.label}</span>
-                <WakeSwitch
-                  checked={liveSessionParticipantJoined(activeSession, agent.id, draft)}
-                  disabled={disabled}
-                  label={`${agent.label} live session bridge`}
-                  offText="Out"
-                  onChange={(checked) => onToggleAgent(agent.id, checked)}
-                  onText="In"
-                />
+              <div className="live-session-bridge-agent" key={agent.id}>
+                <div className="wake-switch-row">
+                  <span title={agent.label}>{agent.label}</span>
+                  <WakeSwitch
+                    checked={liveSessionParticipantJoined(activeSession, agent.id, draft)}
+                    disabled={disabled}
+                    label={`${agent.label} live session bridge`}
+                    offText="Out"
+                    onChange={(checked) => onToggleAgent(agent.id, checked)}
+                    onText="In"
+                  />
+                </div>
+                {activeSession ? (
+                  <LiveSessionBridgeStatus agent={agent.id} session={activeSession} />
+                ) : null}
               </div>
             ))}
           </div>
@@ -4431,6 +4465,40 @@ function LiveSessionPanel({
         {error ? <p className="health-error">{error}</p> : null}
       </div>
     </section>
+  );
+}
+
+function LiveSessionBridgeStatus({
+  agent,
+  session
+}: {
+  agent: LiveSessionBridgeAgent;
+  session: LiveSession;
+}) {
+  const attendant = session.bridge_attendants[agent];
+  const deliveries = session.bridge_deliveries.filter((delivery) => delivery.agent === agent);
+  const activeDeliveries = deliveries.filter((delivery) => delivery.status === "pending" || delivery.status === "claimed");
+  const latestDelivery = deliveries[0];
+  const target = latestDelivery?.target;
+  const statusLabel = activeDeliveries.length
+    ? `${activeDeliveries.length} queued`
+    : target?.status === "configured"
+      ? "adapter ready"
+      : target?.status === "adapter_required"
+        ? "adapter needed"
+        : attendant?.status === "attending"
+          ? "watching"
+          : "not watching";
+  const lastAt = latestDelivery?.updated_at ?? attendant?.last_delivery_completed_at ?? attendant?.last_poll_at ?? null;
+
+  return (
+    <div className="live-session-bridge-status">
+      <span>{statusLabel}</span>
+      {lastAt ? <time dateTime={lastAt}>{formatMessageTime(lastAt)}</time> : null}
+      {attendant?.last_error || latestDelivery?.last_error ? (
+        <span title={attendant?.last_error ?? latestDelivery?.last_error ?? undefined}>error</span>
+      ) : null}
+    </div>
   );
 }
 

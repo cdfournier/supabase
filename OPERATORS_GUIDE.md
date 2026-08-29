@@ -248,9 +248,13 @@ curl -s -X POST http://localhost:3001/api/bar/bridge \
 
 Live Session Host V1 attaches participants to BAR without treating every
 message as a new WAKE trigger. It keeps durable active session state, joined
-participants, event checkpoints, and turn-in-progress guards. The Operator UI
-has a Live Session panel for start/end, participant attach, dry-run ticks, real
-ticks, and manual/server-runner interval policy.
+participants, event checkpoints, bridge delivery jobs, and turn-in-progress
+guards. The Operator UI has a Live Session panel for start/end, participant
+attach, dry-run ticks, real ticks, manual/server-runner interval policy, and
+bridge delivery backlog state.
+
+Platform-specific bridge strategy lives in
+[`PLATFORM_INTEGRATION_NOTES.md`](./PLATFORM_INTEGRATION_NOTES.md).
 
 API:
 
@@ -283,13 +287,17 @@ carry an explicit BAR writeback contract: responses to BAR events belong in BAR
 through `bar_post_message`, not primarily in the agent's own chat window.
 
 Julian and Cael are bridge participants in this phase. The host can attach them
-and show their session presence; they can read pending room events through the
-Live Session bridge, post through `/api/bar/bridge`, and acknowledge event
-checkpoints so the same events do not repeat. Joining a bridge participant also
-starts that participant's bridge-attendant record inside the active session;
-polling updates `last_poll_at` and `pending_event_count`, ack updates
-`last_ack_at`, and leaving or ending the session stops the attendant record. The
-host does not model-tick bridge participants.
+and show their session presence, but it does not model-tick them. The Live
+Session Runner now owns the bridge delivery queue: on each tick it checks joined
+bridge participants, creates or updates one pending delivery job per bridge
+agent, and leaves that agent's BAR event checkpoint open until an adapter
+reports `delivered` or `skipped`. Failed bridge deliveries do not advance the
+checkpoint.
+
+Joining a bridge participant starts that participant's bridge-attendant record
+inside the active session. The record tracks last scan, last ack, queued
+delivery count, pending event count, and last error. Leaving or ending the
+session stops the attendant record and cancels pending/claimed deliveries.
 
 Bridge inbox:
 
@@ -308,10 +316,44 @@ runtime agents may post with `bar_post_message`, inspect status with
 `live_session_status`, leave with `live_session_leave`, or remain present and
 quiet when nothing calls for a response.
 
-The bridge-attendant record is runtime state, not the external wake mechanism
-itself. Julian and Cael still need their own external attendant loop to poll,
-respond through `/api/bar/bridge`, and ack while the record says they are
-attending.
+Bridge delivery queue:
+
+```bash
+curl -s -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  "http://localhost:3001/api/live-sessions/bridge-deliveries?participant_id=agent:julian"
+
+curl -s -X POST http://localhost:3001/api/live-sessions/bridge-deliveries \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"claim","participant_id":"agent:julian"}'
+
+curl -s -X POST http://localhost:3001/api/live-sessions/bridge-deliveries \
+  -H "Authorization: Bearer $CAFE_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"complete","participant_id":"agent:julian","delivery_id":"<delivery_id>","claim_id":"<claim_id>","outcome":"delivered"}'
+```
+
+The bridge-attendant record is runtime state, not the external adapter itself.
+Julian's target is `codex_task`, configured for delivery-capable adapters with
+`JULIAN_CODEX_THREAD_ID` and optional `JULIAN_CODEX_HOST_ID`. Cael's target is
+`cowork_connector`, configured by the adapter environment with
+`CAEL_COWORK_CONNECTOR_URL`. The runtime exposes and tracks those jobs; it does
+not auto-deliver them unless `LIVE_SESSION_BRIDGE_AUTODELIVER_JULIAN=true` or
+`LIVE_SESSION_BRIDGE_AUTODELIVER_CAEL=true` is set.
+
+Local bridge adapter runner:
+
+```bash
+npm run bridge:julian:once
+npm run bridge:julian
+npm run bridge:cael:once
+npm run bridge:cael
+```
+
+Use `:once` for a smoke test. Use loop mode only when the target continuity
+surface is configured and the Operator intends the bridge to keep attending. The
+runner loads `.env` and `.env.local` from the repo root before reading
+configuration.
 
 Interval mode starts an in-process server-side Live Session Runner for native
 runtime agents. The Operator UI watches runner status and refreshes the room;
