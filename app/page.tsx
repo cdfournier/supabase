@@ -219,6 +219,13 @@ type LiveSessionBridgeDelivery = {
   failed_at: string | null;
   last_error: string | null;
 };
+type LiveSessionBridgeAdapterStatus = {
+  agent: LiveSessionBridgeAgent;
+  autodeliver_enabled: boolean;
+  target: LiveSessionBridgeDelivery["target"];
+  ready: boolean;
+  reason: string | null;
+};
 type LiveSessionTickPolicy = {
   mode: "manual" | "interval";
   interval_seconds: number | null;
@@ -249,6 +256,7 @@ type LiveSession = {
 type LiveSessionStatus = {
   generated_at: string;
   active_session: LiveSession | null;
+  bridge_adapters: Record<LiveSessionBridgeAgent, LiveSessionBridgeAdapterStatus>;
   runner: {
     status: "running" | "stopped";
     session_id: string | null;
@@ -4375,7 +4383,17 @@ function LiveSessionPanel({
                   />
                 </div>
                 {activeSession ? (
-                  <LiveSessionBridgeStatus agent={agent.id} session={activeSession} />
+                  <LiveSessionBridgeStatus
+                    adapterStatus={status?.bridge_adapters?.[agent.id]}
+                    agent={agent.id}
+                    session={activeSession}
+                  />
+                ) : status?.bridge_adapters?.[agent.id] ? (
+                  <LiveSessionBridgeStatus
+                    adapterStatus={status.bridge_adapters[agent.id]}
+                    agent={agent.id}
+                    session={null}
+                  />
                 ) : null}
               </div>
             ))}
@@ -4469,34 +4487,39 @@ function LiveSessionPanel({
 }
 
 function LiveSessionBridgeStatus({
+  adapterStatus,
   agent,
   session
 }: {
+  adapterStatus?: LiveSessionBridgeAdapterStatus;
   agent: LiveSessionBridgeAgent;
-  session: LiveSession;
+  session: LiveSession | null;
 }) {
-  const attendant = session.bridge_attendants[agent];
-  const deliveries = session.bridge_deliveries.filter((delivery) => delivery.agent === agent);
+  const attendant = session?.bridge_attendants[agent];
+  const deliveries = session?.bridge_deliveries.filter((delivery) => delivery.agent === agent) ?? [];
   const activeDeliveries = deliveries.filter((delivery) => delivery.status === "pending" || delivery.status === "claimed");
   const latestDelivery = deliveries[0];
-  const target = latestDelivery?.target;
+  const target = latestDelivery?.target ?? adapterStatus?.target;
   const statusLabel = activeDeliveries.length
     ? `${activeDeliveries.length} queued`
-    : target?.status === "configured"
-      ? "adapter ready"
+    : adapterStatus?.ready
+      ? "auto ready"
+      : target?.status === "configured"
+        ? "manual ready"
       : target?.status === "adapter_required"
         ? "adapter needed"
         : attendant?.status === "attending"
           ? "watching"
           : "not watching";
   const lastAt = latestDelivery?.updated_at ?? attendant?.last_delivery_completed_at ?? attendant?.last_poll_at ?? null;
+  const error = attendant?.last_error ?? latestDelivery?.last_error ?? adapterStatus?.reason;
 
   return (
     <div className="live-session-bridge-status">
       <span>{statusLabel}</span>
       {lastAt ? <time dateTime={lastAt}>{formatMessageTime(lastAt)}</time> : null}
-      {attendant?.last_error || latestDelivery?.last_error ? (
-        <span title={attendant?.last_error ?? latestDelivery?.last_error ?? undefined}>error</span>
+      {error ? (
+        <span title={error}>detail</span>
       ) : null}
     </div>
   );

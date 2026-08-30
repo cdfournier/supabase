@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
-const AGENTS = new Set(["julian", "cael"]);
+const AGENTS = new Set(["julian"]);
 const DEFAULT_BASE_URL = "http://localhost:3001";
 const DEFAULT_INTERVAL_SECONDS = 5;
 const DEFAULT_CODEX_CLI = "/Applications/ChatGPT.app/Contents/Resources/codex";
@@ -81,7 +81,7 @@ async function deliver(agent, delivery) {
     return;
   }
 
-  await deliverToCowork(delivery);
+  throw new Error(`${agent} does not support server-side bridge autodelivery.`);
 }
 
 async function deliverToCodex(delivery) {
@@ -99,29 +99,6 @@ async function deliverToCodex(delivery) {
     "--message",
     delivery.prompt
   ]);
-}
-
-async function deliverToCowork(delivery) {
-  const url = process.env.CAEL_COWORK_CONNECTOR_URL?.trim();
-
-  if (!url) {
-    throw new Error("CAEL_COWORK_CONNECTOR_URL is required for Cael bridge delivery.");
-  }
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      type: "live_session_bridge_delivery",
-      delivery
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`Cowork connector returned HTTP ${response.status}.`);
-  }
 }
 
 async function completeDelivery({ agent, baseUrl, token, delivery, outcome, error }) {
@@ -208,7 +185,7 @@ function requiredAgent(value) {
   const agent = String(value ?? "").trim().toLowerCase();
 
   if (!AGENTS.has(agent)) {
-    throw new Error("Choose --agent julian or --agent cael.");
+    throw new Error("Choose --agent julian. Cael uses the pull bridge helper in his Cowork project.");
   }
 
   return agent;
@@ -245,7 +222,6 @@ function errorMessage(error) {
 function printHelp() {
   console.log(`Usage:
   node scripts/live-session-bridge-adapter.mjs --agent julian [--once]
-  node scripts/live-session-bridge-adapter.mjs --agent cael [--once]
 
 Environment:
   CAFE_BRIDGE_TOKEN                 Required bridge API token.
@@ -254,7 +230,9 @@ Environment:
                                     Poll interval for loop mode. Defaults to ${DEFAULT_INTERVAL_SECONDS}.
   JULIAN_CODEX_THREAD_ID            Required for --agent julian.
   CODEX_CLI                         Optional Codex CLI path. Defaults to ${DEFAULT_CODEX_CLI}.
-  CAEL_COWORK_CONNECTOR_URL         Required for --agent cael.
+
+Cael uses the pull bridge from his Cowork project:
+  python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" join
 `);
 }
 

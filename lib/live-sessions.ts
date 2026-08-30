@@ -91,6 +91,14 @@ export type LiveSessionBridgeDeliveryTarget = {
   metadata: Record<string, string | boolean | null>;
 };
 
+export type LiveSessionBridgeAdapterStatus = {
+  agent: BridgeAgentName;
+  autodeliver_enabled: boolean;
+  target: LiveSessionBridgeDeliveryTarget;
+  ready: boolean;
+  reason: string | null;
+};
+
 export type LiveSessionBridgeDelivery = {
   id: string;
   session_id: string;
@@ -136,6 +144,7 @@ export type LiveSession = {
 export type LiveSessionStatusPayload = {
   generated_at: string;
   active_session: LiveSession | null;
+  bridge_adapters: Record<BridgeAgentName, LiveSessionBridgeAdapterStatus>;
   runner: LiveSessionRunnerSnapshot;
   sessions: LiveSession[];
 };
@@ -185,6 +194,7 @@ export async function liveSessionStatus(): Promise<LiveSessionStatusPayload> {
   return {
     generated_at: new Date().toISOString(),
     active_session: sessions.find((session) => session.status === "active") ?? null,
+    bridge_adapters: bridgeAdapterStatuses(),
     runner: liveSessionRunnerStatus(),
     sessions
   };
@@ -884,6 +894,7 @@ async function enqueueBridgeDelivery(
   }
 
   const prompt = bridgeDeliveryPrompt(session, agent, messages, eventCutoffAt);
+  const target = bridgeDeliveryTarget(agent);
 
   if (dryRun) {
     return {
@@ -891,6 +902,47 @@ async function enqueueBridgeDelivery(
       status: "dry_run",
       adapter: "external_bridge",
       pending_events: messages.length,
+      prompt
+    };
+  }
+
+  if (target.status !== "configured") {
+    participant.last_seen_at = now;
+    participant.last_error = `${target.label} is not configured.`;
+    const attendant = markBridgeAttendantPoll(session, agent, now, messages.length);
+    attendant.last_error = participant.last_error;
+    attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
+    addEvent(session, "bridge_delivery_skipped", `${displayName(agent)} bridge delivery skipped; adapter required.`, participant.participant_id);
+    await persistSessionState();
+
+    return {
+      agent,
+      status: "skipped",
+      adapter: "external_bridge",
+      reason: "adapter_required",
+      pending_events: messages.length,
+      pending_deliveries: attendant.pending_delivery_count,
+      target
+    };
+  }
+
+  if (target.method === "manual") {
+    participant.last_seen_at = now;
+    participant.last_error = null;
+    const attendant = markBridgeAttendantPoll(session, agent, now, messages.length);
+    attendant.last_error = null;
+    attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
+    addEvent(session, "bridge_read", `${displayName(agent)} pull bridge has ${messages.length} pending BAR event(s).`, participant.participant_id);
+    await persistSessionState();
+
+    return {
+      agent,
+      status: "skipped",
+      adapter: "external_bridge",
+      reason: "manual_pull",
+      pending_events: messages.length,
+      pending_deliveries: attendant.pending_delivery_count,
+      target,
       prompt
     };
   }
@@ -925,7 +977,7 @@ async function enqueueBridgeDelivery(
     pendingDelivery.pending_events = messages;
     pendingDelivery.prompt = prompt;
     pendingDelivery.updated_at = now;
-    pendingDelivery.target = bridgeDeliveryTarget(agent);
+    pendingDelivery.target = target;
     const attendant = markBridgeAttendantPoll(session, agent, now, messages.length);
     attendant.last_delivery_queued_at = now;
     attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
@@ -949,7 +1001,7 @@ async function enqueueBridgeDelivery(
     agent,
     status: "pending",
     delivery_method: bridgeDeliveryMethod(agent),
-    target: bridgeDeliveryTarget(agent),
+    target,
     event_cutoff_at: eventCutoffAt,
     event_count: messages.length,
     pending_events: messages,
@@ -1025,7 +1077,7 @@ function bridgeDeliveryPrompt(
 }
 
 function bridgeDeliveryMethod(agent: BridgeAgentName): LiveSessionBridgeDeliveryMethod {
-  return agent === "julian" ? "codex_task" : "cowork_connector";
+  return agent === "julian" ? "codex_task" : "manual";
 }
 
 function bridgeDeliveryTarget(agent: BridgeAgentName): LiveSessionBridgeDeliveryTarget {
@@ -1045,17 +1097,54 @@ function bridgeDeliveryTarget(agent: BridgeAgentName): LiveSessionBridgeDelivery
     };
   }
 
-  const connectorConfigured = Boolean(process.env.CAEL_COWORK_CONNECTOR_URL?.trim());
-
   return {
-    method: "cowork_connector",
-    label: "Cael Cowork connector",
-    status: connectorConfigured ? "configured" : "adapter_required",
+    method: "manual",
+    label: "Cael pull bridge",
+    status: "configured",
     metadata: {
-      connector_url_configured: connectorConfigured,
-      env_var: "CAEL_COWORK_CONNECTOR_URL"
+      mode: "pull_http",
+      script: "bar_live.py",
+      autodelivery_supported: false
     }
   };
+}
+
+function bridgeAdapterStatuses(): Record<BridgeAgentName, LiveSessionBridgeAdapterStatus> {
+  return Object.fromEntries(BRIDGE_AGENTS.map((agent) => [agent, bridgeAdapterStatus(agent)])) as Record<
+    BridgeAgentName,
+    LiveSessionBridgeAdapterStatus
+  >;
+}
+
+function bridgeAdapterStatus(agent: BridgeAgentName): LiveSessionBridgeAdapterStatus {
+  const target = bridgeDeliveryTarget(agent);
+  const autodeliverEnabled = bridgeAutodeliverEnabled(agent);
+  const ready = target.status === "configured" && autodeliverEnabled;
+  const reason = target.status !== "configured"
+    ? `${target.label} is not configured.`
+    : autodeliverEnabled
+      ? null
+      : `${displayName(agent)} bridge autodelivery is disabled.`;
+
+  return {
+    agent,
+    autodeliver_enabled: autodeliverEnabled,
+    target,
+    ready,
+    reason
+  };
+}
+
+function bridgeAutodeliverEnabled(agent: BridgeAgentName) {
+  if (agent === "cael") {
+    return false;
+  }
+
+  const envName = agent === "julian"
+    ? "LIVE_SESSION_BRIDGE_AUTODELIVER_JULIAN"
+    : "LIVE_SESSION_BRIDGE_AUTODELIVER_CAEL";
+
+  return process.env[envName]?.trim().toLowerCase() === "true";
 }
 
 function bridgePendingDeliveryCount(session: LiveSession, agent: BridgeAgentName) {

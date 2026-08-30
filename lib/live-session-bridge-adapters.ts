@@ -94,7 +94,7 @@ async function deliver(agent: BridgeAgentName, delivery: LiveSessionBridgeDelive
     return;
   }
 
-  await deliverToCowork(delivery);
+  throw new Error(`${agent} does not support server-side bridge autodelivery.`);
 }
 
 async function deliverToCodex(delivery: LiveSessionBridgeDelivery) {
@@ -114,30 +114,11 @@ async function deliverToCodex(delivery: LiveSessionBridgeDelivery) {
   ]);
 }
 
-async function deliverToCowork(delivery: LiveSessionBridgeDelivery) {
-  const url = process.env.CAEL_COWORK_CONNECTOR_URL?.trim();
-
-  if (!url) {
-    throw new Error("CAEL_COWORK_CONNECTOR_URL is required for Cael bridge delivery.");
-  }
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      type: "live_session_bridge_delivery",
-      delivery
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`Cowork connector returned HTTP ${response.status}.`);
-  }
-}
-
 function adapterEnabled(agent: BridgeAgentName) {
+  if (agent === "cael") {
+    return false;
+  }
+
   const envName = agent === "julian"
     ? "LIVE_SESSION_BRIDGE_AUTODELIVER_JULIAN"
     : "LIVE_SESSION_BRIDGE_AUTODELIVER_CAEL";

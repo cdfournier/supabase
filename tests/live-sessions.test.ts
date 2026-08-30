@@ -19,6 +19,32 @@ async function nextTick() {
   await new Promise((resolve) => setTimeout(resolve, 2));
 }
 
+async function withEnv<T>(values: Record<string, string | undefined>, action: () => Promise<T>) {
+  const previous = Object.fromEntries(
+    Object.keys(values).map((key) => [key, process.env[key]])
+  );
+
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+
+  try {
+    return await action();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 test("Live Session Host previews new BAR events for joined runtime agents", async () => {
   const session = await startLiveSession({
     title: "Test BAR Live Session",
@@ -157,64 +183,67 @@ test("Live Session Host bridge participants can preview and acknowledge BAR even
 });
 
 test("Live Session Host queues and completes bridge delivery jobs", async () => {
-  const session = await startLiveSession({
-    title: "Test BAR Bridge Delivery",
-    agents: [],
-    bridgeAgents: ["julian"]
+  await withEnv({ JULIAN_CODEX_THREAD_ID: "test-thread" }, async () => {
+    const session = await startLiveSession({
+      title: "Test BAR Bridge Delivery",
+      agents: [],
+      bridgeAgents: ["julian"]
+    });
+    await nextTick();
+
+    await postBarMessage({
+      participant_id: "operator:chris",
+      participant_type: "operator",
+      display_name: "Chris",
+      source: "test",
+      content: "Julian, delivery queue check."
+    });
+
+    const tick = await tickLiveSession({
+      sessionId: session.id
+    });
+    const queued = tick.results.find((result) => result.agent === "julian");
+
+    assert.equal(queued?.status, "queued");
+    assert.equal((queued as { adapter?: string } | undefined)?.adapter, "external_bridge");
+    assert.equal(queued?.pending_events, 1);
+
+    const status = await liveSessionStatus();
+    const activeSession = status.active_session;
+
+    assert.equal(status.bridge_adapters.julian.target.status, "configured");
+    assert.equal(activeSession?.bridge_deliveries.length, 1);
+    assert.equal(activeSession?.bridge_deliveries[0]?.status, "pending");
+    assert.equal(activeSession?.participants.julian?.last_checked_event_at, session.participants.julian?.last_checked_event_at);
+
+    const claimed = await claimLiveSessionBridgeDelivery({
+      sessionId: session.id,
+      agent: "julian"
+    });
+
+    assert.equal(claimed.delivery?.status, "claimed");
+    assert.equal(claimed.delivery?.pending_events[0]?.content, "Julian, delivery queue check.");
+    assert.match(claimed.delivery?.prompt ?? "", /BAR Live Session delivery/);
+
+    const completed = await completeLiveSessionBridgeDelivery({
+      sessionId: session.id,
+      agent: "julian",
+      deliveryId: claimed.delivery?.id ?? "",
+      claimId: claimed.delivery?.claim_id ?? undefined,
+      outcome: "delivered"
+    });
+
+    assert.equal(completed.delivery.status, "delivered");
+    assert.equal(completed.participant.last_checked_event_at, completed.delivery.event_cutoff_at);
+    assert.equal(completed.attendant.pending_delivery_count, 0);
+
+    await endLiveSession(session.id);
   });
-  await nextTick();
-
-  await postBarMessage({
-    participant_id: "operator:chris",
-    participant_type: "operator",
-    display_name: "Chris",
-    source: "test",
-    content: "Julian, delivery queue check."
-  });
-
-  const tick = await tickLiveSession({
-    sessionId: session.id
-  });
-  const queued = tick.results.find((result) => result.agent === "julian");
-
-  assert.equal(queued?.status, "queued");
-  assert.equal((queued as { adapter?: string } | undefined)?.adapter, "external_bridge");
-  assert.equal(queued?.pending_events, 1);
-
-  const status = await liveSessionStatus();
-  const activeSession = status.active_session;
-
-  assert.equal(activeSession?.bridge_deliveries.length, 1);
-  assert.equal(activeSession?.bridge_deliveries[0]?.status, "pending");
-  assert.equal(activeSession?.participants.julian?.last_checked_event_at, session.participants.julian?.last_checked_event_at);
-
-  const claimed = await claimLiveSessionBridgeDelivery({
-    sessionId: session.id,
-    agent: "julian"
-  });
-
-  assert.equal(claimed.delivery?.status, "claimed");
-  assert.equal(claimed.delivery?.pending_events[0]?.content, "Julian, delivery queue check.");
-  assert.match(claimed.delivery?.prompt ?? "", /BAR Live Session delivery/);
-
-  const completed = await completeLiveSessionBridgeDelivery({
-    sessionId: session.id,
-    agent: "julian",
-    deliveryId: claimed.delivery?.id ?? "",
-    claimId: claimed.delivery?.claim_id ?? undefined,
-    outcome: "delivered"
-  });
-
-  assert.equal(completed.delivery.status, "delivered");
-  assert.equal(completed.participant.last_checked_event_at, completed.delivery.event_cutoff_at);
-  assert.equal(completed.attendant.pending_delivery_count, 0);
-
-  await endLiveSession(session.id);
 });
 
-test("Live Session Host keeps bridge cursor open when delivery fails", async () => {
+test("Live Session Host surfaces Cael pull bridge work without queueing a delivery", async () => {
   const session = await startLiveSession({
-    title: "Test BAR Bridge Delivery Failure",
+    title: "Test BAR Cael Pull Bridge",
     agents: [],
     bridgeAgents: ["cael"]
   });
@@ -226,28 +255,78 @@ test("Live Session Host keeps bridge cursor open when delivery fails", async () 
     participant_type: "operator",
     display_name: "Chris",
     source: "test",
-    content: "Cael, failed delivery queue check."
+    content: "Cael, pull bridge queue check."
   });
 
-  await tickLiveSession({ sessionId: session.id });
-  const claimed = await claimLiveSessionBridgeDelivery({
+  const tick = await tickLiveSession({ sessionId: session.id });
+  const skipped = tick.results.find((result) => result.agent === "cael");
+  const status = await liveSessionStatus();
+  const activeSession = status.active_session;
+
+  assert.equal(skipped?.status, "skipped");
+  assert.equal((skipped as { reason?: string } | undefined)?.reason, "manual_pull");
+  assert.equal(activeSession?.bridge_deliveries.length, 0);
+  assert.equal(activeSession?.participants.cael?.last_checked_event_at, initialCursor);
+  assert.equal(activeSession?.bridge_attendants.cael?.pending_event_count, 1);
+  assert.equal(status.bridge_adapters.cael.target.status, "configured");
+  assert.equal(status.bridge_adapters.cael.target.method, "manual");
+  assert.equal(status.bridge_adapters.cael.ready, false);
+
+  const preview = await previewLiveSessionBridgeAgent({
     sessionId: session.id,
     agent: "cael"
   });
-  const failed = await completeLiveSessionBridgeDelivery({
+  assert.equal(preview.pending_events.length, 1);
+
+  const acked = await acknowledgeLiveSessionBridgeAgent({
     sessionId: session.id,
     agent: "cael",
-    deliveryId: claimed.delivery?.id ?? "",
-    claimId: claimed.delivery?.claim_id ?? undefined,
-    outcome: "failed",
-    error: "Cowork connector unavailable."
+    eventCutoffAt: preview.event_cutoff_at
   });
 
-  assert.equal(failed.delivery.status, "failed");
-  assert.equal(failed.participant.last_checked_event_at, initialCursor);
-  assert.equal(failed.participant.last_error, "Cowork connector unavailable.");
+  assert.equal(acked.participant.last_checked_event_at, preview.event_cutoff_at);
 
   await endLiveSession(session.id);
+});
+
+test("Live Session Host keeps bridge cursor open when delivery fails", async () => {
+  await withEnv({ JULIAN_CODEX_THREAD_ID: "thread_test" }, async () => {
+    const session = await startLiveSession({
+      title: "Test BAR Bridge Delivery Failure",
+      agents: [],
+      bridgeAgents: ["julian"]
+    });
+    const initialCursor = session.participants.julian?.last_checked_event_at ?? null;
+    await nextTick();
+
+    await postBarMessage({
+      participant_id: "operator:chris",
+      participant_type: "operator",
+      display_name: "Chris",
+      source: "test",
+      content: "Julian, failed delivery queue check."
+    });
+
+    await tickLiveSession({ sessionId: session.id });
+    const claimed = await claimLiveSessionBridgeDelivery({
+      sessionId: session.id,
+      agent: "julian"
+    });
+    const failed = await completeLiveSessionBridgeDelivery({
+      sessionId: session.id,
+      agent: "julian",
+      deliveryId: claimed.delivery?.id ?? "",
+      claimId: claimed.delivery?.claim_id ?? undefined,
+      outcome: "failed",
+      error: "Codex delivery unavailable."
+    });
+
+    assert.equal(failed.delivery.status, "failed");
+    assert.equal(failed.participant.last_checked_event_at, initialCursor);
+    assert.equal(failed.participant.last_error, "Codex delivery unavailable.");
+
+    await endLiveSession(session.id);
+  });
 });
 
 test("Live Session Host stops bridge attendants when bridge participants leave", async () => {

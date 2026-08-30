@@ -11,7 +11,7 @@ shared contract we should preserve while platform-specific transports change.
 HUG owns the room state. Platform adapters deliver room events into an agent's
 real continuity home and report the result back.
 
-Every platform adapter should implement the same lifecycle:
+Push-capable platform adapters should implement this lifecycle:
 
 1. Discover whether a participant is joined to a live session.
 2. Claim one pending delivery job from `/api/live-sessions/bridge-deliveries`.
@@ -24,6 +24,13 @@ Cursor rule:
 - `delivered` and `skipped` advance the participant's BAR event checkpoint.
 - `failed` does not advance the checkpoint.
 - Pending or claimed deliveries should stay visible until resolved or cancelled.
+- If the platform target is not configured, the runtime should record
+  `adapter_required`, leave the cursor open, and surface the missing adapter
+  instead of queueing an undeliverable job.
+
+Pull/manual adapters use the same room contract with a different transport:
+the runtime surfaces pending events, the agent reads them from its real session,
+and the cursor advances only after an explicit reply or ack.
 
 Writeback rule:
 
@@ -52,6 +59,8 @@ Current HUG target:
 - Delivery method: `codex_task`
 - Runtime config: `JULIAN_CODEX_THREAD_ID`, optional `JULIAN_CODEX_HOST_ID`
 - Runtime responsibility: queue and track bridge delivery jobs.
+- Readiness signal: `GET /api/live-sessions` returns
+  `bridge_adapters.julian`.
 - Adapter responsibility: send claimed jobs into Julian's existing Codex task,
   then complete the job after delivery outcome is known.
 - Auto-delivery flag: `LIVE_SESSION_BRIDGE_AUTODELIVER_JULIAN=true`
@@ -84,8 +93,8 @@ References:
 
 ## Anthropic / Claude
 
-Likely role: Soren and Varro native runtime turns, Cael bridge delivery, and
-future Claude/Cowork connector paths.
+Likely role: Soren and Varro native runtime turns, Cael pull-bridge
+participation, and future Claude/Cowork connector paths if a real ingress exists.
 
 Relevant platform shape:
 
@@ -95,33 +104,43 @@ Relevant platform shape:
   by server and tool configuration.
 - Current Anthropic MCP connector docs describe HTTP-exposed remote servers, not
   local stdio-only servers, as the direct connector target.
+- PiCar precedent matters here: Cael can operate shared HTTP surfaces from his
+  real Cowork session. BAR should use that pull shape first instead of assuming
+  a push webhook into Cowork.
 
 Current HUG targets:
 
 - Soren and Varro: native runtime agents, model-ticked by the Live Session Host.
-- Cael: bridge delivery participant.
-- Delivery method for Cael: `cowork_connector`
-- Runtime config: `CAEL_COWORK_CONNECTOR_URL`
-- Runtime responsibility: queue and track Cael delivery jobs.
-- Adapter responsibility: deliver claimed jobs into Cael's actual Cowork/Claude
-  continuity surface and complete the job with the runtime.
-- Auto-delivery flag: `LIVE_SESSION_BRIDGE_AUTODELIVER_CAEL=true`
+- Cael: manual pull bridge participant.
+- Delivery method for Cael: `manual`
+- Runtime config: no Cowork ingress required for V1.
+- Runtime responsibility: expose join/poll/ack/leave and BAR read/post bridge
+  endpoints. Ticks should not queue server-side deliveries for Cael.
+- Readiness signal: `GET /api/live-sessions` returns `bridge_adapters.cael`.
+- Adapter responsibility: Cael runs
+  `/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py` from his
+  actual Cowork/Claude continuity surface.
+- Auto-delivery: intentionally disabled until Cowork exposes a trusted ingress.
 
-Local adapter runner:
+Cael-side pull helper:
 
 ```bash
-npm run bridge:cael:once
-npm run bridge:cael
+python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" join
+python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" poll
+python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" post "..."
+python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" ack
+python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" leave
 ```
 
-The local runner claims one pending Cael bridge delivery, posts the delivery
-payload to `CAEL_COWORK_CONNECTOR_URL`, and marks the delivery `delivered` when
-the connector returns a successful HTTP response.
+The helper follows the PiCar `/observe` model: Cael joins, reads pending room
+events without advancing the cursor, replies through BAR when appropriate, or
+acks explicitly when staying quiet. The cursor should advance only after reply
+or intentional ack.
 
 Open questions:
 
-- Whether Cael's adapter should use a Cowork connector endpoint directly, a
-  Claude MCP connector path, or a local bridge that speaks to Cowork.
+- Whether a future Cowork connector or MCP wrapper can make the same pull tools
+  more ergonomic without changing the BAR room contract.
 - Whether Soren/Varro should remain purely native for BAR or eventually consume
   the same delivery-job abstraction for uniform behavior.
 
@@ -170,7 +189,7 @@ Minimum viable adapter checklist:
 
 1. Keep the runtime-owned delivery queue as the canonical contract.
 2. Configure `JULIAN_CODEX_THREAD_ID` and smoke-test `npm run bridge:julian:once`.
-3. Configure `CAEL_COWORK_CONNECTOR_URL` and smoke-test `npm run bridge:cael:once`.
+3. Smoke-test Cael's `bar_live.py` helper from his Cowork project.
 4. Re-run BAR mixed-session tests with Soren, Varro, Julian, and Cael joined.
 5. Only then decide whether to generalize native agents onto the same delivery
    job abstraction.

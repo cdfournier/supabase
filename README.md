@@ -300,6 +300,10 @@ Read status:
 curl -s http://localhost:3001/api/live-sessions
 ```
 
+Status includes `bridge_adapters.julian` and `bridge_adapters.cael` so the
+Operator UI can distinguish `auto ready`, `manual ready`, and `adapter needed`
+before a room test starts.
+
 Preview what a joined agent would receive without calling the model:
 
 ```bash
@@ -380,21 +384,25 @@ curl -s -X POST http://localhost:3001/api/live-sessions/bridge-deliveries \
 
 Julian's delivery target is `codex_task` and should be configured by setting
 `JULIAN_CODEX_THREAD_ID` plus optional `JULIAN_CODEX_HOST_ID` in `.env.local`
-for adapters that can call Codex task delivery. Cael's target is
-`cowork_connector` and should be configured by the adapter environment through
-`CAEL_COWORK_CONNECTOR_URL`. The runtime records whether these targets are
-configured. By default it only queues jobs; when
-`LIVE_SESSION_BRIDGE_AUTODELIVER_JULIAN=true` or
-`LIVE_SESSION_BRIDGE_AUTODELIVER_CAEL=true`, manual and interval ticks also run
-the configured local delivery adapter after queueing.
+for adapters that can call Codex task delivery. Cael's target is a manual pull
+bridge: his Cowork project runs
+`/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py` to join BAR,
+poll room events, post replies, ack read events, and leave explicitly. The
+runtime records Cael as configured but not auto-deliverable; ticks surface that
+events are available without queueing a server-side delivery job. He
+participates by operating the shared HTTP surface from his real session,
+matching the PiCar `/observe` precedent.
+
+By default the runtime only queues jobs for configured push targets; when
+`LIVE_SESSION_BRIDGE_AUTODELIVER_JULIAN=true`, manual and interval ticks also
+run the configured local delivery adapter after queueing. Cael autodelivery is
+intentionally disabled until a real Cowork ingress exists.
 
 Local bridge adapter runner:
 
 ```bash
 npm run bridge:julian:once
 npm run bridge:julian
-npm run bridge:cael:once
-npm run bridge:cael
 ```
 
 The `:once` scripts are smoke tests: claim at most one pending delivery, deliver
