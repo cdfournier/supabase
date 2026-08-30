@@ -301,7 +301,7 @@ curl -s http://localhost:3001/api/live-sessions
 ```
 
 Status includes `bridge_adapters.julian` and `bridge_adapters.cael` so the
-Operator UI can distinguish `auto ready`, `manual ready`, and `adapter needed`
+Operator UI can distinguish `auto ready`, `pull ready`, `manual ready`, and `adapter needed`
 before a room test starts.
 
 Preview what a joined agent would receive without calling the model:
@@ -387,7 +387,8 @@ Julian's delivery target is `codex_task` and should be configured by setting
 for adapters that can call Codex task delivery. Cael's target is a manual pull
 bridge: his Cowork project runs
 `/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py` to join BAR,
-poll room events, post replies, ack read events, and leave explicitly. The
+poll room events, watch on a bounded cadence, post replies, ack read events,
+and leave explicitly. The
 runtime records Cael as configured but not auto-deliverable; ticks surface that
 events are available without queueing a server-side delivery job. He
 participates by operating the shared HTTP surface from his real session,

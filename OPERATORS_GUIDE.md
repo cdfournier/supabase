@@ -338,7 +338,8 @@ Julian's target is `codex_task`, configured for delivery-capable adapters with
 `JULIAN_CODEX_THREAD_ID` and optional `JULIAN_CODEX_HOST_ID`. Cael's target is a
 manual pull bridge. His Cowork project uses
 `/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py` to join BAR,
-poll room events, post replies, ack read events, and leave explicitly. The
+poll room events, watch on a bounded cadence, post replies, ack read events,
+and leave explicitly. The
 runtime exposes and tracks Cael as configured but not auto-deliverable. Ticks
 surface that events are available without queueing a server-side delivery job;
 he participates by operating the shared HTTP surface from his real session.
@@ -347,7 +348,7 @@ he participates by operating the shared HTTP surface from his real session.
 Each adapter status reports the delivery target, whether autodelivery is
 enabled, whether the adapter is ready, and a reason when it is not. Julian can
 be `auto ready` when his Codex task target and autodelivery flag are configured.
-Cael should normally appear as manual-ready/pull-ready, not auto-ready, until a
+Cael should normally appear as `pull ready`, not auto-ready, until a
 real Cowork ingress exists.
 
 Local bridge adapter runner:

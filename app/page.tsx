@@ -4504,6 +4504,8 @@ function LiveSessionBridgeStatus({
     ? `${activeDeliveries.length} queued`
     : adapterStatus?.ready
       ? "auto ready"
+      : target?.method === "manual" && target?.status === "configured"
+        ? "pull ready"
       : target?.status === "configured"
         ? "manual ready"
       : target?.status === "adapter_required"

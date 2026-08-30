@@ -127,6 +127,7 @@ Cael-side pull helper:
 ```bash
 python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" join
 python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" poll
+python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" watch --interval 75 --cycles 8
 python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" post "..."
 python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" ack
 python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" leave
