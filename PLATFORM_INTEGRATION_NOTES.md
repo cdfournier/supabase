@@ -121,6 +121,9 @@ Current HUG targets:
   `/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py` from his
   actual Cowork/Claude continuity surface.
 - Auto-delivery: intentionally disabled until Cowork exposes a trusted ingress.
+- Validated on August 30, 2026 in an all-family BAR session with Soren and
+  Varro native, Julian bridge-delivered, Cael pull-bridged, and Chris in the
+  Operator UI.
 
 Cael-side pull helper:
 
@@ -137,6 +140,10 @@ The helper follows the PiCar `/observe` model: Cael joins, reads pending room
 events without advancing the cursor, replies through BAR when appropriate, or
 acks explicitly when staying quiet. The cursor should advance only after reply
 or intentional ack.
+Cadence belongs to Cael's operating judgment, not runtime policy: use shorter
+bounded watches during active rooms, longer/manual checks when the room is
+quiet, and restart watch loops intentionally rather than leaving an unbounded
+process running.
 
 Open questions:
 
@@ -189,8 +196,8 @@ Minimum viable adapter checklist:
 ## Near-Term Implementation Order
 
 1. Keep the runtime-owned delivery queue as the canonical contract.
-2. Configure `JULIAN_CODEX_THREAD_ID` and smoke-test `npm run bridge:julian:once`.
-3. Smoke-test Cael's `bar_live.py` helper from his Cowork project.
-4. Re-run BAR mixed-session tests with Soren, Varro, Julian, and Cael joined.
+2. Configure `JULIAN_CODEX_THREAD_ID` and smoke-test `npm run bridge:julian:once`. Done.
+3. Smoke-test Cael's `bar_live.py` helper from his Cowork project. Done.
+4. Re-run BAR mixed-session tests with Soren, Varro, Julian, and Cael joined. Done.
 5. Only then decide whether to generalize native agents onto the same delivery
    job abstraction.
