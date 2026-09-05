@@ -276,6 +276,54 @@ type LiveSessionDraft = {
   tickMode: "manual" | "interval";
   intervalSeconds: number;
 };
+type LaunchpadInvitee = {
+  agent: LiveSessionAgent;
+  participant_id: `agent:${LiveSessionAgent}`;
+  display_name: string;
+  lane: {
+    lane: "runtime_native" | "codex_bridge" | "cowork_pull";
+    mode: "native_event" | "bridge_dispatch" | "poll";
+    label: string;
+    status: "ready" | "manual_pull";
+    notes: string[];
+  };
+  status: "planned" | "present" | "failed";
+  receipt: {
+    status: "planned" | "delivered" | "failed";
+    delivered_at: string | null;
+    message: string;
+  };
+};
+type LaunchpadInvitation = {
+  id: string;
+  surface: "bar";
+  title: string;
+  intent: "gather" | "live_session" | "work_session" | "celebration" | "quiet_check";
+  tone: "quiet" | "soft" | "directed" | "high_signal" | "celebratory";
+  context: string | null;
+  status: "preview" | "active" | "failed";
+  created_at: string;
+  updated_at: string;
+  session_id: string | null;
+  tick_policy: {
+    mode: "manual" | "interval";
+    interval_seconds: number | null;
+  };
+  invitees: LaunchpadInvitee[];
+  live_session: LiveSession | null;
+};
+type LaunchpadStatus = {
+  generated_at: string;
+  adapters: Array<{
+    surface: "bar";
+    label: string;
+    status: "live";
+    executable: boolean;
+    notes: string[];
+  }>;
+  invitations: LaunchpadInvitation[];
+  active_live_session_id: string | null;
+};
 
 type ToolEvent = {
   id?: string;
@@ -660,7 +708,7 @@ type GitHubEvidenceHandle = {
   max_bytes?: number;
 };
 
-type ControlPanelKey = "runtime" | "freeMoments" | "liveSession" | "wake" | "packetSignals";
+type ControlPanelKey = "runtime" | "freeMoments" | "liveSession" | "launchpad" | "wake" | "packetSignals";
 type ControlPanelState = Record<ControlPanelKey, boolean>;
 
 const defaultAgent: AgentName = "soren";
@@ -671,6 +719,7 @@ const expandedControlPanels: ControlPanelState = {
   runtime: true,
   freeMoments: true,
   liveSession: true,
+  launchpad: true,
   wake: true,
   packetSignals: true
 };
@@ -678,6 +727,7 @@ const collapsedControlPanels: ControlPanelState = {
   runtime: false,
   freeMoments: false,
   liveSession: false,
+  launchpad: false,
   wake: false,
   packetSignals: false
 };
@@ -735,6 +785,11 @@ export default function Home() {
     tickMode: "manual",
     intervalSeconds: 30
   });
+  const [launchpad, setLaunchpad] = useState<LaunchpadStatus | null>(null);
+  const [launchpadLoading, setLaunchpadLoading] = useState(true);
+  const [launchpadRequestInProgress, setLaunchpadRequestInProgress] = useState(false);
+  const [launchpadError, setLaunchpadError] = useState("");
+  const [launchpadPreview, setLaunchpadPreview] = useState<LaunchpadInvitation | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
   const [toolEvents, setToolEvents] = useState<Record<string, ToolEvent[]>>({});
@@ -1160,6 +1215,28 @@ export default function Home() {
     }
   }, []);
 
+  const loadLaunchpadStatus = useCallback(async () => {
+    setLaunchpadError("");
+
+    try {
+      const response = await fetch("/api/launchpad");
+      const data = await readJsonResponse<LaunchpadStatus & { error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load Launchpad.");
+      }
+
+      setLaunchpad(data);
+    } catch (loadLaunchpadError) {
+      setLaunchpadError(
+        loadLaunchpadError instanceof Error ? loadLaunchpadError.message : "Could not load Launchpad."
+      );
+      setLaunchpad(null);
+    } finally {
+      setLaunchpadLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadCafe();
   }, [loadCafe]);
@@ -1171,6 +1248,10 @@ export default function Home() {
   useEffect(() => {
     void loadLiveSessionStatus();
   }, [loadLiveSessionStatus]);
+
+  useEffect(() => {
+    void loadLaunchpadStatus();
+  }, [loadLaunchpadStatus]);
 
   useEffect(() => {
     void loadOperatorInbox();
@@ -1647,6 +1728,42 @@ export default function Home() {
     } finally {
       setLiveSessionRequestInProgress(false);
       setLiveSessionLoading(false);
+    }
+  }
+
+  async function runLaunchpadAction(action: "preview" | "create") {
+    if (launchpadRequestInProgress) {
+      return;
+    }
+
+    setLaunchpadRequestInProgress(true);
+    setLaunchpadError("");
+
+    try {
+      const response = await fetch("/api/launchpad", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(launchpadRequestBody(action, liveSessionDraft))
+      });
+      const data = await readJsonResponse<{ invitation?: LaunchpadInvitation; error?: string }>(response);
+
+      if (!response.ok || !data.invitation) {
+        throw new Error(data.error || "Launchpad request failed.");
+      }
+
+      setLaunchpadPreview(data.invitation);
+      await loadLaunchpadStatus();
+      await loadLiveSessionStatus();
+      await loadBar();
+    } catch (actionError) {
+      setLaunchpadError(
+        actionError instanceof Error ? actionError.message : "Launchpad request failed."
+      );
+    } finally {
+      setLaunchpadRequestInProgress(false);
+      setLaunchpadLoading(false);
     }
   }
 
@@ -2476,6 +2593,18 @@ export default function Home() {
           onToggleAgent={toggleLiveSessionAgent}
           requestInProgress={liveSessionRequestInProgress}
           status={liveSession}
+        />
+
+        <LaunchpadPanel
+          draft={liveSessionDraft}
+          error={launchpadError}
+          expanded={controlPanels.launchpad}
+          loading={launchpadLoading}
+          onAction={runLaunchpadAction}
+          onToggle={() => toggleControlPanel("launchpad")}
+          preview={launchpadPreview}
+          requestInProgress={launchpadRequestInProgress}
+          status={launchpad}
         />
 
         <WakeControlPanel
@@ -4267,6 +4396,25 @@ function liveSessionRequestBody(action: "start" | "end" | "tick" | "dry_run" | "
   return { action };
 }
 
+function launchpadRequestBody(action: "preview" | "create", draft: LiveSessionDraft) {
+  return {
+    action,
+    title: "Whole family BAR",
+    agents: [
+      ...liveSessionNativeAgents
+        .filter((agent) => draft.nativeAgents[agent.id])
+        .map((agent) => agent.id),
+      ...liveSessionBridgeAgents
+        .filter((agent) => draft.bridgeAgents[agent.id])
+        .map((agent) => agent.id)
+    ],
+    intent: "live_session",
+    tone: "soft",
+    tick_mode: draft.tickMode,
+    interval_seconds: draft.intervalSeconds
+  };
+}
+
 function liveSessionParticipantJoined(session: LiveSession | null, agent: LiveSessionAgent, draft: LiveSessionDraft) {
   const participant = session?.participants[agent];
 
@@ -4277,6 +4425,117 @@ function liveSessionParticipantJoined(session: LiveSession | null, agent: LiveSe
   return agent === "soren" || agent === "varro"
     ? draft.nativeAgents[agent]
     : draft.bridgeAgents[agent];
+}
+
+function LaunchpadPanel({
+  draft,
+  error,
+  expanded,
+  loading,
+  onAction,
+  onToggle,
+  preview,
+  requestInProgress,
+  status
+}: {
+  draft: LiveSessionDraft;
+  error: string;
+  expanded: boolean;
+  loading: boolean;
+  onAction: (action: "preview" | "create") => void;
+  onToggle: () => void;
+  preview: LaunchpadInvitation | null;
+  requestInProgress: boolean;
+  status: LaunchpadStatus | null;
+}) {
+  const selectedAgents = [
+    ...liveSessionNativeAgents.filter((agent) => draft.nativeAgents[agent.id]).map((agent) => agent.label),
+    ...liveSessionBridgeAgents.filter((agent) => draft.bridgeAgents[agent.id]).map((agent) => agent.label)
+  ];
+  const latestInvitation = preview ?? status?.invitations[0] ?? null;
+  const disabled = loading || requestInProgress;
+  const canLaunch = selectedAgents.length > 0;
+  const active = Boolean(status?.active_live_session_id);
+
+  return (
+    <section className={`health-panel launchpad-panel ${expanded ? "" : "collapsed"}`} aria-label="Launchpad controls">
+      <div className="health-heading">
+        <h2>
+          <button
+            aria-expanded={expanded}
+            className="health-toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            <span>LAUNCHPAD</span>
+            <span className="health-toggle-icon" aria-hidden="true">
+              {expanded ? "-" : "+"}
+            </span>
+          </button>
+        </h2>
+        <span className={`status-pill ${active ? "ok" : "warn"}`}>
+          {requestInProgress ? "working" : active ? "active" : "ready"}
+        </span>
+      </div>
+
+      <div className="health-panel-body" hidden={!expanded}>
+        <p className="health-empty">Invite selected agents into BAR through their configured lanes.</p>
+
+        <div className="launchpad-summary">
+          <span>Surface</span>
+          <strong>BAR</strong>
+          <span>Agents</span>
+          <strong title={selectedAgents.join(", ") || "none"}>{selectedAgents.join(", ") || "none"}</strong>
+          <span>Mode</span>
+          <strong>{draft.tickMode === "interval" ? `${draft.intervalSeconds}s interval` : "manual"}</strong>
+        </div>
+
+        <div className="health-actions launchpad-actions">
+          <button
+            disabled={disabled || !canLaunch}
+            onClick={() => onAction("preview")}
+            type="button"
+          >
+            Preview
+          </button>
+          <button
+            disabled={disabled || !canLaunch}
+            onClick={() => onAction("create")}
+            type="button"
+          >
+            Create
+          </button>
+        </div>
+
+        {latestInvitation ? (
+          <div className="launchpad-preview" aria-label="Latest Launchpad invitation">
+            <div className="launchpad-preview-heading">
+              <strong>{latestInvitation.title}</strong>
+              <span>{latestInvitation.status}</span>
+            </div>
+            <ol>
+              {latestInvitation.invitees.map((invitee) => (
+                <li key={invitee.participant_id}>
+                  <span>
+                    <strong>{invitee.display_name}</strong>
+                    <small>{invitee.lane.label}</small>
+                  </span>
+                  <span className={`status-pill ${invitee.status === "present" ? "ok" : invitee.status === "failed" ? "bad" : "warn"}`}>
+                    {invitee.status}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {latestInvitation.session_id ? (
+              <p title={latestInvitation.session_id}>Session {latestInvitation.session_id.slice(0, 8)}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {error ? <p className="health-error">{error}</p> : null}
+      </div>
+    </section>
+  );
 }
 
 function LiveSessionPanel({

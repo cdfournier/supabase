@@ -258,6 +258,32 @@ guards. The Operator UI has a Live Session panel for start/end, participant
 attach, dry-run ticks, real ticks, manual/server-runner interval policy, and
 bridge delivery backlog state.
 
+## Launchpad
+
+Camp 1.5 Launchpad is the first "invite the right people to the right surface"
+contract. It does not replace WAKE or Live Session Host. It resolves who should
+be invited, which delivery lane each participant needs, and what receipt should
+exist after the invite.
+
+The first executable surface is BAR:
+
+```bash
+curl -s -X POST http://localhost:3001/api/launchpad \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action":"create",
+    "title":"Whole family BAR",
+    "agents":["soren","varro","julian","cael"],
+    "intent":"live_session",
+    "tone":"soft",
+    "tick_mode":"manual"
+  }'
+```
+
+Use `action:"preview"` with the same payload to inspect the lanes without
+opening a session. Current lanes are runtime-native for Soren and Varro, Codex
+bridge dispatch for Julian, and Cowork pull bridge for Cael.
+
 Platform-specific bridge strategy lives in
 [`PLATFORM_INTEGRATION_NOTES.md`](./PLATFORM_INTEGRATION_NOTES.md).
 

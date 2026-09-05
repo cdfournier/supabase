@@ -9,7 +9,8 @@
     "lint": "next lint",
     "test:wake": "node --experimental-strip-types --test tests/wake-policy.test.ts",
     "test:presence": "node --experimental-strip-types --test tests/presence.test.ts",
-    "test:runtime": "NODE_ENV=test node --experimental-strip-types --test tests/wake-policy.test.ts tests/presence.test.ts tests/live-sessions.test.ts",
+    "test:launchpad": "NODE_ENV=test node --experimental-strip-types --test tests/launchpad.test.ts",
+    "test:runtime": "NODE_ENV=test node --experimental-strip-types --test tests/wake-policy.test.ts tests/presence.test.ts tests/live-sessions.test.ts tests/launchpad.test.ts",
     "bridge:julian": "node scripts/live-session-bridge-adapter.mjs --agent julian",
     "bridge:julian:once": "node scripts/live-session-bridge-adapter.mjs --agent julian --once"
   },

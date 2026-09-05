@@ -4,7 +4,7 @@ import {
   loadBar
 } from "./bar.ts";
 
-type NativeAgentName = "soren" | "varro";
+export type NativeAgentName = "soren" | "varro";
 export type BridgeAgentName = "julian" | "cael";
 export type LiveSessionAgentName = NativeAgentName | BridgeAgentName;
 

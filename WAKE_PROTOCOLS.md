@@ -218,6 +218,15 @@ Non-negotiables:
   instruction.
 - The prompt must preserve choice. An arrival is never an assignment just
   because it crossed an external bridge.
+
+## Launchpad Boundary
+
+Launchpad is adjacent to WAKE but not the same thing. WAKE handles arrival
+signals for something waiting; Launchpad handles Operator- or agent-initiated
+gathering into a shared surface. A Launchpad invite may use a WAKE-compatible
+adapter lane, but it should still preserve the invitation contract: joined,
+passed, failed, or quiet are all valid outcomes depending on surface and agent
+settings.
 - Source trails stay authoritative. Operator Notes, work packets, Cafe, GitHub,
   EYES, and WHEELS remain separate work surfaces. The wake prompt should carry
   source ids and a short envelope, not inline source bodies.
