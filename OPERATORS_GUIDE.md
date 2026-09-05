@@ -265,6 +265,12 @@ contract. It does not replace WAKE or Live Session Host. It resolves who should
 be invited, which delivery lane each participant needs, and what receipt should
 exist after the invite.
 
+The Operator UI exposes Launchpad as its own sidebar panel. BAR is the only
+enabled destination today; EYES, WHEELS, and The World are visible as planned
+destinations so the next adapters have an obvious home. Use Preview to inspect
+lanes, Create to open/attach the BAR session, and End to close the active BAR
+session through Live Session Host.
+
 The first executable surface is BAR:
 
 ```bash

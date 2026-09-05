@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createLaunchpadInvitation,
+  endLaunchpadInvitation,
   launchpadStatus,
   previewLaunchpadInvitation
 } from "../lib/launchpad.ts";
@@ -62,4 +63,24 @@ test("Launchpad creates a BAR live session with native and bridge participants",
   assert.equal(launchpad.invitations[0]?.id, invitation.id);
 
   await endLiveSession(invitation.session_id);
+});
+
+test("Launchpad end closes the active BAR session and records left receipts", async () => {
+  await endLiveSession();
+
+  const invitation = await createLaunchpadInvitation({
+    title: "Launchpad end test",
+    agents: ["soren", "varro", "julian", "cael"],
+    intent: "live_session"
+  });
+  const ended = await endLaunchpadInvitation({
+    sessionId: invitation.session_id ?? undefined
+  });
+  const status = await liveSessionStatus();
+
+  assert.equal(ended.session?.status, "ended");
+  assert.equal(ended.invitation?.status, "ended");
+  assert.equal(status.active_session, null);
+  assert.equal(ended.invitation?.invitees.every((invitee) => invitee.status === "left"), true);
+  assert.equal(ended.invitation?.invitees.every((invitee) => invitee.receipt.status === "left"), true);
 });

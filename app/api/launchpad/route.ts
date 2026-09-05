@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   createLaunchpadInvitation,
+  endLaunchpadInvitation,
   launchpadStatus,
   previewLaunchpadInvitation,
   type LaunchpadAgentName,
@@ -31,8 +32,14 @@ export async function POST(request: Request) {
       });
     }
 
+    if (action === "end") {
+      return NextResponse.json(await endLaunchpadInvitation({
+        sessionId: optionalString(body.session_id)
+      }));
+    }
+
     return NextResponse.json(
-      { error: 'Choose action "preview" or "create".' },
+      { error: 'Choose action "preview", "create", or "end".' },
       { status: 400 }
     );
   } catch (error) {

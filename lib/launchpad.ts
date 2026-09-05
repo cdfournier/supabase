@@ -1,4 +1,5 @@
 import {
+  endLiveSession,
   liveSessionStatus,
   startLiveSession,
   type BridgeAgentName,
@@ -16,8 +17,8 @@ export type LaunchpadIntent =
   | "celebration"
   | "quiet_check";
 export type LaunchpadTone = "quiet" | "soft" | "directed" | "high_signal" | "celebratory";
-export type LaunchpadInvitationStatus = "preview" | "active" | "failed";
-export type LaunchpadInviteeStatus = "planned" | "present" | "failed";
+export type LaunchpadInvitationStatus = "preview" | "active" | "ended" | "failed";
+export type LaunchpadInviteeStatus = "planned" | "present" | "left" | "failed";
 export type LaunchpadDeliveryLane = "runtime_native" | "codex_bridge" | "cowork_pull";
 export type LaunchpadDeliveryMode = "native_event" | "bridge_dispatch" | "poll";
 
@@ -51,7 +52,7 @@ export type LaunchpadInvitee = {
   lane: LaunchpadLanePlan;
   status: LaunchpadInviteeStatus;
   receipt: {
-    status: "planned" | "delivered" | "failed";
+    status: "planned" | "delivered" | "left" | "failed";
     delivered_at: string | null;
     message: string;
   };
@@ -142,6 +143,53 @@ export async function createLaunchpadInvitation(input: LaunchpadInviteInput = {}
   await persistLaunchpadState();
 
   return cloneInvitation(invitation);
+}
+
+export async function endLaunchpadInvitation(input: {
+  sessionId?: string;
+} = {}) {
+  await ensureLaunchpadHydrated();
+  const session = await endLiveSession(input.sessionId);
+
+  if (!session) {
+    return {
+      invitation: null,
+      session: null
+    };
+  }
+
+  const now = new Date().toISOString();
+  const invitation = state.invitations.find((candidate) =>
+    candidate.session_id === session.id &&
+    candidate.status === "active"
+  );
+
+  if (invitation) {
+    invitation.status = "ended";
+    invitation.updated_at = now;
+    invitation.live_session = session;
+    invitation.invitees = invitation.invitees.map((invitee) => {
+      const participant = session.participants[invitee.agent];
+
+      return {
+        ...invitee,
+        status: participant?.status === "left" ? "left" : invitee.status,
+        receipt: {
+          status: participant?.status === "left" ? "left" : invitee.receipt.status,
+          delivered_at: participant?.left_at ?? invitee.receipt.delivered_at,
+          message: participant?.status === "left"
+            ? `${invitee.display_name} left BAR when the Launchpad session ended.`
+            : invitee.receipt.message
+        }
+      };
+    });
+    await persistLaunchpadState();
+  }
+
+  return {
+    invitation: invitation ? cloneInvitation(invitation) : null,
+    session
+  };
 }
 
 function buildInvitation(
@@ -463,15 +511,15 @@ function normalizeTone(value: unknown): LaunchpadTone {
 }
 
 function normalizeStatus(value: unknown): LaunchpadInvitationStatus {
-  return value === "active" || value === "failed" ? value : "preview";
+  return value === "active" || value === "ended" || value === "failed" ? value : "preview";
 }
 
 function normalizeInviteeStatus(value: unknown): LaunchpadInviteeStatus {
-  return value === "present" || value === "failed" ? value : "planned";
+  return value === "present" || value === "left" || value === "failed" ? value : "planned";
 }
 
-function normalizeReceiptStatus(value: unknown): "planned" | "delivered" | "failed" {
-  return value === "delivered" || value === "failed" ? value : "planned";
+function normalizeReceiptStatus(value: unknown): "planned" | "delivered" | "left" | "failed" {
+  return value === "delivered" || value === "left" || value === "failed" ? value : "planned";
 }
 
 function normalizeIso(value: unknown) {

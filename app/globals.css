@@ -815,6 +815,13 @@ button {
   padding: 10px;
 }
 
+.launchpad-summary label {
+  display: grid;
+  gap: 4px;
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 .launchpad-summary span {
   color: var(--muted);
   font-size: 11px;
@@ -823,13 +830,34 @@ button {
   text-transform: uppercase;
 }
 
-.launchpad-summary strong {
+.launchpad-summary strong,
+.launchpad-summary select {
   font-size: 12px;
   line-height: 1.25;
   min-width: 0;
+}
+
+.launchpad-summary strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.launchpad-summary select {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  min-height: 34px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.launchpad-agent-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  min-width: 0;
 }
 
 .launchpad-actions {
@@ -858,6 +886,10 @@ button {
 .launchpad-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.launchpad-actions button:last-child {
+  grid-column: 1 / -1;
 }
 
 .launchpad-preview {

@@ -276,6 +276,13 @@ type LiveSessionDraft = {
   tickMode: "manual" | "interval";
   intervalSeconds: number;
 };
+type LaunchpadDestination = "bar" | "eyes" | "wheels" | "world";
+type LaunchpadDraft = {
+  destination: LaunchpadDestination;
+  agents: Record<LiveSessionAgent, boolean>;
+  tickMode: "manual" | "interval";
+  intervalSeconds: number;
+};
 type LaunchpadInvitee = {
   agent: LiveSessionAgent;
   participant_id: `agent:${LiveSessionAgent}`;
@@ -287,9 +294,9 @@ type LaunchpadInvitee = {
     status: "ready" | "manual_pull";
     notes: string[];
   };
-  status: "planned" | "present" | "failed";
+  status: "planned" | "present" | "left" | "failed";
   receipt: {
-    status: "planned" | "delivered" | "failed";
+    status: "planned" | "delivered" | "left" | "failed";
     delivered_at: string | null;
     message: string;
   };
@@ -301,7 +308,7 @@ type LaunchpadInvitation = {
   intent: "gather" | "live_session" | "work_session" | "celebration" | "quiet_check";
   tone: "quiet" | "soft" | "directed" | "high_signal" | "celebratory";
   context: string | null;
-  status: "preview" | "active" | "failed";
+  status: "preview" | "active" | "ended" | "failed";
   created_at: string;
   updated_at: string;
   session_id: string | null;
@@ -739,6 +746,16 @@ const liveSessionBridgeAgents: Array<{ id: LiveSessionBridgeAgent; label: string
   { id: "julian", label: "Julian" },
   { id: "cael", label: "Cael" }
 ];
+const launchpadDestinations: Array<{
+  id: LaunchpadDestination;
+  label: string;
+  status: "live" | "planned";
+}> = [
+  { id: "bar", label: "BAR", status: "live" },
+  { id: "eyes", label: "EYES", status: "planned" },
+  { id: "wheels", label: "WHEELS", status: "planned" },
+  { id: "world", label: "The World", status: "planned" }
+];
 const wakeControlAgents: Array<{ id: WakeControlAgentId; label: string }> = [
   { id: "all", label: "Global WAKE" },
   { id: "agent:soren", label: "Soren" },
@@ -790,6 +807,17 @@ export default function Home() {
   const [launchpadRequestInProgress, setLaunchpadRequestInProgress] = useState(false);
   const [launchpadError, setLaunchpadError] = useState("");
   const [launchpadPreview, setLaunchpadPreview] = useState<LaunchpadInvitation | null>(null);
+  const [launchpadDraft, setLaunchpadDraft] = useState<LaunchpadDraft>({
+    destination: "bar",
+    agents: {
+      soren: true,
+      varro: true,
+      julian: true,
+      cael: true
+    },
+    tickMode: "manual",
+    intervalSeconds: 30
+  });
   const [health, setHealth] = useState<Health | null>(null);
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
   const [toolEvents, setToolEvents] = useState<Record<string, ToolEvent[]>>({});
@@ -1731,7 +1759,7 @@ export default function Home() {
     }
   }
 
-  async function runLaunchpadAction(action: "preview" | "create") {
+  async function runLaunchpadAction(action: "preview" | "create" | "end") {
     if (launchpadRequestInProgress) {
       return;
     }
@@ -1745,15 +1773,27 @@ export default function Home() {
         headers: {
           "content-type": "application/json"
         },
-        body: JSON.stringify(launchpadRequestBody(action, liveSessionDraft))
+        body: JSON.stringify(launchpadRequestBody(
+          action,
+          launchpadDraft,
+          liveSession?.active_session?.id ?? launchpad?.active_live_session_id ?? launchpadPreview?.session_id ?? undefined
+        ))
       });
-      const data = await readJsonResponse<{ invitation?: LaunchpadInvitation; error?: string }>(response);
+      const data = await readJsonResponse<{
+        invitation?: LaunchpadInvitation | null;
+        session?: LiveSession | null;
+        error?: string;
+      }>(response);
 
-      if (!response.ok || !data.invitation) {
+      if (!response.ok) {
         throw new Error(data.error || "Launchpad request failed.");
       }
 
-      setLaunchpadPreview(data.invitation);
+      if (data.invitation) {
+        setLaunchpadPreview(data.invitation);
+      } else if (action === "end") {
+        setLaunchpadPreview(null);
+      }
       await loadLaunchpadStatus();
       await loadLiveSessionStatus();
       await loadBar();
@@ -2596,11 +2636,12 @@ export default function Home() {
         />
 
         <LaunchpadPanel
-          draft={liveSessionDraft}
+          draft={launchpadDraft}
           error={launchpadError}
           expanded={controlPanels.launchpad}
           loading={launchpadLoading}
           onAction={runLaunchpadAction}
+          onDraftChange={setLaunchpadDraft}
           onToggle={() => toggleControlPanel("launchpad")}
           preview={launchpadPreview}
           requestInProgress={launchpadRequestInProgress}
@@ -4396,18 +4437,23 @@ function liveSessionRequestBody(action: "start" | "end" | "tick" | "dry_run" | "
   return { action };
 }
 
-function launchpadRequestBody(action: "preview" | "create", draft: LiveSessionDraft) {
+function launchpadRequestBody(
+  action: "preview" | "create" | "end",
+  draft: LaunchpadDraft,
+  activeSessionId?: string
+) {
+  if (action === "end") {
+    return {
+      action,
+      session_id: activeSessionId
+    };
+  }
+
   return {
     action,
     title: "Whole family BAR",
-    agents: [
-      ...liveSessionNativeAgents
-        .filter((agent) => draft.nativeAgents[agent.id])
-        .map((agent) => agent.id),
-      ...liveSessionBridgeAgents
-        .filter((agent) => draft.bridgeAgents[agent.id])
-        .map((agent) => agent.id)
-    ],
+    surface: draft.destination,
+    agents: OPERATOR_NOTE_RECIPIENTS.filter((agent) => draft.agents[agent]),
     intent: "live_session",
     tone: "soft",
     tick_mode: draft.tickMode,
@@ -4427,31 +4473,41 @@ function liveSessionParticipantJoined(session: LiveSession | null, agent: LiveSe
     : draft.bridgeAgents[agent];
 }
 
+function displayAgentName(agent: OperatorNoteAgent) {
+  return {
+    soren: "Soren",
+    varro: "Varro",
+    julian: "Julian",
+    cael: "Cael"
+  }[agent];
+}
+
 function LaunchpadPanel({
   draft,
   error,
   expanded,
   loading,
   onAction,
+  onDraftChange,
   onToggle,
   preview,
   requestInProgress,
   status
 }: {
-  draft: LiveSessionDraft;
+  draft: LaunchpadDraft;
   error: string;
   expanded: boolean;
   loading: boolean;
-  onAction: (action: "preview" | "create") => void;
+  onAction: (action: "preview" | "create" | "end") => void;
+  onDraftChange: (draft: LaunchpadDraft) => void;
   onToggle: () => void;
   preview: LaunchpadInvitation | null;
   requestInProgress: boolean;
   status: LaunchpadStatus | null;
 }) {
-  const selectedAgents = [
-    ...liveSessionNativeAgents.filter((agent) => draft.nativeAgents[agent.id]).map((agent) => agent.label),
-    ...liveSessionBridgeAgents.filter((agent) => draft.bridgeAgents[agent.id]).map((agent) => agent.label)
-  ];
+  const selectedAgents = OPERATOR_NOTE_RECIPIENTS
+    .filter((agent) => draft.agents[agent])
+    .map((agent) => displayAgentName(agent));
   const latestInvitation = preview ?? status?.invitations[0] ?? null;
   const disabled = loading || requestInProgress;
   const canLaunch = selectedAgents.length > 0;
@@ -4479,15 +4535,87 @@ function LaunchpadPanel({
       </div>
 
       <div className="health-panel-body" hidden={!expanded}>
-        <p className="health-empty">Invite selected agents into BAR through their configured lanes.</p>
+        <p className="health-empty">Invite selected agents into a shared surface through their configured lanes.</p>
 
         <div className="launchpad-summary">
-          <span>Surface</span>
-          <strong>BAR</strong>
+          <label>
+            <span>Destination</span>
+            <select
+              disabled={disabled}
+              onChange={(event) => onDraftChange({
+                ...draft,
+                destination: event.target.value as LaunchpadDestination
+              })}
+              value={draft.destination}
+            >
+              {launchpadDestinations.map((destination) => (
+                <option
+                  disabled={destination.status !== "live"}
+                  key={destination.id}
+                  value={destination.id}
+                >
+                  {destination.label}{destination.status === "planned" ? " - planned" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
           <span>Agents</span>
           <strong title={selectedAgents.join(", ") || "none"}>{selectedAgents.join(", ") || "none"}</strong>
           <span>Mode</span>
           <strong>{draft.tickMode === "interval" ? `${draft.intervalSeconds}s interval` : "manual"}</strong>
+        </div>
+
+        <div className="launchpad-agent-list">
+          {OPERATOR_NOTE_RECIPIENTS.map((agent) => (
+            <div className="wake-switch-row" key={agent}>
+              <span title={displayAgentName(agent)}>{displayAgentName(agent)}</span>
+              <WakeSwitch
+                checked={draft.agents[agent]}
+                disabled={disabled}
+                label={`${displayAgentName(agent)} Launchpad invite`}
+                offText="Out"
+                onChange={(checked) => onDraftChange({
+                  ...draft,
+                  agents: {
+                    ...draft.agents,
+                    [agent]: checked
+                  }
+                })}
+                onText="In"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="live-session-policy">
+          <label>
+            <span>Mode</span>
+            <select
+              disabled={disabled}
+              onChange={(event) => onDraftChange({
+                ...draft,
+                tickMode: event.target.value === "interval" ? "interval" : "manual"
+              })}
+              value={draft.tickMode}
+            >
+              <option value="manual">Manual</option>
+              <option value="interval">Interval</option>
+            </select>
+          </label>
+          <label>
+            <span>Seconds</span>
+            <input
+              disabled={disabled || draft.tickMode !== "interval"}
+              min={10}
+              max={300}
+              onChange={(event) => onDraftChange({
+                ...draft,
+                intervalSeconds: Math.min(300, Math.max(10, Number(event.target.value) || 30))
+              })}
+              type="number"
+              value={draft.intervalSeconds}
+            />
+          </label>
         </div>
 
         <div className="health-actions launchpad-actions">
@@ -4499,11 +4627,18 @@ function LaunchpadPanel({
             Preview
           </button>
           <button
-            disabled={disabled || !canLaunch}
+            disabled={disabled || !canLaunch || active}
             onClick={() => onAction("create")}
             type="button"
           >
             Create
+          </button>
+          <button
+            disabled={disabled || !active}
+            onClick={() => onAction("end")}
+            type="button"
+          >
+            End
           </button>
         </div>
 
