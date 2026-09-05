@@ -3,12 +3,17 @@ import {
   leaveBar,
   loadBar
 } from "./bar.ts";
+import {
+  joinEyes,
+  leaveEyes,
+  loadEyes
+} from "./eyes.ts";
 
 export type NativeAgentName = "soren" | "varro";
 export type BridgeAgentName = "julian" | "cael";
 export type LiveSessionAgentName = NativeAgentName | BridgeAgentName;
 
-export type LiveSessionSurface = "bar";
+export type LiveSessionSurface = "bar" | "eyes";
 export type LiveSessionStatus = "active" | "ended";
 export type LiveSessionParticipantStatus = "joined" | "left" | "degraded";
 export type LiveSessionTickMode = "manual" | "interval";
@@ -165,6 +170,14 @@ type LiveSessionRunnerState = {
   tick_count: number;
 };
 
+type LiveSessionSurfaceMessage = {
+  id: string;
+  author_id: string;
+  author_display_name: string;
+  content: string;
+  created_at: string;
+};
+
 export type LiveSessionRunnerSnapshot = {
   status: "running" | "stopped";
   session_id: string | null;
@@ -243,7 +256,7 @@ export async function startLiveSessionAsync(input: {
     id: crypto.randomUUID(),
     surface,
     status: "active",
-    title: input.title?.trim() || "BAR Live Session",
+    title: input.title?.trim() || `${surfaceLabel(surface)} Live Session`,
     tick_policy: normalizeTickPolicy(input.tickPolicy),
     created_at: now,
     updated_at: now,
@@ -279,7 +292,7 @@ export async function startLiveSessionAsync(input: {
 
 export async function endLiveSession(sessionId?: string) {
   await ensureSessionHydrated();
-  const session = sessionFor(sessionId) ?? activeSession("bar");
+  const session = sessionFor(sessionId) ?? activeSession();
 
   if (!session) {
     return null;
@@ -295,8 +308,8 @@ export async function endLiveSession(sessionId?: string) {
       participant.status = "left";
       participant.left_at = now;
       participant.last_seen_at = now;
-      await leaveBar({
-        ...barParticipantForSessionAgent(participant.agent),
+      await leaveSurface(session.surface, {
+        ...surfaceParticipantForSessionAgent(participant.agent),
         source: "live_session_end"
       });
       if (isBridgeAgent(participant.agent)) {
@@ -339,13 +352,13 @@ export async function joinLiveSessionAgent(sessionId: string, agent: LiveSession
     joined_at: existing?.joined_at ?? now,
     left_at: null,
     last_seen_at: now,
-    last_checked_event_at: latestBarEventAt(),
+    last_checked_event_at: latestSurfaceEventAt(session.surface),
     turn_in_progress: false,
     last_error: null
   };
   session.updated_at = now;
-  await joinBar({
-    ...barParticipantForSessionAgent(agent),
+  await joinSurface(session.surface, {
+    ...surfaceParticipantForSessionAgent(agent),
     source: "live_session_join"
   });
   if (isBridgeAgent(agent)) {
@@ -372,8 +385,8 @@ export async function leaveLiveSessionAgent(sessionId: string, agent: LiveSessio
   participant.last_seen_at = now;
   participant.turn_in_progress = false;
   session.updated_at = now;
-  await leaveBar({
-    ...barParticipantForSessionAgent(agent),
+  await leaveSurface(session.surface, {
+    ...surfaceParticipantForSessionAgent(agent),
     source: "live_session_leave"
   });
   if (isBridgeAgent(agent)) {
@@ -392,7 +405,7 @@ export async function setLiveSessionTickPolicy(input: {
   intervalSeconds?: number | null;
 }) {
   await ensureSessionHydrated();
-  const session = sessionFor(input.sessionId) ?? activeSession("bar");
+  const session = sessionFor(input.sessionId) ?? activeSession();
 
   if (!session) {
     throw new Error("No active live session.");
@@ -522,7 +535,7 @@ export async function tickLiveSession(input: {
   dryRun?: boolean;
 } = {}) {
   await ensureSessionHydrated();
-  const session = sessionFor(input.sessionId) ?? activeSession("bar");
+  const session = sessionFor(input.sessionId) ?? activeSession();
 
   if (!session) {
     throw new Error("No active live session.");
@@ -571,14 +584,14 @@ export async function previewLiveSessionAgentAsync(input: {
   agent: NativeAgentName;
 }) {
   await ensureSessionHydrated();
-  const session = sessionFor(input.sessionId) ?? activeSession("bar");
+  const session = sessionFor(input.sessionId) ?? activeSession();
 
   if (!session) {
     throw new Error("No active live session.");
   }
 
   const participant = requiredJoinedParticipant(session, input.agent);
-  const messages = newBarMessagesFor(participant, new Date().toISOString());
+  const messages = newSurfaceMessagesFor(session.surface, participant, new Date().toISOString());
 
   return {
     session_id: session.id,
@@ -593,7 +606,7 @@ export async function previewLiveSessionBridgeAgent(input: {
   agent: BridgeAgentName;
 }) {
   await ensureSessionHydrated();
-  const session = sessionFor(input.sessionId) ?? activeSession("bar");
+  const session = sessionFor(input.sessionId) ?? activeSession();
 
   if (!session) {
     throw new Error("No active live session.");
@@ -601,7 +614,7 @@ export async function previewLiveSessionBridgeAgent(input: {
 
   const participant = requiredJoinedParticipant(session, input.agent);
   const eventCutoffAt = new Date().toISOString();
-  const messages = newBarMessagesFor(participant, eventCutoffAt);
+  const messages = newSurfaceMessagesFor(session.surface, participant, eventCutoffAt);
   participant.last_seen_at = eventCutoffAt;
   const attendant = markBridgeAttendantPoll(session, input.agent, eventCutoffAt, messages.length);
   addEvent(session, "bridge_read", `${displayName(input.agent)} bridge inbox checked.`, participant.participant_id);
@@ -624,7 +637,7 @@ export async function acknowledgeLiveSessionBridgeAgent(input: {
   eventCutoffAt?: string;
 }) {
   await ensureSessionHydrated();
-  const session = sessionFor(input.sessionId) ?? activeSession("bar");
+  const session = sessionFor(input.sessionId) ?? activeSession();
 
   if (!session) {
     throw new Error("No active live session.");
@@ -653,7 +666,7 @@ export async function claimLiveSessionBridgeDelivery(input: {
   agent: BridgeAgentName;
 }) {
   await ensureSessionHydrated();
-  const session = sessionFor(input.sessionId) ?? activeSession("bar");
+  const session = sessionFor(input.sessionId) ?? activeSession();
 
   if (!session) {
     throw new Error("No active live session.");
@@ -707,7 +720,7 @@ export async function completeLiveSessionBridgeDelivery(input: {
   error?: string;
 }) {
   await ensureSessionHydrated();
-  const session = sessionFor(input.sessionId) ?? activeSession("bar");
+  const session = sessionFor(input.sessionId) ?? activeSession();
 
   if (!session) {
     throw new Error("No active live session.");
@@ -799,12 +812,12 @@ async function tickAgent(
     };
   }
 
-  const messages = newBarMessagesFor(participant, eventCutoffAt);
+  const messages = newSurfaceMessagesFor(session.surface, participant, eventCutoffAt);
 
   if (!messages.length) {
     participant.last_seen_at = new Date().toISOString();
     participant.last_checked_event_at = eventCutoffAt;
-    addEvent(session, "tick_skipped", `${displayName(agent)} tick skipped; no new BAR events.`, participant.participant_id);
+    addEvent(session, "tick_skipped", `${displayName(agent)} tick skipped; no new ${surfaceLabel(session.surface)} events.`, participant.participant_id);
     if (!dryRun) {
       await persistSessionState();
     }
@@ -870,7 +883,7 @@ async function enqueueBridgeDelivery(
   eventCutoffAt: string
 ) {
   const participant = requiredJoinedParticipant(session, agent);
-  const messages = newBarMessagesFor(participant, eventCutoffAt);
+  const messages = newSurfaceMessagesFor(session.surface, participant, eventCutoffAt);
   const now = new Date().toISOString();
 
   if (!messages.length) {
@@ -878,7 +891,7 @@ async function enqueueBridgeDelivery(
     participant.last_checked_event_at = eventCutoffAt;
     const attendant = markBridgeAttendantPoll(session, agent, now, 0);
     attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
-    addEvent(session, "tick_skipped", `${displayName(agent)} bridge delivery skipped; no new BAR events.`, participant.participant_id);
+    addEvent(session, "tick_skipped", `${displayName(agent)} bridge delivery skipped; no new ${surfaceLabel(session.surface)} events.`, participant.participant_id);
     if (!dryRun) {
       await persistSessionState();
     }
@@ -932,7 +945,7 @@ async function enqueueBridgeDelivery(
     const attendant = markBridgeAttendantPoll(session, agent, now, messages.length);
     attendant.last_error = null;
     attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
-    addEvent(session, "bridge_read", `${displayName(agent)} pull bridge has ${messages.length} pending BAR event(s).`, participant.participant_id);
+    addEvent(session, "bridge_read", `${displayName(agent)} pull bridge has ${messages.length} pending ${surfaceLabel(session.surface)} event(s).`, participant.participant_id);
     await persistSessionState();
 
     return {
@@ -981,7 +994,7 @@ async function enqueueBridgeDelivery(
     const attendant = markBridgeAttendantPoll(session, agent, now, messages.length);
     attendant.last_delivery_queued_at = now;
     attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
-    addEvent(session, "bridge_delivery_queued", `${displayName(agent)} bridge delivery updated with ${messages.length} BAR event(s).`, participant.participant_id);
+    addEvent(session, "bridge_delivery_queued", `${displayName(agent)} bridge delivery updated with ${messages.length} ${surfaceLabel(session.surface)} event(s).`, participant.participant_id);
     await persistSessionState();
 
     return {
@@ -1019,7 +1032,7 @@ async function enqueueBridgeDelivery(
   const attendant = markBridgeAttendantPoll(session, agent, now, messages.length);
   attendant.last_delivery_queued_at = now;
   attendant.pending_delivery_count = bridgePendingDeliveryCount(session, agent);
-  addEvent(session, "bridge_delivery_queued", `${displayName(agent)} bridge delivery queued with ${messages.length} BAR event(s).`, participant.participant_id);
+  addEvent(session, "bridge_delivery_queued", `${displayName(agent)} bridge delivery queued with ${messages.length} ${surfaceLabel(session.surface)} event(s).`, participant.participant_id);
   await persistSessionState();
 
   return {
@@ -1035,20 +1048,23 @@ async function enqueueBridgeDelivery(
 function liveSessionPrompt(
   session: LiveSession,
   agent: LiveSessionAgentName,
-  messages: ReturnType<typeof newBarMessagesFor>
+  messages: ReturnType<typeof newSurfaceMessagesFor>
 ) {
+  const label = surfaceLabel(session.surface);
+  const writeback = surfaceWritebackInstruction(session.surface);
+
   return [
     `[Live Session: ${session.title}]`,
     "",
-    "You are joined to BAR, a shared Operator-visible live session surface. This is not a new assignment; it is the session host carrying room events to you while you are present.",
-    "Default writeback contract: while you are joined to BAR, responses to BAR events belong in BAR. Use bar_post_message for the room response; do not answer the BAR event primarily in your own runtime chat.",
-    "Direct room invitations are response-worthy. If Chris directly addresses you, everyone, the room, or asks a question/test, post a concise BAR reply unless the event explicitly asks for silence.",
-    "Ambient events may be quiet. If BAR posting is unavailable, say that in your runtime chat. If nothing calls for a response, say briefly that you are staying present and quiet. You may also choose to leave if that is the honest move.",
+    `You are joined to ${label}, a shared Operator-visible live session surface. This is not a new assignment; it is the session host carrying room events to you while you are present.`,
+    `Default writeback contract: while you are joined to ${label}, responses to ${label} events belong in ${label}. ${writeback} do not answer the ${label} event primarily in your own runtime chat.`,
+    `Direct room invitations are response-worthy. If Chris directly addresses you, everyone, the room, or asks a question/test, post a concise ${label} reply unless the event explicitly asks for silence.`,
+    `Ambient events may be quiet. If ${label} posting is unavailable, say that in your runtime chat. If nothing calls for a response, say briefly that you are staying present and quiet. You may also choose to leave if that is the honest move.`,
     "",
     `Active agent: ${displayName(agent)}.`,
     `Session id: ${session.id}.`,
     "",
-    "New BAR events:",
+    `New ${label} events:`,
     ...messages.map((message) =>
       `- ${message.created_at} ${message.author_display_name}: ${message.content}`
     )
@@ -1058,21 +1074,23 @@ function liveSessionPrompt(
 function bridgeDeliveryPrompt(
   session: LiveSession,
   agent: BridgeAgentName,
-  messages: ReturnType<typeof newBarMessagesFor>,
+  messages: ReturnType<typeof newSurfaceMessagesFor>,
   eventCutoffAt: string
 ) {
+  const label = surfaceLabel(session.surface);
+
   return [
-    "BAR Live Session delivery.",
+    `${label} Live Session delivery.`,
     `Session: ${session.id}.`,
     `Event cutoff: ${eventCutoffAt}.`,
     `Active bridge agent: ${displayName(agent)}.`,
     "",
-    "Pending BAR events:",
+    `Pending ${label} events:`,
     ...messages.map((message) =>
       `- ${message.created_at} ${message.author_display_name}: ${message.content}`
     ),
     "",
-    "Please respond in BAR if a response belongs there. Direct room invitations from Chris are response-worthy unless the event explicitly asks for silence."
+    `Please respond in ${label} if a response belongs there. Direct room invitations from Chris are response-worthy unless the event explicitly asks for silence.`
   ].join("\n");
 }
 
@@ -1103,7 +1121,7 @@ function bridgeDeliveryTarget(agent: BridgeAgentName): LiveSessionBridgeDelivery
     status: "configured",
     metadata: {
       mode: "pull_http",
-      script: "bar_live.py",
+      script: "bar_live.py or eyes_live.py",
       autodelivery_supported: false
     }
   };
@@ -1185,13 +1203,17 @@ function cloneBridgeDelivery(delivery: LiveSessionBridgeDelivery): LiveSessionBr
   };
 }
 
-function newBarMessagesFor(participant: LiveSessionParticipant, eventCutoffAt: string) {
+function newSurfaceMessagesFor(
+  surface: LiveSessionSurface,
+  participant: LiveSessionParticipant,
+  eventCutoffAt: string
+) {
   const lastChecked = participant.last_checked_event_at
     ? Date.parse(participant.last_checked_event_at)
     : 0;
   const cutoff = Date.parse(eventCutoffAt);
 
-  return latestLoadedBarMessages()
+  return latestLoadedSurfaceMessages(surface)
     .filter((message) => {
       const createdAt = Date.parse(message.created_at);
 
@@ -1213,12 +1235,14 @@ function newBarMessagesFor(participant: LiveSessionParticipant, eventCutoffAt: s
     }));
 }
 
-function latestBarEventAt() {
-  return latestLoadedBarMessages()[0]?.created_at ?? null;
+function latestSurfaceEventAt(surface: LiveSessionSurface) {
+  return latestLoadedSurfaceMessages(surface)[0]?.created_at ?? null;
 }
 
-function activeSession(surface: LiveSessionSurface) {
-  return state.sessions.find((session) => session.surface === surface && session.status === "active") ?? null;
+function activeSession(surface?: LiveSessionSurface) {
+  return state.sessions.find((session) =>
+    session.status === "active" && (!surface || session.surface === surface)
+  ) ?? null;
 }
 
 function sessionFor(sessionId: string | undefined) {
@@ -1420,7 +1444,7 @@ function displayName(agent: LiveSessionAgentName) {
   }[agent];
 }
 
-function barParticipantForSessionAgent(agent: LiveSessionAgentName) {
+function surfaceParticipantForSessionAgent(agent: LiveSessionAgentName) {
   return {
     participant_id: `agent:${agent}`,
     participant_type: isNativeAgent(agent) ? "agent" as const : "external_agent" as const,
@@ -1437,20 +1461,65 @@ function isBridgeAgent(agent: LiveSessionAgentName): agent is BridgeAgentName {
   return BRIDGE_AGENTS.includes(agent as BridgeAgentName);
 }
 
-function latestLoadedBarMessages() {
+function latestLoadedSurfaceMessages(surface: LiveSessionSurface): LiveSessionSurfaceMessage[] {
+  return surface === "bar" ? latestLoadedBarMessages() : latestLoadedEyesMessages();
+}
+
+async function loadSurface(surface: LiveSessionSurface) {
+  if (surface === "bar") {
+    await loadBar();
+    return;
+  }
+
+  await loadEyes();
+}
+
+async function joinSurface(surface: LiveSessionSurface, participant: ReturnType<typeof surfaceParticipantForSessionAgent>) {
+  if (surface === "bar") {
+    await joinBar(participant);
+    return;
+  }
+
+  await joinEyes(participant);
+}
+
+async function leaveSurface(surface: LiveSessionSurface, participant: ReturnType<typeof surfaceParticipantForSessionAgent>) {
+  if (surface === "bar") {
+    await leaveBar(participant);
+    return;
+  }
+
+  await leaveEyes(participant);
+}
+
+function surfaceLabel(surface: LiveSessionSurface) {
+  return surface === "bar" ? "BAR" : "EYES";
+}
+
+function surfaceWritebackInstruction(surface: LiveSessionSurface) {
+  return surface === "bar"
+    ? "Use bar_post_message for the room response;"
+    : "Use eyes_observe for observations or EYES replies, and eyes_get_session when you need the current frame context;";
+}
+
+function latestLoadedBarMessages(): LiveSessionSurfaceMessage[] {
   const globalStore = globalThis as typeof globalThis & {
     __hug_bar_state__?: {
-      messages: Array<{
-        id: string;
-        author_id: string;
-        author_display_name: string;
-        content: string;
-        created_at: string;
-      }>;
+      messages: LiveSessionSurfaceMessage[];
     };
   };
 
   return globalStore.__hug_bar_state__?.messages ?? [];
+}
+
+function latestLoadedEyesMessages(): LiveSessionSurfaceMessage[] {
+  const globalStore = globalThis as typeof globalThis & {
+    __hug_eyes_state__?: {
+      messages: LiveSessionSurfaceMessage[];
+    };
+  };
+
+  return globalStore.__hug_eyes_state__?.messages ?? [];
 }
 
 async function ensureSessionHydrated() {
@@ -1460,6 +1529,7 @@ async function ensureSessionHydrated() {
 
   hydrated = true;
   await loadBar();
+  await loadEyes();
 
   if (!durabilityEnabled()) {
     return;
@@ -1511,7 +1581,7 @@ function normalizeSession(value: unknown): LiveSession | null {
 
   const record = value as Record<string, unknown>;
   const id = String(record.id ?? "").trim();
-  const surface = record.surface === "bar" ? "bar" : null;
+  const surface = normalizeSurface(record.surface);
 
   if (!id || !surface) {
     return null;
@@ -1523,14 +1593,14 @@ function normalizeSession(value: unknown): LiveSession | null {
     id,
     surface,
     status: record.status === "ended" ? "ended" : "active",
-    title: String(record.title ?? "BAR Live Session"),
+    title: String(record.title ?? `${surfaceLabel(surface)} Live Session`),
     tick_policy: normalizeTickPolicy(record.tick_policy as Partial<LiveSessionTickPolicy> | undefined),
     created_at: normalizeIso(record.created_at) ?? new Date().toISOString(),
     updated_at: normalizeIso(record.updated_at) ?? new Date().toISOString(),
     ended_at: normalizeIso(record.ended_at),
     participants,
     bridge_attendants: normalizeBridgeAttendants(id, record.bridge_attendants, participants),
-    bridge_deliveries: normalizeBridgeDeliveries(id, record.bridge_deliveries),
+    bridge_deliveries: normalizeBridgeDeliveries(id, surface, record.bridge_deliveries),
     events: normalizeEvents(record.events)
   };
 }
@@ -1636,18 +1706,26 @@ function normalizeBridgeAttendant(
   };
 }
 
-function normalizeBridgeDeliveries(sessionId: string, value: unknown): LiveSessionBridgeDelivery[] {
+function normalizeBridgeDeliveries(
+  sessionId: string,
+  surface: LiveSessionSurface,
+  value: unknown
+): LiveSessionBridgeDelivery[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value
-    .map((item) => normalizeBridgeDelivery(sessionId, item))
+    .map((item) => normalizeBridgeDelivery(sessionId, surface, item))
     .filter((delivery): delivery is LiveSessionBridgeDelivery => Boolean(delivery))
     .slice(0, BRIDGE_DELIVERY_LIMIT);
 }
 
-function normalizeBridgeDelivery(sessionId: string, value: unknown): LiveSessionBridgeDelivery | null {
+function normalizeBridgeDelivery(
+  sessionId: string,
+  surface: LiveSessionSurface,
+  value: unknown
+): LiveSessionBridgeDelivery | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
@@ -1676,7 +1754,7 @@ function normalizeBridgeDelivery(sessionId: string, value: unknown): LiveSession
     event_cutoff_at: eventCutoffAt,
     event_count: normalizeNonNegativeInteger(record.event_count) ?? pendingEvents.length,
     pending_events: pendingEvents,
-    prompt: typeof record.prompt === "string" ? record.prompt : bridgeDeliveryPromptForNormalizedRecord(sessionId, agent, pendingEvents, eventCutoffAt),
+    prompt: typeof record.prompt === "string" ? record.prompt : bridgeDeliveryPromptForNormalizedRecord(sessionId, surface, agent, pendingEvents, eventCutoffAt),
     created_at: createdAt,
     updated_at: normalizeIso(record.updated_at) ?? createdAt,
     claimed_at: normalizeIso(record.claimed_at),
@@ -1763,22 +1841,25 @@ function normalizeBridgeDeliveryMetadata(
 
 function bridgeDeliveryPromptForNormalizedRecord(
   sessionId: string,
+  surface: LiveSessionSurface,
   agent: BridgeAgentName,
   messages: LiveSessionBridgeDelivery["pending_events"],
   eventCutoffAt: string
 ) {
+  const label = surfaceLabel(surface);
+
   return [
-    "BAR Live Session delivery.",
+    `${label} Live Session delivery.`,
     `Session: ${sessionId}.`,
     `Event cutoff: ${eventCutoffAt}.`,
     `Active bridge agent: ${displayName(agent)}.`,
     "",
-    "Pending BAR events:",
+    `Pending ${label} events:`,
     ...messages.map((message) =>
       `- ${message.created_at} ${message.author_display_name}: ${message.content}`
     ),
     "",
-    "Please respond in BAR if a response belongs there."
+    `Please respond in ${label} if a response belongs there.`
   ].join("\n");
 }
 
@@ -1850,6 +1931,10 @@ function normalizeSessionAgent(value: unknown): LiveSessionAgentName | null {
   return typeof value === "string" && ALL_SESSION_AGENTS.includes(value as LiveSessionAgentName)
     ? value as LiveSessionAgentName
     : null;
+}
+
+function normalizeSurface(value: unknown): LiveSessionSurface | null {
+  return value === "bar" || value === "eyes" ? value : null;
 }
 
 function normalizeBridgeAgent(value: unknown): BridgeAgentName | null {

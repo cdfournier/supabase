@@ -12,7 +12,7 @@ type AgentName = "soren" | "varro";
 type OperatorNoteAgent = AgentName | "julian" | "cael";
 type OperatorNoteRecipient = OperatorNoteAgent | "all";
 type OperatorNoteFilter = "active" | "needs_operator" | "waiting_agent" | "settled" | "all";
-type ActiveSurface = "chat" | "cafe" | "bar" | "inbox";
+type ActiveSurface = "chat" | "cafe" | "bar" | "eyes" | "inbox";
 
 const OPERATOR_NOTE_RECIPIENTS: OperatorNoteAgent[] = ["soren", "varro", "julian", "cael"];
 
@@ -166,6 +166,39 @@ type BarState = {
   message_limit: number;
 };
 
+type EyesMessage = {
+  id: string;
+  room_id: string;
+  kind: "message" | "capture" | "observation" | "system";
+  author_id: string;
+  author_type: "operator" | "agent" | "system" | "external_agent";
+  author_display_name: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+type EyesFrame = SourceMaterialReference & {
+  captured_at: string;
+  sequence: number;
+};
+
+type EyesState = {
+  generated_at: string;
+  room: {
+    id: string;
+    title: string;
+    status: string;
+    metadata: Record<string, unknown>;
+  };
+  adapters: PresenceAdapter[];
+  presence: PresenceReceipt[];
+  messages: EyesMessage[];
+  frames: EyesFrame[];
+  message_limit: number;
+  frame_limit: number;
+};
+
 type LiveSessionAgent = OperatorNoteAgent;
 type LiveSessionNativeAgent = AgentName;
 type LiveSessionBridgeAgent = "julian" | "cael";
@@ -234,7 +267,7 @@ type LiveSessionTickPolicy = {
 };
 type LiveSession = {
   id: string;
-  surface: "bar";
+  surface: "bar" | "eyes";
   status: "active" | "ended";
   title: string;
   tick_policy: LiveSessionTickPolicy;
@@ -303,7 +336,7 @@ type LaunchpadInvitee = {
 };
 type LaunchpadInvitation = {
   id: string;
-  surface: "bar";
+  surface: "bar" | "eyes";
   title: string;
   intent: "gather" | "live_session" | "work_session" | "celebration" | "quiet_check";
   tone: "quiet" | "soft" | "directed" | "high_signal" | "celebratory";
@@ -322,7 +355,7 @@ type LaunchpadInvitation = {
 type LaunchpadStatus = {
   generated_at: string;
   adapters: Array<{
-    surface: "bar";
+    surface: "bar" | "eyes";
     label: string;
     status: "live";
     executable: boolean;
@@ -752,7 +785,7 @@ const launchpadDestinations: Array<{
   status: "live" | "planned";
 }> = [
   { id: "bar", label: "BAR", status: "live" },
-  { id: "eyes", label: "EYES", status: "planned" },
+  { id: "eyes", label: "EYES", status: "live" },
   { id: "wheels", label: "WHEELS", status: "planned" },
   { id: "world", label: "The World", status: "planned" }
 ];
@@ -786,6 +819,12 @@ export default function Home() {
   const [barLoading, setBarLoading] = useState(true);
   const [barSending, setBarSending] = useState(false);
   const [barError, setBarError] = useState("");
+  const [eyes, setEyes] = useState<EyesState | null>(null);
+  const [eyesMessage, setEyesMessage] = useState("");
+  const [eyesPendingFrames, setEyesPendingFrames] = useState<PendingAttachment[]>([]);
+  const [eyesLoading, setEyesLoading] = useState(true);
+  const [eyesSending, setEyesSending] = useState(false);
+  const [eyesError, setEyesError] = useState("");
   const [liveSession, setLiveSession] = useState<LiveSessionStatus | null>(null);
   const [liveSessionLoading, setLiveSessionLoading] = useState(true);
   const [liveSessionRequestInProgress, setLiveSessionRequestInProgress] = useState(false);
@@ -887,6 +926,9 @@ export default function Home() {
   const unreadOperatorNotes = operatorInboxOperatorNotes.filter((note) => note.operator_status === "unread");
   const operatorInboxCount = pendingOperatorRollups.length + unreadOperatorNotes.length;
   const barActivePresenceCount = (bar?.presence ?? []).filter((receipt) =>
+    ["present", "degraded"].includes(receipt.state)
+  ).length;
+  const eyesActivePresenceCount = (eyes?.presence ?? []).filter((receipt) =>
     ["present", "degraded"].includes(receipt.state)
   ).length;
   const activeLiveSession = liveSession?.active_session ?? null;
@@ -1211,6 +1253,26 @@ export default function Home() {
     }
   }, []);
 
+  const loadEyes = useCallback(async () => {
+    setEyesError("");
+
+    try {
+      const response = await fetch("/api/eyes");
+      const data = await readJsonResponse<EyesState & { error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load EYES.");
+      }
+
+      setEyes(data);
+    } catch (loadEyesError) {
+      setEyesError(loadEyesError instanceof Error ? loadEyesError.message : "Could not load EYES.");
+      setEyes(null);
+    } finally {
+      setEyesLoading(false);
+    }
+  }, []);
+
   const loadLiveSessionStatus = useCallback(async () => {
     setLiveSessionError("");
 
@@ -1272,6 +1334,10 @@ export default function Home() {
   useEffect(() => {
     void loadBar();
   }, [loadBar]);
+
+  useEffect(() => {
+    void loadEyes();
+  }, [loadEyes]);
 
   useEffect(() => {
     void loadLiveSessionStatus();
@@ -1409,6 +1475,7 @@ export default function Home() {
     const interval = window.setInterval(() => {
       void loadLiveSessionStatus();
       void loadBar();
+      void loadEyes();
     }, 5000);
 
     return () => {
@@ -1418,6 +1485,7 @@ export default function Home() {
     liveSession?.active_session?.id,
     liveSession?.runner.status,
     loadBar,
+    loadEyes,
     loadLiveSessionStatus
   ]);
 
@@ -1749,6 +1817,7 @@ export default function Home() {
 
       await loadLiveSessionStatus();
       await loadBar();
+      await loadEyes();
     } catch (actionError) {
       setLiveSessionError(
         actionError instanceof Error ? actionError.message : "Live Session request failed."
@@ -1797,6 +1866,7 @@ export default function Home() {
       await loadLaunchpadStatus();
       await loadLiveSessionStatus();
       await loadBar();
+      await loadEyes();
     } catch (actionError) {
       setLaunchpadError(
         actionError instanceof Error ? actionError.message : "Launchpad request failed."
@@ -2242,6 +2312,52 @@ export default function Home() {
     }
   }
 
+  async function sendEyesMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = eyesMessage.trim();
+    const hasFrames = eyesPendingFrames.length > 0;
+
+    if ((!trimmed && !hasFrames) || eyesSending) {
+      return;
+    }
+
+    setEyesSending(true);
+    setEyesError("");
+    setEyesMessage("");
+
+    try {
+      const uploadedFrames = await uploadQueuedEyesFrames();
+      const response = await fetch("/api/eyes", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          action: uploadedFrames.length ? "capture" : "post",
+          content: trimmed,
+          participant_id: "operator:chris",
+          participant_type: "operator",
+          display_name: "Chris",
+          frames: uploadedFrames.map((frame) => ({ id: frame.id }))
+        })
+      });
+      const data = await readJsonResponse<EyesState & { error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not post to EYES.");
+      }
+
+      setEyes(data);
+      setEyesPendingFrames([]);
+    } catch (sendEyesError) {
+      setEyesMessage(trimmed);
+      setEyesError(sendEyesError instanceof Error ? sendEyesError.message : "Could not post to EYES.");
+    } finally {
+      setEyesSending(false);
+      setEyesLoading(false);
+    }
+  }
+
   function addCafeFiles(files: FileList | File[]) {
     const nextFiles = Array.from(files);
 
@@ -2284,6 +2400,29 @@ export default function Home() {
 
   function removeBarAttachment(localId: string) {
     setBarPendingAttachments((current) =>
+      current.filter((attachment) => attachment.localId !== localId)
+    );
+  }
+
+  function addEyesFrames(files: FileList | File[]) {
+    const nextFiles = Array.from(files);
+
+    if (!nextFiles.length) {
+      return;
+    }
+
+    setEyesPendingFrames((current) => [
+      ...current,
+      ...nextFiles.map((file) => ({
+        localId: createLocalId(),
+        file,
+        status: "queued" as const
+      }))
+    ]);
+  }
+
+  function removeEyesFrame(localId: string) {
+    setEyesPendingFrames((current) =>
       current.filter((attachment) => attachment.localId !== localId)
     );
   }
@@ -2536,6 +2675,82 @@ export default function Home() {
     return [...uploaded, ...materials];
   }
 
+  async function uploadQueuedEyesFrames() {
+    const queued = eyesPendingFrames.filter((attachment) => attachment.status !== "uploaded");
+    const uploaded = eyesPendingFrames
+      .filter((attachment) => attachment.status === "uploaded" && attachment.material)
+      .map((attachment) => attachment.material as UploadedAttachment);
+
+    if (!queued.length) {
+      return uploaded;
+    }
+
+    setEyesPendingFrames((current) =>
+      current.map((attachment) =>
+        queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+          ? { ...attachment, status: "uploading", error: undefined }
+          : attachment
+      )
+    );
+
+    const formData = new FormData();
+
+    for (const attachment of queued) {
+      formData.append("files", attachment.file);
+    }
+
+    const response = await fetch("/api/source-materials/eyes-upload", {
+      method: "POST",
+      body: formData
+    });
+    const data = await readJsonResponse<SourceMaterialUploadResponse>(response);
+
+    if (!response.ok) {
+      setEyesPendingFrames((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: data.error || "Upload failed." }
+            : attachment
+        )
+      );
+      throw new Error(data.error || "Upload failed.");
+    }
+
+    const materials = (data.materials ?? []) as UploadedAttachment[];
+
+    if (materials.length !== queued.length) {
+      setEyesPendingFrames((current) =>
+        current.map((attachment) =>
+          queued.some((queuedAttachment) => queuedAttachment.localId === attachment.localId)
+            ? { ...attachment, status: "error", error: "Upload response did not match selected files." }
+            : attachment
+        )
+      );
+      throw new Error("Upload response did not match selected files.");
+    }
+
+    setEyesPendingFrames((current) =>
+      current.map((attachment) => {
+        const queuedIndex = queued.findIndex(
+          (queuedAttachment) => queuedAttachment.localId === attachment.localId
+        );
+
+        if (queuedIndex === -1) {
+          return attachment;
+        }
+
+        return {
+          ...attachment,
+          status: "uploaded",
+          material: materials[queuedIndex],
+          error: undefined
+        };
+      })
+    );
+
+    return [...uploaded, ...materials];
+  }
+
   return (
     <main className="shell">
       <aside className="sidebar">
@@ -2560,6 +2775,18 @@ export default function Home() {
           <strong>BAR</strong>
           <br />
           <span>{barActivePresenceCount} here</span>
+        </button>
+        <button
+          className={`cafe-button ${activeSurface === "eyes" ? "active" : ""}`}
+          onClick={() => {
+            setActiveSurface("eyes");
+            void loadEyes();
+          }}
+          type="button"
+        >
+          <strong>EYES</strong>
+          <br />
+          <span>{eyesActivePresenceCount} here</span>
         </button>
         <button
           className={`cafe-button ${activeSurface === "inbox" ? "active" : ""}`}
@@ -2707,6 +2934,20 @@ export default function Home() {
           onSubmit={sendBarMessage}
           pendingAttachments={barPendingAttachments}
           sending={barSending}
+        />
+      ) : activeSurface === "eyes" ? (
+        <EyesView
+          error={eyesError}
+          eyes={eyes}
+          loading={eyesLoading}
+          message={eyesMessage}
+          onAddFrames={addEyesFrames}
+          onMessageChange={setEyesMessage}
+          onRefresh={loadEyes}
+          onRemoveFrame={removeEyesFrame}
+          onSubmit={sendEyesMessage}
+          pendingFrames={eyesPendingFrames}
+          sending={eyesSending}
         />
       ) : activeSurface === "inbox" ? (
         <OperatorInboxView
@@ -3251,6 +3492,262 @@ function BarView({
                       <small>
                         {attachment.material_type} · {formatBytes(attachment.size_bytes)}
                         {attachment.readable_as_text ? " · text-readable" : ""}
+                      </small>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function EyesView({
+  error,
+  eyes,
+  loading,
+  message,
+  onAddFrames,
+  onMessageChange,
+  onRefresh,
+  onRemoveFrame,
+  onSubmit,
+  pendingFrames,
+  sending
+}: {
+  error: string;
+  eyes: EyesState | null;
+  loading: boolean;
+  message: string;
+  onAddFrames: (files: FileList | File[]) => void;
+  onMessageChange: (message: string) => void;
+  onRefresh: () => void;
+  onRemoveFrame: (localId: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  pendingFrames: PendingAttachment[];
+  sending: boolean;
+}) {
+  const eyesFileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [cameraState, setCameraState] = useState<"idle" | "starting" | "live" | "unavailable">("idle");
+  const presence = eyes?.presence ?? [];
+  const messages = eyes?.messages ?? [];
+  const frames = eyes?.frames ?? [];
+
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  async function startCamera() {
+    if (cameraState === "starting" || cameraState === "live") {
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraState("unavailable");
+      return;
+    }
+
+    setCameraState("starting");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 960 }
+        },
+        audio: false
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setCameraState("live");
+    } catch {
+      setCameraState("unavailable");
+    }
+  }
+
+  async function captureFrame() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || cameraState !== "live") {
+      return;
+    }
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 960;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, 0, 0, width, height);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", 0.86);
+    });
+
+    if (!blob) {
+      return;
+    }
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    onAddFrames([new File([blob], `eyes-frame-${stamp}.jpg`, { type: "image/jpeg" })]);
+  }
+
+  return (
+    <section className="main bar-main eyes-main">
+      <header className="header cafe-header bar-header">
+        <h2 className="visually-hidden">{eyes?.room.title ?? "EYES"}</h2>
+        <div className="cafe-participants" aria-label="EYES participants">
+          {presence.length ? (
+            presence.map((receipt) => (
+              <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
+                <strong>{receipt.display_name}</strong>
+                <small>{presenceStateLabel(receipt.state)}</small>
+              </span>
+            ))
+          ) : (
+            <span className="participant-chip muted">No observers loaded</span>
+          )}
+        </div>
+        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
+          Refresh
+        </button>
+      </header>
+
+      <div className="eyes-viewfinder">
+        <div className={`eyes-camera-frame ${cameraState}`}>
+          <video autoPlay muted playsInline ref={videoRef} />
+          {cameraState === "idle" ? <span>Camera idle</span> : null}
+          {cameraState === "starting" ? <span>Starting camera...</span> : null}
+          {cameraState === "unavailable" ? <span>Camera unavailable</span> : null}
+        </div>
+        <canvas ref={canvasRef} />
+        <div className="eyes-controls">
+          <button disabled={sending || cameraState === "starting"} onClick={startCamera} type="button">
+            {cameraState === "live" ? "Camera live" : "Start camera"}
+          </button>
+          <button disabled={sending || cameraState !== "live"} onClick={captureFrame} type="button">
+            Capture frame
+          </button>
+          <button disabled={loading || sending} onClick={() => eyesFileInputRef.current?.click()} type="button">
+            Attach frame
+          </button>
+        </div>
+        {frames.length ? (
+          <div className="eyes-latest" aria-label="Latest EYES frames">
+            <strong>Latest frames</strong>
+            {frames.map((frame) => (
+              <span key={`${frame.id}-${frame.sequence}`}>
+                {frame.title}
+                <small>{formatMessageTime(frame.captured_at)}</small>
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <form
+        className="composer cafe-composer bar-composer eyes-composer"
+        onDragOver={(event) => {
+          event.preventDefault();
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          onAddFrames(event.dataTransfer.files);
+        }}
+        onSubmit={onSubmit}
+      >
+        {error ? <p className="error">{error}</p> : null}
+        <div className="composer-row">
+          <textarea
+            disabled={loading || sending}
+            onChange={(event) => onMessageChange(event.target.value)}
+            placeholder="Message EYES or describe this frame"
+            value={message}
+          />
+          <div className="composer-actions">
+            <input
+              accept="image/*"
+              multiple
+              onChange={(event) => {
+                if (event.target.files) {
+                  onAddFrames(event.target.files);
+                }
+                event.target.value = "";
+              }}
+              ref={eyesFileInputRef}
+              type="file"
+            />
+            <button
+              className="send"
+              disabled={loading || sending || (!message.trim() && pendingFrames.length === 0)}
+              type="submit"
+            >
+              {sending ? "Posting" : pendingFrames.length ? "Share" : "Post"}
+            </button>
+          </div>
+        </div>
+        {pendingFrames.length ? (
+          <div className="attachment-tray" aria-label="Pending EYES frames">
+            {pendingFrames.map((frame) => (
+              <span className={`attachment-chip ${frame.status}`} key={frame.localId}>
+                <span>
+                  {frame.file.name}
+                  <small>{formatBytes(frame.file.size)} · {frame.status}</small>
+                  {frame.error ? <small className="attachment-error">{frame.error}</small> : null}
+                </span>
+                <button
+                  aria-label={`Remove ${frame.file.name}`}
+                  disabled={sending}
+                  onClick={() => onRemoveFrame(frame.localId)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </form>
+
+      <div className="transcript cafe-transcript bar-transcript">
+        {loading ? <p className="empty">Loading EYES...</p> : null}
+        {!loading && !messages.length ? (
+          <p className="empty">No EYES observations yet.</p>
+        ) : null}
+        {messages.map((eyesMessage) => {
+          const messageFrames = framesFromEyesMetadata(eyesMessage.metadata);
+
+          return (
+            <article
+              className={`message ${eyesMessage.author_type === "operator" ? "user" : "assistant"}`}
+              key={eyesMessage.id}
+            >
+              <div className="message-meta">
+                <span>{eyesMessage.author_display_name}</span>
+                <time dateTime={eyesMessage.created_at}>{formatMessageTime(eyesMessage.created_at)}</time>
+              </div>
+              <div>{eyesMessage.content}</div>
+              {messageFrames.length > 0 ? (
+                <div className="message-attachments" aria-label="EYES message frames">
+                  {messageFrames.map((frame) => (
+                    <span className="message-attachment" key={frame.id}>
+                      {frame.title}
+                      <small>
+                        {frame.material_type} · {formatBytes(frame.size_bytes)}
                       </small>
                     </span>
                   ))}
@@ -4408,6 +4905,7 @@ function liveSessionRequestBody(action: "start" | "end" | "tick" | "dry_run" | "
     return {
       action,
       title: "BAR Live Session",
+      surface: "bar",
       agents: liveSessionNativeAgents
         .filter((agent) => draft.nativeAgents[agent.id])
         .map((agent) => agent.id),
@@ -4451,7 +4949,7 @@ function launchpadRequestBody(
 
   return {
     action,
-    title: "Whole family BAR",
+    title: draft.destination === "eyes" ? "Whole family EYES" : "Whole family BAR",
     surface: draft.destination,
     agents: OPERATOR_NOTE_RECIPIENTS.filter((agent) => draft.agents[agent]),
     intent: "live_session",
@@ -5432,6 +5930,48 @@ function attachmentsFromCafeMetadata(metadata: Record<string, unknown>): SourceM
       bucket: typeof source.bucket === "string" ? source.bucket : undefined,
       storage_path: typeof source.storage_path === "string" ? source.storage_path : undefined,
       material_type: materialType || "file",
+      mime_type: typeof source.mime_type === "string" ? source.mime_type : null,
+      size_bytes: typeof source.size_bytes === "number" ? source.size_bytes : null,
+      readable_as_text: source.readable_as_text === true,
+      metadata:
+        source.metadata && typeof source.metadata === "object" && !Array.isArray(source.metadata)
+          ? (source.metadata as Record<string, unknown>)
+          : null
+    });
+  }
+
+  return parsed;
+}
+
+function framesFromEyesMetadata(metadata: Record<string, unknown>): SourceMaterialReference[] {
+  const frames = metadata.frames;
+
+  if (!Array.isArray(frames)) {
+    return [];
+  }
+
+  const parsed: SourceMaterialReference[] = [];
+
+  for (const frame of frames) {
+    if (!frame || typeof frame !== "object") {
+      continue;
+    }
+
+    const source = frame as Record<string, unknown>;
+    const id = String(source.id ?? "").trim();
+    const title = String(source.title ?? "").trim();
+    const materialType = String(source.material_type ?? "image").trim();
+
+    if (!id || !title) {
+      continue;
+    }
+
+    parsed.push({
+      id,
+      title,
+      bucket: typeof source.bucket === "string" ? source.bucket : undefined,
+      storage_path: typeof source.storage_path === "string" ? source.storage_path : undefined,
+      material_type: materialType || "image",
       mime_type: typeof source.mime_type === "string" ? source.mime_type : null,
       size_bytes: typeof source.size_bytes === "number" ? source.size_bytes : null,
       readable_as_text: source.readable_as_text === true,

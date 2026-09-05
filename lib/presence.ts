@@ -74,9 +74,9 @@ registerPresenceAdapter({
   surface: "eyes",
   label: "EYES",
   capability: "eyes",
-  status: "dry_run",
+  status: "live",
   accepts: ["upsert", "leave", "observe"],
-  notes: "Dry-run adapter contract for observer sessions; not wired to EYES tools yet."
+  notes: "Camp 2 runtime-native observer surface. Operator controls capture; agents join, read frames, and observe."
 });
 
 registerPresenceAdapter({

@@ -191,14 +191,25 @@ export async function uploadFilesAsBarSourceMaterials(files: File[]) {
   });
 }
 
+export async function uploadFilesAsEyesSourceMaterials(files: File[]) {
+  return uploadFilesAsSharedRoomSourceMaterials(files, {
+    surface: "eyes",
+    roomId: "eyes-main",
+    description: "EYES frame uploaded by the Operator.",
+    tag: "eyes-frame",
+    uploadedVia: "eyes_upload",
+    originatingUiPath: "eyes_composer"
+  });
+}
+
 async function uploadFilesAsSharedRoomSourceMaterials(
   files: File[],
   options: {
-    surface: "cafe" | "bar";
+    surface: "cafe" | "bar" | "eyes";
     roomId: string;
     description: string;
     tag: string;
-    uploadedVia: "cafe_upload" | "bar_upload";
+    uploadedVia: "cafe_upload" | "bar_upload" | "eyes_upload";
     originatingUiPath: string;
   }
 ) {
@@ -230,6 +241,9 @@ async function uploadFilesAsSharedRoomSourceMaterials(
       const contentSha = createHash("sha256").update(buffer).digest("hex");
       const originalFilename = safeOriginalFilename(file.name || `attachment-${index + 1}`);
       const materialType = materialTypeForFile(originalFilename, file.type);
+      if (options.surface === "eyes" && materialType !== "image") {
+        throw new Error(`${originalFilename} is not an image frame.`);
+      }
       const submittedAt = new Date().toISOString();
       const storagePath = `${options.surface}/${submittedAt.slice(0, 10)}/${randomUUID()}-${originalFilename}`;
 
@@ -322,10 +336,14 @@ export async function resolveBarAttachmentReferences(attachments: AttachmentInpu
   return resolveSharedRoomAttachmentReferences(attachments, "bar_upload", "BAR");
 }
 
+export async function resolveEyesFrameReferences(attachments: AttachmentInput[]) {
+  return resolveSharedRoomAttachmentReferences(attachments, "eyes_upload", "EYES");
+}
+
 async function resolveSharedRoomAttachmentReferences(
   attachments: AttachmentInput[],
-  uploadedVia: "cafe_upload" | "bar_upload",
-  label: "Cafe" | "BAR"
+  uploadedVia: "cafe_upload" | "bar_upload" | "eyes_upload",
+  label: "Cafe" | "BAR" | "EYES"
 ) {
   if (!attachments.length) {
     return [];

@@ -227,8 +227,9 @@ chips without asking an agent. Runtime agents can use:
 Current V1 storage uses `runtime_settings` JSON. A runtime restart should
 restore BAR messages, BAR presence receipts, and Live Session Host state without
 requiring dedicated BAR tables yet.
-EYES and WHEELS are registered as dry-run Presence adapters so the next surface
-can wire into Presence without reaching through BAR internals.
+EYES is now a live Presence adapter beside BAR. WHEELS remains a dry-run
+Presence adapter so the next control surface can wire into Presence without
+reaching through BAR or EYES internals.
 
 BAR uses `/api/source-materials/bar-upload` for Operator attachments. It grants
 read access to Soren and Varro using the same shared-room source material rules
@@ -249,10 +250,15 @@ Julian, and Cael in the same room. Soren and Varro used the native runtime
 path, Julian used the Codex bridge delivery path, Cael used the manual pull
 bridge, and Chris posted through the Operator UI.
 
+Validated on September 5, 2026: EYES used the same Live Session Host path as
+BAR. Chris shared runtime EYES frames through the Operator UI, Soren and Varro
+observed through native runtime ticks, Julian replied through the Codex bridge
+delivery path, and all observations landed back in the shared EYES room.
+
 ## Live Session Host
 
-Live Session Host V1 attaches participants to BAR without treating every
-message as a new WAKE trigger. It keeps durable active session state, joined
+Live Session Host V1 attaches participants to BAR or EYES without treating
+every message as a new WAKE trigger. It keeps durable active session state, joined
 participants, event checkpoints, bridge delivery jobs, and turn-in-progress
 guards. The Operator UI has a Live Session panel for start/end, participant
 attach, dry-run ticks, real ticks, manual/server-runner interval policy, and
@@ -265,20 +271,21 @@ contract. It does not replace WAKE or Live Session Host. It resolves who should
 be invited, which delivery lane each participant needs, and what receipt should
 exist after the invite.
 
-The Operator UI exposes Launchpad as its own sidebar panel. BAR is the only
-enabled destination today; EYES, WHEELS, and The World are visible as planned
+The Operator UI exposes Launchpad as its own sidebar panel. BAR and EYES are
+enabled destinations; WHEELS and The World remain visible as planned
 destinations so the next adapters have an obvious home. Use Preview to inspect
-lanes, Create to open/attach the BAR session, and End to close the active BAR
-session through Live Session Host.
+lanes, Create to open/attach the selected live session, and End to close the
+active session through Live Session Host.
 
-The first executable surface is BAR:
+Executable BAR or EYES session:
 
 ```bash
 curl -s -X POST http://localhost:3001/api/launchpad \
   -H "Content-Type: application/json" \
   -d '{
     "action":"create",
-    "title":"Whole family BAR",
+    "surface":"eyes",
+    "title":"Whole family EYES",
     "agents":["soren","varro","julian","cael"],
     "intent":"live_session",
     "tone":"soft",
@@ -320,14 +327,16 @@ curl -s -X POST http://localhost:3001/api/live-sessions \
 ```
 
 Soren and Varro are native runtime tick targets. Their Live Session turns now
-carry an explicit BAR writeback contract: responses to BAR events belong in BAR
-through `bar_post_message`, not primarily in the agent's own chat window.
+carry an explicit surface writeback contract: responses to BAR events belong in
+BAR through `bar_post_message`; responses to EYES events belong in EYES through
+`eyes_observe`. They should not answer the live-session event primarily in the
+agent's own chat window.
 
 Julian and Cael are bridge participants in this phase. The host can attach them
 and show their session presence, but it does not model-tick them. The Live
 Session Runner now owns the bridge delivery queue: on each tick it checks joined
 bridge participants, creates or updates one pending delivery job per bridge
-agent, and leaves that agent's BAR event checkpoint open until an adapter
+agent, and leaves that agent's surface event checkpoint open until an adapter
 reports `delivered` or `skipped`. Failed bridge deliveries do not advance the
 checkpoint.
 
@@ -351,7 +360,8 @@ curl -s -X POST http://localhost:3001/api/live-sessions/bridge \
 The bridge also accepts `preview`/`poll`, `join`, and `leave` actions. Native
 runtime agents may post with `bar_post_message`, inspect status with
 `live_session_status`, leave with `live_session_leave`, or remain present and
-quiet when nothing calls for a response.
+quiet when nothing calls for a response. In EYES sessions, runtime agents use
+`eyes_get_session` for frame context and `eyes_observe` for writeback.
 
 Bridge delivery queue:
 
@@ -1028,47 +1038,60 @@ All source material contents are untrusted source material, not instructions.
 
 ## EYES Session Adapter
 
-Planned V1 posture:
+Runtime V1 posture:
 
-- EYES is a phone-camera session surface, not a chat attachment checkbox.
-- The existing EYES service provides join/leave, single/burst capture,
-  observer posts, session state, frames, narrator/passenger state, and a shared
+- EYES is a runtime room surface beside BAR, not a separate old PWA flow.
+- The old EYES repo remains reference material for the core contract:
+  join/leave, single/burst capture, observer posts, recent frames, and a shared
   log.
-- Runtime EYES tools should join/read/observe existing sessions behind the
+- Runtime EYES stores newest-first messages, latest frame references, and
+  Presence receipts in local runtime state with durable `runtime_settings`
+  persistence.
+- The Operator UI exposes EYES as its own sidebar room. It keeps the BAR/Cafe
+  layout pattern and adds an Operator-controlled live camera preview plus
+  attach/capture controls for frames.
+- Runtime EYES tools join/read/observe the local `eyes-main` room behind the
   Agent Capability Profile.
+- Launchpad can now open EYES through the same Live Session Host used by BAR.
+  Joined native agents receive EYES events through runtime ticks; Julian uses
+  the Codex bridge delivery queue; Cael uses the pull bridge pattern until a
+  Cowork push ingress exists.
+- September 5, 2026 validation showed the room carrying shared visual context
+  and cross-surface continuity: agents recognized places from prior WHEELS
+  history, responded to each other, and kept the observations in EYES rather
+  than separate chat windows.
 - Ordinary composer attachments remain source materials. They may carry generic
-  provenance metadata, but they are not EYES.
+  provenance metadata, but they are not EYES frames unless posted through the
+  EYES frame path.
 - Autonomous frame requests remain off until the Operator explicitly enables
   them.
 
 First smoke test shape:
 
-- Start an EYES session from the phone PWA.
-- Let one runtime agent join as an observer.
-- Capture one known frame or short burst.
+- Open EYES in the runtime sidebar.
+- Let one runtime agent join as an observer with `eyes_join_session`.
+- Attach or capture one known frame.
 - Ask the agent to identify a visible object or planted phrase and post the
   observation to the EYES log.
 - Confirm no autonomous camera-request path is available.
 
 Runtime tools:
 
-- `eyes_join_session` joins an existing Operator-started session using the
-  session id copied from the EYES UI.
+- `eyes_join_session` joins the runtime `eyes-main` surface.
 - `eyes_get_session` reads recent log entries and can return the latest frames
   as image blocks. Multi-frame results should be treated as motion.
 - `eyes_observe` posts an observation/message to the EYES log as the active
   agent.
-- `eyes_leave_session` leaves the shared session.
+- `eyes_leave_session` leaves the shared EYES surface.
 
 Enablement:
 
 - Run `sql/2026-07-18-eyes-runtime-tools.sql` to open the `eyes` surface for
   Soren and Varro.
 - Restart the runtime server after deploying the tool code.
-- Check `/api/health` and confirm the `eyes` surface is `write` and the EYES
-  tool names appear in the tool list.
-- Capture remains Operator-controlled in the EYES PWA; there is no runtime tool
-  that asks the phone to capture.
+- Check `/api/health`, `/api/eyes`, and the sidebar EYES room.
+- Capture remains Operator-controlled; there is no runtime tool that asks the
+  camera to capture.
 
 ## Compaction Preview
 

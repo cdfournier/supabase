@@ -11,6 +11,7 @@ const PUBLIC_PATHS = new Set([
   "/api/operator/session",
   "/api/bar/bridge",
   "/api/cafe/bridge",
+  "/api/eyes/bridge",
   "/api/operator-note-wake-receipts/bridge",
   "/api/operator-notes/bridge",
   "/api/wake-arrivals/bridge",

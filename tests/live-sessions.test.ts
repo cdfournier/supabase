@@ -14,6 +14,7 @@ import {
   tickLiveSession
 } from "../lib/live-sessions.ts";
 import { postBarMessage } from "../lib/bar.ts";
+import { loadEyes, postEyesMessage } from "../lib/eyes.ts";
 
 async function nextTick() {
   await new Promise((resolve) => setTimeout(resolve, 2));
@@ -365,6 +366,46 @@ test("Live Session Host ignores an agent's own BAR messages", async () => {
 
   assert.equal(preview.pending_events.length, 0);
   assert.equal(preview.prompt, null);
+
+  await endLiveSession(session.id);
+});
+
+test("Live Session Host previews new EYES events for joined runtime agents", async () => {
+  const session = await startLiveSession({
+    surface: "eyes",
+    title: "Test EYES Live Session",
+    agents: ["soren"],
+    bridgeAgents: ["julian"]
+  });
+
+  await postEyesMessage({
+    participant_id: "operator:chris",
+    participant_type: "operator",
+    display_name: "Chris",
+    source: "test",
+    content: "Soren, what do you see?"
+  });
+
+  const preview = await previewLiveSessionAgent({
+    sessionId: session.id,
+    agent: "soren"
+  });
+
+  assert.equal(session.surface, "eyes");
+  assert.equal(preview.pending_events.length, 1);
+  assert.match(preview.prompt ?? "", /Soren, what do you see\?/);
+  assert.match(preview.prompt ?? "", /responses to EYES events belong in EYES/);
+  assert.match(preview.prompt ?? "", /Use eyes_observe for observations or EYES replies/);
+
+  const eyes = await loadEyes();
+  assert.equal(
+    eyes.presence.some((receipt) =>
+      receipt.participant_id === "agent:soren" &&
+      receipt.surface === "eyes" &&
+      receipt.state === "present"
+    ),
+    true
+  );
 
   await endLiveSession(session.id);
 });

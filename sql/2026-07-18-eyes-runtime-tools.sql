@@ -2,19 +2,19 @@
 --
 -- This opens join/read/observe/leave tools behind the existing Agent
 -- Capability Profile. It does not add any camera-capture/request tool; capture
--- remains Operator-controlled in the EYES phone PWA.
+-- remains Operator-controlled in the runtime EYES surface.
 
 insert into public.agent_capabilities
   (agent, surface, access_level, default_bias, requires_operator_approval, notify_operator, max_actions_per_moment, quiet_mode, notes)
 select agent.name,
        'eyes',
        'write',
-       'operator-started observer sessions only',
+       'runtime observer surface only',
        false,
        'audit_only',
        null::int,
        false,
-       'May join Operator-provided EYES sessions, read current frames/log, post observations, and leave. No autonomous camera requests in V1.'
+       'May join the runtime EYES surface, read current frames/log, post observations, and leave. No autonomous camera requests in V1.'
 from public.agents agent
 where agent.name in ('soren', 'varro')
 on conflict (agent, surface) do update set

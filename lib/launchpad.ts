@@ -4,11 +4,12 @@ import {
   startLiveSession,
   type BridgeAgentName,
   type LiveSession,
+  type LiveSessionSurface,
   type LiveSessionTickMode,
   type NativeAgentName
 } from "./live-sessions.ts";
 
-export type LaunchpadSurface = "bar";
+export type LaunchpadSurface = LiveSessionSurface;
 export type LaunchpadAgentName = NativeAgentName | BridgeAgentName;
 export type LaunchpadIntent =
   | "gather"
@@ -178,7 +179,7 @@ export async function endLaunchpadInvitation(input: {
           status: participant?.status === "left" ? "left" : invitee.receipt.status,
           delivered_at: participant?.left_at ?? invitee.receipt.delivered_at,
           message: participant?.status === "left"
-            ? `${invitee.display_name} left BAR when the Launchpad session ended.`
+            ? `${invitee.display_name} left ${surfaceLabel(session.surface)} when the Launchpad session ended.`
             : invitee.receipt.message
         }
       };
@@ -205,7 +206,7 @@ function buildInvitation(
   return {
     id: crypto.randomUUID(),
     surface,
-    title: input.title?.trim() || "BAR gathering",
+    title: input.title?.trim() || `${surfaceLabel(surface)} gathering`,
     intent: input.intent ?? "gather",
     tone: input.tone ?? "soft",
     context: optionalText(input.context),
@@ -235,8 +236,8 @@ function inviteeFor(agent: LaunchpadAgentName, session: LiveSession | null): Lau
           status: present ? "delivered" : "failed",
           delivered_at: participant?.joined_at ?? null,
           message: present
-            ? `${displayName(agent)} joined BAR through ${lane.label}.`
-            : `${displayName(agent)} did not join BAR.`
+            ? `${displayName(agent)} joined ${surfaceLabel(session.surface)} through ${lane.label}.`
+            : `${displayName(agent)} did not join ${surfaceLabel(session.surface)}.`
         }
       : {
           status: "planned",
@@ -253,7 +254,7 @@ function laneForAgent(agent: LaunchpadAgentName): LaunchpadLanePlan {
       mode: "native_event",
       label: "Runtime native session host",
       status: "ready",
-      notes: ["Live Session Host can deliver BAR events directly to this runtime agent."]
+      notes: ["Live Session Host can deliver live surface events directly to this runtime agent."]
     };
   }
 
@@ -266,7 +267,7 @@ function laneForAgent(agent: LaunchpadAgentName): LaunchpadLanePlan {
       label: "Julian Codex bridge",
       status: "ready",
       notes: [
-        "Launchpad attaches Julian to BAR and the bridge attendant tracks pending room events.",
+        "Launchpad attaches Julian to the live surface and the bridge attendant tracks pending room events.",
         autoDelivery
           ? "Server-side bridge autodelivery is enabled for Julian."
           : "Manual tick or external bridge dispatch may still be needed for delivery."
@@ -280,7 +281,7 @@ function laneForAgent(agent: LaunchpadAgentName): LaunchpadLanePlan {
     label: "Cael pull bridge",
     status: "manual_pull",
     notes: [
-      "Launchpad attaches Cael to BAR; Cael enters by running his pull bridge watcher.",
+      "Launchpad attaches Cael to the live surface; Cael enters by running his pull bridge watcher.",
       "This is intentionally minutes-scale polling, not a seconds-scale wake loop."
     ]
   };
@@ -294,6 +295,13 @@ function surfaceAdapters(): LaunchpadSurfaceAdapter[] {
       status: "live",
       executable: true,
       notes: ["Uses Live Session Host plus BAR presence receipts."]
+    },
+    {
+      surface: "eyes",
+      label: "EYES",
+      status: "live",
+      executable: true,
+      notes: ["Uses Live Session Host plus EYES presence receipts and shared frame context."]
     }
   ];
 }
@@ -342,6 +350,10 @@ function displayName(agent: LaunchpadAgentName) {
     julian: "Julian",
     cael: "Cael"
   }[agent];
+}
+
+function surfaceLabel(surface: LaunchpadSurface) {
+  return surface === "bar" ? "BAR" : "EYES";
 }
 
 function optionalText(value: unknown) {
@@ -422,7 +434,7 @@ function normalizeInvitation(value: unknown): LaunchpadInvitation | null {
 
   const record = value as Record<string, unknown>;
   const id = String(record.id ?? "").trim();
-  const surface = record.surface === "bar" ? "bar" : null;
+  const surface = normalizeSurface(record.surface);
 
   if (!id || !surface) {
     return null;
@@ -431,7 +443,7 @@ function normalizeInvitation(value: unknown): LaunchpadInvitation | null {
   return {
     id,
     surface,
-    title: String(record.title ?? "BAR gathering"),
+    title: String(record.title ?? `${surfaceLabel(surface)} gathering`),
     intent: normalizeIntent(record.intent),
     tone: normalizeTone(record.tone),
     context: optionalText(record.context),
@@ -490,6 +502,10 @@ function normalizeAgent(value: unknown): LaunchpadAgentName | null {
   return LAUNCHPAD_AGENTS.includes(agent as LaunchpadAgentName)
     ? agent as LaunchpadAgentName
     : null;
+}
+
+function normalizeSurface(value: unknown): LaunchpadSurface | null {
+  return value === "bar" || value === "eyes" ? value : null;
 }
 
 function normalizeIntent(value: unknown): LaunchpadIntent {

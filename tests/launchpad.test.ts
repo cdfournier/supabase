@@ -65,6 +65,43 @@ test("Launchpad creates a BAR live session with native and bridge participants",
   await endLiveSession(invitation.session_id);
 });
 
+test("Launchpad creates an EYES live session through the same host", async () => {
+  await endLiveSession();
+
+  const invitation = await createLaunchpadInvitation({
+    surface: "eyes",
+    title: "Launchpad EYES creation test",
+    agents: ["soren", "julian"],
+    intent: "live_session",
+    tickPolicy: {
+      mode: "manual"
+    }
+  });
+  const status = await liveSessionStatus();
+
+  assert.equal(invitation.status, "active");
+  assert.ok(invitation.session_id);
+  assert.equal(invitation.live_session?.surface, "eyes");
+  assert.equal(status.active_session?.id, invitation.session_id);
+  assert.equal(status.active_session?.surface, "eyes");
+  assert.equal(status.active_session?.participants.soren?.status, "joined");
+  assert.equal(status.active_session?.participants.julian?.status, "joined");
+  assert.equal(invitation.invitees.every((invitee) => invitee.status === "present"), true);
+  assert.equal(invitation.invitees.every((invitee) => invitee.receipt.status === "delivered"), true);
+
+  await endLiveSession(invitation.session_id);
+});
+
+test("Launchpad exposes BAR and EYES as executable surfaces", async () => {
+  const status = await launchpadStatus();
+  const liveAdapters = status.adapters
+    .filter((adapter) => adapter.status === "live" && adapter.executable)
+    .map((adapter) => adapter.surface)
+    .sort();
+
+  assert.deepEqual(liveAdapters, ["bar", "eyes"]);
+});
+
 test("Launchpad end closes the active BAR session and records left receipts", async () => {
   await endLiveSession();
 

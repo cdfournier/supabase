@@ -1625,30 +1625,21 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "eyes_join_session",
     description:
-      "Join an existing Operator-started EYES phone-camera session as this active agent. Requires a session_id copied from the EYES UI. This does not start the camera and cannot request captures.",
+      "Join the runtime EYES surface as this active agent. This does not start the camera and cannot request captures; capture remains Operator-controlled.",
     input_schema: {
       type: "object",
-      properties: {
-        session_id: {
-          type: "string",
-          description: "The EYES session id from the Operator's copied join prompt."
-        }
-      },
-      required: ["session_id"],
+      properties: {},
+      required: [],
       additionalProperties: false
     }
   },
   {
     name: "eyes_get_session",
     description:
-      "Read the current state of an EYES session, including recent log entries and optionally the latest image frames. Multi-frame results should be read as motion over time, not unrelated stills. This does not request new captures.",
+      "Read the current state of the runtime EYES surface, including recent log entries and optionally the latest image frames. Multi-frame results should be read as motion over time, not unrelated stills. This does not request new captures.",
     input_schema: {
       type: "object",
       properties: {
-        session_id: {
-          type: "string",
-          description: "The EYES session id."
-        },
         include_frames: {
           type: "boolean",
           description: "Whether to attach latest frames for visual inspection. Defaults to true."
@@ -1662,21 +1653,17 @@ export const toolDefinitions: ToolDefinition[] = [
           description: "How many recent log entries to include. Defaults to 10 and caps at 20."
         }
       },
-      required: ["session_id"],
+      required: [],
       additionalProperties: false
     }
   },
   {
     name: "eyes_observe",
     description:
-      "Post an observation or message to an EYES session log as this active agent. Use after reading frames or to respond to the Operator in the EYES session.",
+      "Post an observation or message to the runtime EYES log as this active agent. Use after reading frames or to respond to the Operator in EYES.",
     input_schema: {
       type: "object",
       properties: {
-        session_id: {
-          type: "string",
-          description: "The EYES session id."
-        },
         content: {
           type: "string",
           description: "The observation or message to post."
@@ -1689,16 +1676,11 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "eyes_leave_session",
     description:
-      "Leave an EYES session as this active agent. This only updates the shared EYES passenger list and log.",
+      "Leave the runtime EYES surface as this active agent. This only updates shared EYES presence.",
     input_schema: {
       type: "object",
-      properties: {
-        session_id: {
-          type: "string",
-          description: "The EYES session id."
-        }
-      },
-      required: ["session_id"],
+      properties: {},
+      required: [],
       additionalProperties: false
     }
   }

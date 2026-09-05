@@ -949,6 +949,10 @@ button {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
+.eyes-main {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
 .bar-header .quiet-action {
   margin-top: 0;
   max-width: 140px;
@@ -958,6 +962,99 @@ button {
 .participant-chip.absent,
 .participant-chip.unknown {
   opacity: 0.68;
+}
+
+.eyes-viewfinder {
+  align-items: stretch;
+  background: #f9fbfa;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(280px, 460px) minmax(180px, 1fr);
+  padding: 18px 24px;
+}
+
+.eyes-camera-frame {
+  align-items: center;
+  aspect-ratio: 4 / 3;
+  background: #1f2528;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.72);
+  display: grid;
+  justify-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.eyes-camera-frame video {
+  height: 100%;
+  inset: 0;
+  object-fit: cover;
+  position: absolute;
+  width: 100%;
+}
+
+.eyes-camera-frame:not(.live) video {
+  display: none;
+}
+
+.eyes-viewfinder canvas {
+  display: none;
+}
+
+.eyes-controls {
+  align-content: start;
+  display: grid;
+  gap: 10px;
+}
+
+.eyes-controls button {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--accent);
+  min-height: 44px;
+  padding: 10px 14px;
+}
+
+.eyes-controls button:disabled {
+  color: #8aa6b8;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.eyes-latest {
+  align-self: start;
+  display: grid;
+  gap: 6px;
+  grid-column: 2;
+}
+
+.eyes-latest strong {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eyes-latest span {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  font-size: 13px;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.eyes-latest small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.eyes-composer .composer-actions {
+  grid-template-rows: 1fr;
 }
 
 .main {
@@ -1855,6 +1952,15 @@ textarea {
 
   .composer-actions {
     grid-template-columns: repeat(2, minmax(96px, 1fr));
+  }
+
+  .eyes-viewfinder {
+    grid-template-columns: 1fr;
+    padding: 14px 16px;
+  }
+
+  .eyes-latest {
+    grid-column: auto;
   }
 
   .inbox-header,

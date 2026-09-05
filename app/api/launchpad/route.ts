@@ -6,6 +6,7 @@ import {
   previewLaunchpadInvitation,
   type LaunchpadAgentName,
   type LaunchpadIntent,
+  type LaunchpadSurface,
   type LaunchpadTone
 } from "@/lib/launchpad";
 
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
 
 function invitationInput(body: Record<string, unknown>) {
   return {
-    surface: "bar" as const,
+    surface: optionalSurface(body.surface),
     title: optionalString(body.title),
     agents: requiredAgents(body.agents),
     intent: optionalIntent(body.intent),
@@ -63,6 +64,14 @@ function invitationInput(body: Record<string, unknown>) {
       interval_seconds: optionalNumber(body.interval_seconds)
     }
   };
+}
+
+function optionalSurface(value: unknown): LaunchpadSurface | undefined {
+  if (value === "bar" || value === "eyes") {
+    return value;
+  }
+
+  return undefined;
 }
 
 function requiredAgents(value: unknown): LaunchpadAgentName[] {

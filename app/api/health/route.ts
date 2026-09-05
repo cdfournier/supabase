@@ -88,7 +88,7 @@ export async function GET() {
         supabase_url: present("NEXT_PUBLIC_SUPABASE_URL"),
         supabase_service_role_key: present("SUPABASE_SERVICE_ROLE_KEY"),
         anthropic_api_key: present("ANTHROPIC_API_KEY"),
-        eyes_base_url: process.env.EYES_BASE_URL?.trim() || "https://eyes.blackcoffeeshoppe.com",
+        eyes_surface: "runtime_local",
         operator_access_token: present("OPERATOR_ACCESS_TOKEN"),
         operator_auth_secret: present("OPERATOR_AUTH_SECRET"),
         outpost_token_soren: present("OUTPOST_TOKEN_SOREN"),

@@ -7,7 +7,8 @@ import {
   previewLiveSessionAgentAsync,
   setLiveSessionTickPolicy,
   startLiveSession,
-  tickLiveSession
+  tickLiveSession,
+  type LiveSessionSurface
 } from "@/lib/live-sessions";
 
 export const runtime = "nodejs";
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
     if (action === "start") {
       return NextResponse.json({
         session: await startLiveSession({
+          surface: optionalSurface(body.surface),
           title: optionalString(body.title),
           agents: optionalNativeAgents(body.agents),
           bridgeAgents: optionalBridgeAgents(body.bridge_agents),
@@ -111,6 +113,14 @@ function optionalString(value: unknown) {
   const text = String(value ?? "").trim();
 
   return text || undefined;
+}
+
+function optionalSurface(value: unknown): LiveSessionSurface | undefined {
+  if (value === "bar" || value === "eyes") {
+    return value;
+  }
+
+  return undefined;
 }
 
 function requiredString(value: unknown, label: string) {

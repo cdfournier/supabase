@@ -36,10 +36,10 @@ test("Presence keeps absent receipts absent after stale window", () => {
   assert.equal(evaluated.state, "absent");
 });
 
-test("Presence exposes BAR plus dry-run EYES/WHEELS adapter contracts", () => {
+test("Presence exposes live BAR/EYES plus dry-run WHEELS adapter contracts", () => {
   const adapters = listPresenceAdapters();
 
   assert.equal(adapters.some((adapter) => adapter.surface === "bar" && adapter.status === "live"), true);
-  assert.equal(adapters.some((adapter) => adapter.surface === "eyes" && adapter.status === "dry_run"), true);
+  assert.equal(adapters.some((adapter) => adapter.surface === "eyes" && adapter.status === "live"), true);
   assert.equal(adapters.some((adapter) => adapter.surface === "wheels" && adapter.status === "dry_run"), true);
 });

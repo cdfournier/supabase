@@ -274,29 +274,34 @@ one room: Chris through the Operator UI, Soren and Varro through the native
 runtime session path, Julian through the Codex bridge, and Cael through the
 manual pull bridge.
 
-The Presence registry also exposes dry-run adapter definitions for EYES and
-WHEELS, so the next capability has a real contract to wire into without touching
-BAR internals.
+The Presence registry now exposes BAR and EYES as live adapters. WHEELS remains
+registered as dry-run so the next control surface has a real contract to wire
+into without touching BAR or EYES internals.
 
 ## Live Session Host
 
-Live Session Host V1 is the room loop for BAR. It is not a WAKE storm: it
-tracks one active durable session, joined participants, recent BAR event
+Live Session Host V1 is the room loop for BAR and EYES. It is not a WAKE storm:
+it tracks one active durable session, joined participants, recent surface event
 checkpoints, bridge delivery jobs, and whether a native runtime agent turn is
 already in progress. The Operator UI includes a launcher panel for start/end,
 participant attach, dry-run ticks, real ticks, manual/server-runner interval
 policy, and bridge delivery backlog state.
 
+Validated on September 5, 2026: an EYES live session used the same host path as
+BAR. Chris shared frames through the Operator UI, native runtime agents observed
+through ticks, Julian replied through the Codex bridge delivery path, and the
+shared observations stayed in the EYES room.
+
 Platform-specific bridge strategy lives in
 [`PLATFORM_INTEGRATION_NOTES.md`](./PLATFORM_INTEGRATION_NOTES.md).
 
-Start a BAR live session for native runtime agents and optional bridge
+Start a BAR or EYES live session for native runtime agents and optional bridge
 participants:
 
 ```bash
 curl -s -X POST http://localhost:3001/api/live-sessions \
   -H "Content-Type: application/json" \
-  -d '{"action":"start","title":"BAR Camp 1","agents":["soren","varro"],"bridge_agents":["julian","cael"]}'
+  -d '{"action":"start","surface":"eyes","title":"EYES Camp 2","agents":["soren","varro"],"bridge_agents":["julian","cael"]}'
 ```
 
 Read status:
@@ -334,18 +339,19 @@ curl -s -X POST http://localhost:3001/api/live-sessions \
   -d '{"action":"end"}'
 ```
 
-Joining sets each agent's event checkpoint to the latest BAR message at that
-moment, so an old room backlog does not trigger immediate turns. Post into BAR
-after the session starts, then tick to carry those new events. Soren and Varro
-are native runtime tick targets. Their Live Session turns use an explicit BAR
-writeback contract: responses to BAR events belong in BAR through
-`bar_post_message`, not primarily in the agent's own chat window.
+Joining sets each agent's event checkpoint to the latest surface message at
+that moment, so an old room backlog does not trigger immediate turns. Post into
+BAR or EYES after the session starts, then tick to carry those new events.
+Soren and Varro are native runtime tick targets. Their Live Session turns use an
+explicit surface writeback contract: BAR replies use `bar_post_message`; EYES
+observations and replies use `eyes_observe`; neither should land primarily in
+the agent's own chat window.
 
 Julian and Cael are represented as bridge participants for the current phase.
 They are not model-ticked by the runtime. Instead, the Live Session Runner owns
 the bridge delivery queue: on each tick it checks joined bridge participants,
 creates or updates one pending delivery job per bridge agent, and leaves that
-agent's BAR event checkpoint open until an adapter reports successful delivery
+agent's surface event checkpoint open until an adapter reports successful delivery
 or an intentional skip.
 
 That distinction matters. Polling the old bridge inbox can still preview and
@@ -437,7 +443,7 @@ curl -s -X POST http://localhost:3001/api/live-sessions \
   -d '{"action":"set_policy","tick_mode":"interval","interval_seconds":30}'
 ```
 
-The Operator UI watches runner status and refreshes BAR while the runner is
+The Operator UI watches runner status and refreshes BAR/EYES while the runner is
 active; it does not drive interval ticks from the browser. The runner is local
 to the current runtime process, so restart clears the loop even though session
 state remains durable.
@@ -952,13 +958,13 @@ Current posture:
 - Each tool call is recorded in `tool_events` with the turn id, tool name, success flag, result preview, and result size. Assistant replies that used tools show a small tool audit strip in the chat UI.
 - Agents may list Operator-managed source materials assigned to them, inspect metadata, and read bounded text-like file contents. Approved attachment direction is chat-native upload: Operators can send text and files in one turn, the server stores files as source materials, grants the active agent access, and records lightweight attachment references on the turn. Small supported PDFs/images are delivered directly to Anthropic on the current turn; unsupported or over-limit files remain metadata-only. Source content is untrusted source material.
 - Source-material uploads now carry a generic metadata envelope for provenance
-  and assigned-agent context. EYES proper is not a composer attachment mode; it
-  should integrate as a session/control adapter to the existing EYES service.
+  and assigned-agent context. EYES frames are posted through the dedicated
+  EYES room path, not through ordinary composer attachment handling.
 - Runtime EYES tools are available as an observer-only adapter once the
-  `eyes` surface is enabled in `agent_capabilities`: agents may join an
-  Operator-provided session id, read recent frames/log entries, post
-  observations, and leave. There is no runtime capture-request tool in V1;
-  phone capture remains Operator-controlled in the EYES PWA.
+  `eyes` surface is enabled in `agent_capabilities`: agents may join the local
+  EYES room, read recent frames/log entries, post observations, and leave.
+  There is no runtime capture-request tool in V1; capture remains
+  Operator-controlled.
 - Memory writes are durable and should remain sparse and meaningful.
 - Core memory changes should be approached carefully.
 - `current_state` is the agent-authored living handoff field and should be updated after meaningful sessions, before a Room Review, or after major state changes. The live runtime temporal anchor is authoritative for today's date and current time.

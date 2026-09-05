@@ -1,136 +1,104 @@
 import "server-only";
 
+import { Buffer } from "node:buffer";
 import type { AgentName } from "@/lib/agent-context";
+import {
+  eyesParticipantForAgent,
+  joinEyes,
+  leaveEyes,
+  loadEyes,
+  postEyesMessage,
+  type EyesFrame,
+  type EyesMessage
+} from "@/lib/eyes";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import type { ToolResultContentBlock } from "@/lib/tools/types";
 
-const DEFAULT_EYES_BASE_URL = "https://eyes.blackcoffeeshoppe.com";
-const EYES_TIMEOUT_MS = 15000;
 const MAX_LOG_LIMIT = 20;
 const DEFAULT_LOG_LIMIT = 10;
 const MAX_FRAMES_RETURNED = 6;
 
 type JsonRecord = Record<string, unknown>;
 
-type EyesLogEntry = {
-  type?: string;
-  author?: string;
-  content?: string;
-  frame_count?: number;
-  mode?: string;
-  ts?: number;
-};
-
-type EyesSession = {
-  session_id?: string;
-  narrator?: string | null;
-  passengers?: string[];
-  log?: EyesLogEntry[];
-  frames?: string[];
-  updated_at?: number;
-};
-
 export async function joinEyesSession(agent: AgentName, input: unknown) {
-  const body = requireRecord(input, "eyes_join_session");
-  const sessionId = cleanSessionId(body.session_id);
-
-  if (!sessionId) {
-    throw new Error("eyes_join_session requires session_id.");
-  }
-
-  const data = await eyesFetch<JsonRecord>("/api/join", {
-    method: "POST",
-    body: {
-      name: displayName(agent),
-      session_id: sessionId
-    }
+  requireRecord(input, "eyes_join_session");
+  const receipt = await joinEyes({
+    ...eyesParticipantForAgent(agent),
+    source: "eyes_join_session"
   });
 
   return stringifyPayload({
-    note: "Joined an Operator-started EYES session as an observer. This tool cannot trigger camera capture.",
-    session_id: data.session_id ?? sessionId,
-    narrator: data.narrator ?? null,
-    passengers: data.passengers ?? []
+    note: "Joined the runtime EYES surface as an observer. Capture remains Operator-controlled.",
+    room_id: "eyes-main",
+    presence: {
+      participant_id: receipt.participant_id,
+      display_name: receipt.display_name,
+      state: receipt.state,
+      last_seen_at: receipt.last_seen_at
+    }
   });
 }
 
 export async function leaveEyesSession(agent: AgentName, input: unknown) {
-  const body = requireRecord(input, "eyes_leave_session");
-  const sessionId = cleanSessionId(body.session_id);
-
-  if (!sessionId) {
-    throw new Error("eyes_leave_session requires session_id.");
-  }
-
-  const data = await eyesFetch<JsonRecord>("/api/leave", {
-    method: "POST",
-    body: {
-      name: displayName(agent),
-      session_id: sessionId
-    }
+  requireRecord(input, "eyes_leave_session");
+  const receipt = await leaveEyes({
+    ...eyesParticipantForAgent(agent),
+    source: "eyes_leave_session"
   });
 
   return stringifyPayload({
-    note: "Left the EYES session.",
-    session_id: data.session_id ?? sessionId,
-    narrator: data.narrator ?? null,
-    passengers: data.passengers ?? []
+    note: "Left the runtime EYES surface.",
+    room_id: "eyes-main",
+    presence: {
+      participant_id: receipt.participant_id,
+      display_name: receipt.display_name,
+      state: receipt.state,
+      last_seen_at: receipt.last_seen_at
+    }
   });
 }
 
 export async function observeEyesSession(agent: AgentName, input: unknown) {
   const body = requireRecord(input, "eyes_observe");
-  const sessionId = cleanSessionId(body.session_id);
   const content = cleanText(body.content, 2000);
-
-  if (!sessionId) {
-    throw new Error("eyes_observe requires session_id.");
-  }
 
   if (!content) {
     throw new Error("eyes_observe requires content.");
   }
 
-  const data = await eyesFetch<JsonRecord>("/api/observe", {
-    method: "POST",
-    body: {
-      session_id: sessionId,
-      author: displayName(agent),
-      content
-    }
+  const message = await postEyesMessage({
+    ...eyesParticipantForAgent(agent),
+    source: "eyes_observe",
+    kind: "observation",
+    content
   });
 
   return stringifyPayload({
-    note: "Posted an observation/message to the EYES session log.",
-    session_id: data.session_id ?? sessionId,
-    log_length: data.log_length ?? null
+    note: "Posted an observation/message to the runtime EYES log.",
+    room_id: message.room_id,
+    message_id: message.id,
+    created_at: message.created_at
   });
 }
 
 export async function getEyesSession(input: unknown): Promise<string | ToolResultContentBlock[]> {
   const body = requireRecord(input, "eyes_get_session");
-  const sessionId = cleanSessionId(body.session_id);
   const includeFrames = body.include_frames !== false;
   const logLimit = clampNumber(body.log_limit, DEFAULT_LOG_LIMIT, 0, MAX_LOG_LIMIT);
   const frameLimit = clampNumber(body.frame_limit, MAX_FRAMES_RETURNED, 0, MAX_FRAMES_RETURNED);
-
-  if (!sessionId) {
-    throw new Error("eyes_get_session requires session_id.");
-  }
-
-  const session = await eyesFetch<EyesSession>(`/api/session/${encodeURIComponent(sessionId)}`);
-  const frames = Array.isArray(session.frames) ? session.frames : [];
-  const selectedFrames = includeFrames ? frames.slice(-frameLimit) : [];
+  const session = await loadEyes();
+  const selectedFrames = includeFrames ? session.frames.slice(0, frameLimit) : [];
   const text = stringifyPayload({
     note: selectedFrames.length
-      ? "Read the current EYES session. The returned image blocks are the latest frame(s). Treat a multi-frame return as motion across time, not separate unrelated stills."
-      : "Read the current EYES session. No image frames are attached to this tool result.",
-    session_id: session.session_id ?? sessionId,
-    narrator: session.narrator ?? null,
-    passengers: session.passengers ?? [],
-    frame_count: frames.length,
+      ? "Read the runtime EYES surface. The returned image blocks are the latest frame(s). Treat multiple frames as motion across time."
+      : "Read the runtime EYES surface. No image frames are attached to this tool result.",
+    room: session.room,
+    presence: session.presence,
+    frame_count: session.frames.length,
     returned_frame_count: selectedFrames.length,
-    log: (session.log ?? []).slice(-logLimit).map(slimLogEntry),
-    updated_at: session.updated_at ?? null
+    frames: selectedFrames.map(slimFrame),
+    log: session.messages.slice(0, logLimit).map(slimMessage),
+    generated_at: session.generated_at
   });
 
   if (!selectedFrames.length) {
@@ -139,14 +107,7 @@ export async function getEyesSession(input: unknown): Promise<string | ToolResul
 
   return [
     { type: "text", text },
-    ...selectedFrames.map((frame) => ({
-      type: "image" as const,
-      source: {
-        type: "base64" as const,
-        media_type: "image/jpeg" as const,
-        data: stripDataUrl(frame)
-      }
-    }))
+    ...(await imageBlocksForFrames(selectedFrames))
   ];
 }
 
@@ -158,51 +119,74 @@ function requireRecord(input: unknown, toolName: string): JsonRecord {
   return input as JsonRecord;
 }
 
-async function eyesFetch<T>(
-  path: string,
-  options: { method?: "GET" | "POST"; body?: JsonRecord } = {}
-): Promise<T> {
-  const baseUrl = getEyesBaseUrl();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), EYES_TIMEOUT_MS);
+async function imageBlocksForFrames(frames: EyesFrame[]): Promise<ToolResultContentBlock[]> {
+  const blocks: ToolResultContentBlock[] = [];
 
-  try {
-    const response = await fetch(`${baseUrl}${path}`, {
-      method: options.method ?? "GET",
-      headers: options.body ? { "Content-Type": "application/json" } : undefined,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-      cache: "no-store"
-    });
-    const data = (await response.json().catch(() => ({}))) as JsonRecord;
+  for (const frame of frames) {
+    const mediaType = imageMediaType(frame.mime_type);
 
-    if (!response.ok) {
-      throw new Error(typeof data.error === "string" ? data.error : `EYES request failed with ${response.status}`);
+    if (!mediaType || !frame.bucket || !frame.storage_path) {
+      continue;
     }
 
-    return data as T;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function getEyesBaseUrl() {
-  const raw = process.env.EYES_BASE_URL?.trim() || DEFAULT_EYES_BASE_URL;
-  const url = new URL(raw);
-
-  if (url.protocol !== "https:") {
-    throw new Error("EYES_BASE_URL must be an https URL.");
+    const buffer = await downloadFrame(frame);
+    blocks.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: mediaType,
+        data: buffer.toString("base64")
+      }
+    });
   }
 
-  return url.origin;
+  return blocks;
 }
 
-function displayName(agent: AgentName) {
-  return agent.charAt(0).toUpperCase() + agent.slice(1);
+async function downloadFrame(frame: EyesFrame) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.storage
+    .from(String(frame.bucket))
+    .download(String(frame.storage_path));
+
+  if (error) {
+    throw new Error(`Could not download EYES frame ${frame.title}: ${error.message}`);
+  }
+
+  return Buffer.from(await data.arrayBuffer());
 }
 
-function cleanSessionId(value: unknown) {
-  return typeof value === "string" ? value.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) : "";
+function imageMediaType(value: string | null | undefined) {
+  const mime = String(value ?? "").split(";")[0].trim().toLowerCase();
+
+  if (mime === "image/jpeg" || mime === "image/png" || mime === "image/gif" || mime === "image/webp") {
+    return mime;
+  }
+
+  return null;
+}
+
+function slimMessage(message: EyesMessage) {
+  return {
+    id: message.id,
+    kind: message.kind,
+    author: message.author_display_name,
+    content: message.content,
+    frame_count: typeof message.metadata.frame_count === "number" ? message.metadata.frame_count : 0,
+    created_at: message.created_at
+  };
+}
+
+function slimFrame(frame: EyesFrame) {
+  return {
+    id: frame.id,
+    title: frame.title,
+    material_type: frame.material_type,
+    mime_type: frame.mime_type,
+    size_bytes: frame.size_bytes,
+    captured_at: frame.captured_at,
+    sequence: frame.sequence
+  };
 }
 
 function cleanText(value: unknown, maxChars: number) {
@@ -212,21 +196,6 @@ function cleanText(value: unknown, maxChars: number) {
 function clampNumber(value: unknown, fallback: number, min: number, max: number) {
   const numeric = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : fallback;
   return Math.max(min, Math.min(max, numeric));
-}
-
-function slimLogEntry(entry: EyesLogEntry) {
-  return {
-    type: entry.type ?? null,
-    author: entry.author ?? null,
-    content: entry.content ?? null,
-    frame_count: entry.frame_count ?? null,
-    mode: entry.mode ?? null,
-    ts: entry.ts ?? null
-  };
-}
-
-function stripDataUrl(frame: string) {
-  return frame.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "");
 }
 
 function stringifyPayload(payload: unknown) {
