@@ -260,9 +260,12 @@ delivery path, and all observations landed back in the shared EYES room.
 Live Session Host V1 attaches participants to BAR or EYES without treating
 every message as a new WAKE trigger. It keeps durable active session state, joined
 participants, event checkpoints, bridge delivery jobs, and turn-in-progress
-guards. The Operator UI has a Live Session panel for start/end, participant
-attach, dry-run ticks, real ticks, manual/server-runner interval policy, and
-bridge delivery backlog state.
+guards. The Operator UI exposes those controls through the single **Session**
+panel: choose the BAR or EYES surface, select participants, start or end the
+session, and inspect the active-session, runner, bridge-attendant, and delivery
+backlog state in one place. Once a session is active, the panel locks its
+launch configuration and offers the safe in-context controls: Tick for a
+manual-cadence session and End session for any active session.
 
 ## Launchpad
 
@@ -271,11 +274,13 @@ contract. It does not replace WAKE or Live Session Host. It resolves who should
 be invited, which delivery lane each participant needs, and what receipt should
 exist after the invite.
 
-The Operator UI exposes Launchpad as its own sidebar panel. BAR and EYES are
-enabled destinations; WHEELS and The World remain visible as planned
-destinations so the next adapters have an obvious home. Use Preview to inspect
-lanes, Create to open/attach the selected live session, and End to close the
-active session through Live Session Host.
+Launchpad is now folded into the same Operator **Session** panel as Live Session
+Host. BAR and EYES are enabled surfaces; WHEELS and The World remain visible as
+planned surfaces so the next adapters have an obvious home. Use **Start
+session** to resolve the selected participants' delivery lanes and open the
+session. The panel then shows the active session and keeps its runner and
+bridge state alongside the in-context controls. This removes the former
+Launchpad/Live Session handoff without changing the underlying API contracts.
 
 Executable BAR or EYES session:
 

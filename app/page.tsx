@@ -748,7 +748,7 @@ type GitHubEvidenceHandle = {
   max_bytes?: number;
 };
 
-type ControlPanelKey = "runtime" | "freeMoments" | "liveSession" | "launchpad" | "wake" | "packetSignals";
+type ControlPanelKey = "runtime" | "freeMoments" | "launchpad" | "wake" | "packetSignals";
 type ControlPanelState = Record<ControlPanelKey, boolean>;
 
 const defaultAgent: AgentName = "soren";
@@ -758,7 +758,6 @@ const liveTranscriptLimit = 120;
 const expandedControlPanels: ControlPanelState = {
   runtime: true,
   freeMoments: true,
-  liveSession: true,
   launchpad: true,
   wake: true,
   packetSignals: true
@@ -766,7 +765,6 @@ const expandedControlPanels: ControlPanelState = {
 const collapsedControlPanels: ControlPanelState = {
   runtime: false,
   freeMoments: false,
-  liveSession: false,
   launchpad: false,
   wake: false,
   packetSignals: false
@@ -2849,30 +2847,23 @@ export default function Home() {
           status={freeTime}
         />
 
-        <LiveSessionPanel
-          draft={liveSessionDraft}
-          error={liveSessionError}
-          expanded={controlPanels.liveSession}
-          loading={liveSessionLoading}
-          onAction={runLiveSessionAction}
-          onDraftChange={setLiveSessionDraft}
-          onToggle={() => toggleControlPanel("liveSession")}
-          onToggleAgent={toggleLiveSessionAgent}
-          requestInProgress={liveSessionRequestInProgress}
-          status={liveSession}
-        />
-
-        <LaunchpadPanel
+        <SessionPanel
           draft={launchpadDraft}
-          error={launchpadError}
           expanded={controlPanels.launchpad}
-          loading={launchpadLoading}
-          onAction={runLaunchpadAction}
+          launchpadError={launchpadError}
+          launchpadLoading={launchpadLoading}
+          launchpadRequestInProgress={launchpadRequestInProgress}
+          liveSessionError={liveSessionError}
+          liveSessionLoading={liveSessionLoading}
+          liveSessionRequestInProgress={liveSessionRequestInProgress}
+          onLaunchpadAction={runLaunchpadAction}
+          onLiveSessionAction={runLiveSessionAction}
           onDraftChange={setLaunchpadDraft}
           onToggle={() => toggleControlPanel("launchpad")}
+          onToggleAgent={toggleLiveSessionAgent}
           preview={launchpadPreview}
-          requestInProgress={launchpadRequestInProgress}
-          status={launchpad}
+          launchpadStatus={launchpad}
+          liveSessionStatus={liveSession}
         />
 
         <WakeControlPanel
@@ -4959,18 +4950,6 @@ function launchpadRequestBody(
   };
 }
 
-function liveSessionParticipantJoined(session: LiveSession | null, agent: LiveSessionAgent, draft: LiveSessionDraft) {
-  const participant = session?.participants[agent];
-
-  if (session) {
-    return participant?.status === "joined";
-  }
-
-  return agent === "soren" || agent === "varro"
-    ? draft.nativeAgents[agent]
-    : draft.bridgeAgents[agent];
-}
-
 function displayAgentName(agent: OperatorNoteAgent) {
   return {
     soren: "Soren",
@@ -4980,39 +4959,64 @@ function displayAgentName(agent: OperatorNoteAgent) {
   }[agent];
 }
 
-function LaunchpadPanel({
+function SessionPanel({
   draft,
-  error,
   expanded,
-  loading,
-  onAction,
+  launchpadError,
+  launchpadLoading,
+  launchpadRequestInProgress,
+  liveSessionError,
+  liveSessionLoading,
+  liveSessionRequestInProgress,
+  onLaunchpadAction,
+  onLiveSessionAction,
   onDraftChange,
   onToggle,
+  onToggleAgent,
   preview,
-  requestInProgress,
-  status
+  launchpadStatus,
+  liveSessionStatus
 }: {
   draft: LaunchpadDraft;
-  error: string;
   expanded: boolean;
-  loading: boolean;
-  onAction: (action: "preview" | "create" | "end") => void;
+  launchpadError: string;
+  launchpadLoading: boolean;
+  launchpadRequestInProgress: boolean;
+  liveSessionError: string;
+  liveSessionLoading: boolean;
+  liveSessionRequestInProgress: boolean;
+  onLaunchpadAction: (action: "preview" | "create" | "end") => void;
+  onLiveSessionAction: (action: "start" | "end" | "tick" | "dry_run" | "set_policy") => void;
   onDraftChange: (draft: LaunchpadDraft) => void;
   onToggle: () => void;
+  onToggleAgent: (agent: LiveSessionAgent, enabled: boolean) => void;
   preview: LaunchpadInvitation | null;
-  requestInProgress: boolean;
-  status: LaunchpadStatus | null;
+  launchpadStatus: LaunchpadStatus | null;
+  liveSessionStatus: LiveSessionStatus | null;
 }) {
+  const activeSession = liveSessionStatus?.active_session ?? null;
   const selectedAgents = OPERATOR_NOTE_RECIPIENTS
-    .filter((agent) => draft.agents[agent])
+    .filter((agent) => activeSession
+      ? activeSession.participants[agent]?.status === "joined"
+      : draft.agents[agent])
     .map((agent) => displayAgentName(agent));
-  const latestInvitation = preview ?? status?.invitations[0] ?? null;
-  const disabled = loading || requestInProgress;
+  const runner = liveSessionStatus?.runner ?? null;
+  const latestInvitation = preview ?? launchpadStatus?.invitations[0] ?? null;
+  const bridgeAttendants = Object.values(activeSession?.bridge_attendants ?? {})
+    .filter((attendant) => attendant?.status === "attending").length;
+  const pendingBridgeDeliveries = activeSession?.bridge_deliveries
+    .filter((delivery) => delivery.status === "pending" || delivery.status === "claimed").length ?? 0;
+  const disabled = launchpadLoading || liveSessionLoading || launchpadRequestInProgress || liveSessionRequestInProgress;
   const canLaunch = selectedAgents.length > 0;
-  const active = Boolean(status?.active_live_session_id);
+  const active = Boolean(activeSession);
+  const errors = [...new Set([launchpadError, liveSessionError].filter(Boolean))];
+  const agentGroups = [
+    { label: "Runtime", agents: liveSessionNativeAgents },
+    { label: "Bridge", agents: liveSessionBridgeAgents }
+  ];
 
   return (
-    <section className={`health-panel launchpad-panel ${expanded ? "" : "collapsed"}`} aria-label="Launchpad controls">
+    <section className={`health-panel launchpad-panel ${expanded ? "" : "collapsed"}`} aria-label="Session controls">
       <div className="health-heading">
         <h2>
           <button
@@ -5021,25 +5025,41 @@ function LaunchpadPanel({
             onClick={onToggle}
             type="button"
           >
-            <span>LAUNCHPAD</span>
+            <span>SESSION</span>
             <span className="health-toggle-icon" aria-hidden="true">
               {expanded ? "-" : "+"}
             </span>
           </button>
         </h2>
         <span className={`status-pill ${active ? "ok" : "warn"}`}>
-          {requestInProgress ? "working" : active ? "active" : "ready"}
+          {launchpadRequestInProgress || liveSessionRequestInProgress ? "working" : active ? "active" : "ready"}
         </span>
       </div>
 
       <div className="health-panel-body" hidden={!expanded}>
-        <p className="health-empty">Invite selected agents into a shared surface through their configured lanes.</p>
+        <p className="health-empty">Gather people in BAR or EYES. Delivery follows each person’s configured lane.</p>
+
+        {activeSession ? (
+          <div className="live-session-summary">
+            <strong>{activeSession.title}</strong>
+            <span>{Object.values(activeSession.participants).filter((participant) => participant?.status === "joined").length} in</span>
+            <span>
+              {runner?.status === "running"
+                ? `runner ${runner.interval_seconds}s`
+                : activeSession.tick_policy.mode === "interval"
+                  ? "runner stopped"
+                  : "manual tick"}
+            </span>
+            {bridgeAttendants ? <span>{bridgeAttendants} bridge attending</span> : null}
+            {pendingBridgeDeliveries ? <span>{pendingBridgeDeliveries} bridge queued</span> : null}
+          </div>
+        ) : null}
 
         <div className="launchpad-summary">
           <label>
-            <span>Destination</span>
+            <span>Surface</span>
             <select
-              disabled={disabled}
+              disabled={disabled || active}
               onChange={(event) => onDraftChange({
                 ...draft,
                 destination: event.target.value as LaunchpadDestination
@@ -5057,30 +5077,58 @@ function LaunchpadPanel({
               ))}
             </select>
           </label>
-          <span>Agents</span>
+          <span>People</span>
           <strong title={selectedAgents.join(", ") || "none"}>{selectedAgents.join(", ") || "none"}</strong>
-          <span>Mode</span>
+          <span>Cadence</span>
           <strong>{draft.tickMode === "interval" ? `${draft.intervalSeconds}s interval` : "manual"}</strong>
         </div>
 
-        <div className="launchpad-agent-list">
-          {OPERATOR_NOTE_RECIPIENTS.map((agent) => (
-            <div className="wake-switch-row" key={agent}>
-              <span title={displayAgentName(agent)}>{displayAgentName(agent)}</span>
-              <WakeSwitch
-                checked={draft.agents[agent]}
-                disabled={disabled}
-                label={`${displayAgentName(agent)} Launchpad invite`}
-                offText="Out"
-                onChange={(checked) => onDraftChange({
-                  ...draft,
-                  agents: {
-                    ...draft.agents,
-                    [agent]: checked
-                  }
-                })}
-                onText="In"
-              />
+        <div className="live-session-groups">
+          {agentGroups.map((group) => (
+            <div key={group.label}>
+              <h3>{group.label}</h3>
+              {group.agents.map((agent) => {
+                const joined = activeSession
+                  ? activeSession.participants[agent.id]?.status === "joined"
+                  : draft.agents[agent.id];
+                const isBridgeAgent = agent.id === "julian" || agent.id === "cael";
+
+                return (
+                  <div className={isBridgeAgent ? "live-session-bridge-agent" : undefined} key={agent.id}>
+                    <div className="wake-switch-row">
+                      <span title={agent.label}>{agent.label}</span>
+                      <WakeSwitch
+                        checked={joined}
+                        disabled={disabled}
+                        label={`${agent.label} session participation`}
+                        offText="Out"
+                        onChange={(checked) => {
+                          if (activeSession) {
+                            onToggleAgent(agent.id, checked);
+                            return;
+                          }
+
+                          onDraftChange({
+                            ...draft,
+                            agents: {
+                              ...draft.agents,
+                              [agent.id]: checked
+                            }
+                          });
+                        }}
+                        onText="In"
+                      />
+                    </div>
+                    {isBridgeAgent ? (
+                      <LiveSessionBridgeStatus
+                        adapterStatus={liveSessionStatus?.bridge_adapters?.[agent.id]}
+                        agent={agent.id}
+                        session={activeSession}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ))}
         </div>
@@ -5089,7 +5137,7 @@ function LaunchpadPanel({
           <label>
             <span>Mode</span>
             <select
-              disabled={disabled}
+              disabled={disabled || active}
               onChange={(event) => onDraftChange({
                 ...draft,
                 tickMode: event.target.value === "interval" ? "interval" : "manual"
@@ -5103,7 +5151,7 @@ function LaunchpadPanel({
           <label>
             <span>Seconds</span>
             <input
-              disabled={disabled || draft.tickMode !== "interval"}
+              disabled={disabled || active || draft.tickMode !== "interval"}
               min={10}
               max={300}
               onChange={(event) => onDraftChange({
@@ -5118,25 +5166,25 @@ function LaunchpadPanel({
 
         <div className="health-actions launchpad-actions">
           <button
-            disabled={disabled || !canLaunch}
-            onClick={() => onAction("preview")}
+            disabled={disabled || !canLaunch || active}
+            onClick={() => onLaunchpadAction("create")}
             type="button"
           >
-            Preview
+            Start session
           </button>
           <button
-            disabled={disabled || !canLaunch || active}
-            onClick={() => onAction("create")}
+            disabled={disabled || !active || activeSession?.tick_policy.mode === "interval"}
+            onClick={() => onLiveSessionAction("tick")}
             type="button"
           >
-            Create
+            Tick
           </button>
           <button
             disabled={disabled || !active}
-            onClick={() => onAction("end")}
+            onClick={() => onLaunchpadAction("end")}
             type="button"
           >
-            End
+            End session
           </button>
         </div>
 
@@ -5159,207 +5207,8 @@ function LaunchpadPanel({
                 </li>
               ))}
             </ol>
-            {latestInvitation.session_id ? (
-              <p title={latestInvitation.session_id}>Session {latestInvitation.session_id.slice(0, 8)}</p>
-            ) : null}
           </div>
         ) : null}
-
-        {error ? <p className="health-error">{error}</p> : null}
-      </div>
-    </section>
-  );
-}
-
-function LiveSessionPanel({
-  draft,
-  error,
-  expanded,
-  loading,
-  onAction,
-  onDraftChange,
-  onToggle,
-  onToggleAgent,
-  requestInProgress,
-  status
-}: {
-  draft: LiveSessionDraft;
-  error: string;
-  expanded: boolean;
-  loading: boolean;
-  onAction: (action: "start" | "end" | "tick" | "dry_run" | "set_policy") => void;
-  onDraftChange: (draft: LiveSessionDraft) => void;
-  onToggle: () => void;
-  onToggleAgent: (agent: LiveSessionAgent, enabled: boolean) => void;
-  requestInProgress: boolean;
-  status: LiveSessionStatus | null;
-}) {
-  const activeSession = status?.active_session ?? null;
-  const runner = status?.runner ?? null;
-  const bridgeAttendants = Object.values(activeSession?.bridge_attendants ?? {})
-    .filter((attendant) => attendant?.status === "attending").length;
-  const pendingBridgeDeliveries = activeSession?.bridge_deliveries
-    .filter((delivery) => delivery.status === "pending" || delivery.status === "claimed").length ?? 0;
-  const disabled = loading || requestInProgress;
-
-  return (
-    <section className={`health-panel live-session-panel ${expanded ? "" : "collapsed"}`} aria-label="Live Session Host controls">
-      <div className="health-heading">
-        <h2>
-          <button
-            aria-expanded={expanded}
-            className="health-toggle"
-            onClick={onToggle}
-            type="button"
-          >
-            <span>LIVE SESSION</span>
-            <span className="health-toggle-icon" aria-hidden="true">
-              {expanded ? "-" : "+"}
-            </span>
-          </button>
-        </h2>
-        <span className={`status-pill ${activeSession ? "ok" : "warn"}`}>
-          {requestInProgress ? "working" : activeSession ? "active" : "idle"}
-        </span>
-      </div>
-
-      <div className="health-panel-body" hidden={!expanded}>
-        {activeSession ? (
-          <div className="live-session-summary">
-            <strong>{activeSession.title}</strong>
-            <span>{Object.values(activeSession.participants).filter((participant) => participant?.status === "joined").length} in</span>
-            <span>
-              {runner?.status === "running"
-                ? `runner ${runner.interval_seconds}s`
-                : activeSession.tick_policy.mode === "interval"
-                  ? "runner stopped"
-                  : "manual tick"}
-            </span>
-            {bridgeAttendants ? <span>{bridgeAttendants} bridge attending</span> : null}
-            {pendingBridgeDeliveries ? <span>{pendingBridgeDeliveries} bridge queued</span> : null}
-          </div>
-        ) : (
-          <p className="health-empty">Start a BAR room session. Native agents tick; bridge agents receive delivery jobs.</p>
-        )}
-
-        <div className="live-session-groups">
-          <div>
-            <h3>Native</h3>
-            {liveSessionNativeAgents.map((agent) => (
-              <div className="wake-switch-row" key={agent.id}>
-                <span title={agent.label}>{agent.label}</span>
-                <WakeSwitch
-                  checked={liveSessionParticipantJoined(activeSession, agent.id, draft)}
-                  disabled={disabled}
-                  label={`${agent.label} live session`}
-                  offText="Out"
-                  onChange={(checked) => onToggleAgent(agent.id, checked)}
-                  onText="In"
-                />
-              </div>
-            ))}
-          </div>
-          <div>
-            <h3>Bridge</h3>
-            {liveSessionBridgeAgents.map((agent) => (
-              <div className="live-session-bridge-agent" key={agent.id}>
-                <div className="wake-switch-row">
-                  <span title={agent.label}>{agent.label}</span>
-                  <WakeSwitch
-                    checked={liveSessionParticipantJoined(activeSession, agent.id, draft)}
-                    disabled={disabled}
-                    label={`${agent.label} live session bridge`}
-                    offText="Out"
-                    onChange={(checked) => onToggleAgent(agent.id, checked)}
-                    onText="In"
-                  />
-                </div>
-                {activeSession ? (
-                  <LiveSessionBridgeStatus
-                    adapterStatus={status?.bridge_adapters?.[agent.id]}
-                    agent={agent.id}
-                    session={activeSession}
-                  />
-                ) : status?.bridge_adapters?.[agent.id] ? (
-                  <LiveSessionBridgeStatus
-                    adapterStatus={status.bridge_adapters[agent.id]}
-                    agent={agent.id}
-                    session={null}
-                  />
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="live-session-policy">
-          <label>
-            <span>Mode</span>
-            <select
-              disabled={disabled}
-              onChange={(event) => onDraftChange({
-                ...draft,
-                tickMode: event.target.value === "interval" ? "interval" : "manual"
-              })}
-              value={draft.tickMode}
-            >
-              <option value="manual">Manual</option>
-              <option value="interval">Interval</option>
-            </select>
-          </label>
-          <label>
-            <span>Seconds</span>
-            <input
-              disabled={disabled || draft.tickMode !== "interval"}
-              min={10}
-              max={300}
-              onChange={(event) => onDraftChange({
-                ...draft,
-                intervalSeconds: Math.min(300, Math.max(10, Number(event.target.value) || 30))
-              })}
-              type="number"
-              value={draft.intervalSeconds}
-            />
-          </label>
-        </div>
-
-        <div className="health-actions live-session-actions">
-          <button
-            disabled={disabled || Boolean(activeSession)}
-            onClick={() => onAction("start")}
-            type="button"
-          >
-            Start
-          </button>
-          <button
-            disabled={disabled || !activeSession}
-            onClick={() => onAction("dry_run")}
-            type="button"
-          >
-            Dry Run
-          </button>
-          <button
-            disabled={disabled || !activeSession}
-            onClick={() => onAction("tick")}
-            type="button"
-          >
-            Tick
-          </button>
-          <button
-            disabled={disabled || !activeSession}
-            onClick={() => onAction("set_policy")}
-            type="button"
-          >
-            Apply
-          </button>
-          <button
-            disabled={disabled || !activeSession}
-            onClick={() => onAction("end")}
-            type="button"
-          >
-            End
-          </button>
-        </div>
 
         {activeSession?.events.length ? (
           <ol className="free-time-events live-session-events">
@@ -5372,7 +5221,7 @@ function LiveSessionPanel({
           </ol>
         ) : null}
 
-        {error ? <p className="health-error">{error}</p> : null}
+        {errors.map((error) => <p className="health-error" key={error}>{error}</p>)}
       </div>
     </section>
   );

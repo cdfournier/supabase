@@ -983,8 +983,10 @@ button {
   color: rgba(255, 255, 255, 0.72);
   display: grid;
   justify-items: center;
+  min-width: 0;
   overflow: hidden;
   position: relative;
+  width: 100%;
 }
 
 .eyes-camera-frame video {
