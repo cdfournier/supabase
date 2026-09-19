@@ -1885,6 +1885,54 @@ export default function Home() {
     }
   }
 
+  async function startBarWithJulian() {
+    if (launchpadRequestInProgress || liveSessionRequestInProgress || liveSession?.active_session) {
+      return;
+    }
+
+    setLaunchpadRequestInProgress(true);
+    setLaunchpadError("");
+
+    try {
+      const response = await fetch("/api/launchpad", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "create",
+          title: "BAR with Julian",
+          surface: "bar",
+          agents: ["julian"],
+          intent: "live_session",
+          tone: "soft",
+          tick_mode: "interval",
+          interval_seconds: 30
+        })
+      });
+      const data = await readJsonResponse<{
+        invitation?: LaunchpadInvitation | null;
+        error?: string;
+      }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not start BAR with Julian.");
+      }
+
+      setLaunchpadPreview(data.invitation ?? null);
+      await loadLaunchpadStatus();
+      await loadLiveSessionStatus();
+      await loadBar();
+    } catch (actionError) {
+      setLaunchpadError(
+        actionError instanceof Error ? actionError.message : "Could not start BAR with Julian."
+      );
+    } finally {
+      setLaunchpadRequestInProgress(false);
+      setLaunchpadLoading(false);
+    }
+  }
+
   async function toggleLiveSessionAgent(agent: LiveSessionAgent, enabled: boolean) {
     const activeSession = liveSession?.active_session;
 
@@ -2867,6 +2915,7 @@ export default function Home() {
           liveSessionLoading={liveSessionLoading}
           liveSessionRequestInProgress={liveSessionRequestInProgress}
           onLaunchpadAction={runLaunchpadAction}
+          onStartBarWithJulian={startBarWithJulian}
           onLiveSessionAction={runLiveSessionAction}
           onDraftChange={setLaunchpadDraft}
           onToggle={() => toggleControlPanel("launchpad")}
@@ -4979,6 +5028,7 @@ function SessionPanel({
   liveSessionLoading,
   liveSessionRequestInProgress,
   onLaunchpadAction,
+  onStartBarWithJulian,
   onLiveSessionAction,
   onDraftChange,
   onToggle,
@@ -4996,6 +5046,7 @@ function SessionPanel({
   liveSessionLoading: boolean;
   liveSessionRequestInProgress: boolean;
   onLaunchpadAction: (action: "preview" | "create" | "end") => void;
+  onStartBarWithJulian: () => void;
   onLiveSessionAction: (action: "start" | "end" | "tick" | "dry_run" | "set_policy") => void;
   onDraftChange: (draft: LaunchpadDraft) => void;
   onToggle: () => void;
@@ -5176,6 +5227,15 @@ function SessionPanel({
         </div>
 
         <div className="health-actions launchpad-actions">
+          <button
+            className="primary-session-action"
+            disabled={disabled || active}
+            onClick={onStartBarWithJulian}
+            title="Start a focused BAR session with Julian at a 30-second cadence. New BAR events are delivered to Julian automatically."
+            type="button"
+          >
+            Start BAR with Julian
+          </button>
           <button
             disabled={disabled || !canLaunch || active}
             onClick={() => onLaunchpadAction("create")}

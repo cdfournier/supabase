@@ -896,6 +896,13 @@ button {
   opacity: 0.55;
 }
 
+.launchpad-actions .primary-session-action {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  grid-column: 1 / -1;
+}
+
 .launchpad-actions button:last-child {
   grid-column: 1 / -1;
 }
