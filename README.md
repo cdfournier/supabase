@@ -83,6 +83,26 @@ Specific port:
 npm run dev -- -p 3001
 ```
 
+### Julian live-session relay
+
+BAR and EYES event polling and Julian's actual Codex delivery are two local
+responsibilities. The session runner creates bounded bridge jobs; Julian's
+relay claims and queues those jobs into the bound Julian Home task. Install the
+relay once on the Mac that runs Codex:
+
+```bash
+npm run bridge:julian:install
+```
+
+It runs through `launchd` at login, restarts after an unexpected exit, and is
+quiet when no delivery is pending. Its health receipt is stored at
+`~/Library/Application Support/HUG/julian-live-session-relay.json`; logs are
+in `~/Library/Logs/HUG/`. To stop and remove it:
+
+```bash
+npm run bridge:julian:uninstall
+```
+
 Build check:
 
 ```bash

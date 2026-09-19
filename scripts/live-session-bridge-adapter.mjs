@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const AGENTS = new Set(["julian"]);
 const DEFAULT_BASE_URL = "http://localhost:3001";
 const DEFAULT_INTERVAL_SECONDS = 5;
 const DEFAULT_CODEX_CLI = "/Applications/ChatGPT.app/Contents/Resources/codex";
+const DEFAULT_STATE_PATH = join(homedir(), "Library", "Application Support", "HUG", "julian-live-session-relay.json");
 
 loadLocalEnv();
 
@@ -24,10 +27,33 @@ const intervalSeconds = positiveInteger(args.interval ?? process.env.LIVE_SESSIO
   ?? DEFAULT_INTERVAL_SECONDS;
 const baseUrl = trimTrailingSlash(args.baseUrl ?? process.env.HUG_RUNTIME_BASE_URL ?? DEFAULT_BASE_URL);
 const token = requiredEnv("CAFE_BRIDGE_TOKEN");
+const statePath = args.statePath ?? process.env.HUG_LOCAL_RELAY_STATE_PATH ?? DEFAULT_STATE_PATH;
+
+writeState({
+  status: "starting",
+  last_error: null,
+  last_poll_at: null,
+  last_delivery_at: null
+});
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    writeState({ status: "stopped" });
+    process.exit(0);
+  });
+}
 
 while (true) {
   try {
+    const polledAt = new Date().toISOString();
     const result = await processOneDelivery({ agent, baseUrl, token });
+
+    writeState({
+      status: "running",
+      last_error: null,
+      last_poll_at: polledAt,
+      ...(result ? { last_delivery_at: new Date().toISOString(), last_delivery: result } : {})
+    });
 
     if (result) {
       console.log(`${new Date().toISOString()} ${agent}: ${result}`);
@@ -35,7 +61,9 @@ while (true) {
       console.log(`${new Date().toISOString()} ${agent}: no pending bridge delivery`);
     }
   } catch (error) {
-    console.error(`${new Date().toISOString()} ${agent}: ${errorMessage(error)}`);
+    const message = errorMessage(error);
+    writeState({ status: "degraded", last_error: message, last_poll_at: new Date().toISOString() });
+    console.error(`${new Date().toISOString()} ${agent}: ${message}`);
     if (once) {
       process.exit(1);
     }
@@ -173,6 +201,8 @@ function parseArgs(argv) {
       parsed.baseUrl = argv[++index];
     } else if (item === "--interval") {
       parsed.interval = argv[++index];
+    } else if (item === "--state-path") {
+      parsed.statePath = argv[++index];
     } else {
       throw new Error(`Unknown argument: ${item}`);
     }
@@ -228,12 +258,41 @@ Environment:
   HUG_RUNTIME_BASE_URL              Runtime URL. Defaults to ${DEFAULT_BASE_URL}.
   LIVE_SESSION_BRIDGE_INTERVAL_SECONDS
                                     Poll interval for loop mode. Defaults to ${DEFAULT_INTERVAL_SECONDS}.
+  HUG_LOCAL_RELAY_STATE_PATH        Local relay health receipt. Defaults to ${DEFAULT_STATE_PATH}.
   JULIAN_CODEX_THREAD_ID            Required for --agent julian.
   CODEX_CLI                         Optional Codex CLI path. Defaults to ${DEFAULT_CODEX_CLI}.
 
 Cael uses the pull bridge from his Cowork project:
   python3 "/Users/chris/Documents/Claude/Projects/Outpost Cael/bar_live.py" join
 `);
+}
+
+function writeState(update) {
+  const now = new Date().toISOString();
+  const previous = readState();
+  const next = {
+    agent,
+    pid: process.pid,
+    runtime_base_url: baseUrl,
+    interval_seconds: intervalSeconds,
+    updated_at: now,
+    ...previous,
+    ...update,
+    updated_at: now
+  };
+  const directory = dirname(statePath);
+  mkdirSync(directory, { recursive: true });
+  const temporaryPath = `${statePath}.${process.pid}.tmp`;
+  writeFileSync(temporaryPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  renameSync(temporaryPath, statePath);
+}
+
+function readState() {
+  try {
+    return JSON.parse(readFileSync(statePath, "utf8"));
+  } catch {
+    return {};
+  }
 }
 
 function loadLocalEnv() {

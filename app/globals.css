@@ -735,6 +735,14 @@ button {
   white-space: nowrap;
 }
 
+.live-session-bridge-status .relay-ok {
+  color: var(--ok);
+}
+
+.live-session-bridge-status .relay-warn {
+  color: var(--warn);
+}
+
 .live-session-policy {
   display: grid;
   gap: 8px;

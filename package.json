@@ -13,7 +13,9 @@
     "test:launchpad": "NODE_ENV=test node --experimental-strip-types --test tests/launchpad.test.ts",
     "test:runtime": "NODE_ENV=test node --experimental-strip-types --test tests/wake-policy.test.ts tests/presence.test.ts tests/eyes.test.ts tests/live-sessions.test.ts tests/launchpad.test.ts",
     "bridge:julian": "node scripts/live-session-bridge-adapter.mjs --agent julian",
-    "bridge:julian:once": "node scripts/live-session-bridge-adapter.mjs --agent julian --once"
+    "bridge:julian:once": "node scripts/live-session-bridge-adapter.mjs --agent julian --once",
+    "bridge:julian:install": "node scripts/install-julian-live-session-relay.mjs",
+    "bridge:julian:uninstall": "node scripts/install-julian-live-session-relay.mjs --uninstall"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

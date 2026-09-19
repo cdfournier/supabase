@@ -259,6 +259,13 @@ type LiveSessionBridgeAdapterStatus = {
   ready: boolean;
   reason: string | null;
 };
+type LocalRelayStatus = {
+  status: "running" | "starting" | "degraded" | "stopped" | "stale" | "offline" | "unknown";
+  updated_at: string | null;
+  last_poll_at: string | null;
+  last_delivery_at: string | null;
+  last_error: string | null;
+};
 type LiveSessionTickPolicy = {
   mode: "manual" | "interval";
   interval_seconds: number | null;
@@ -290,6 +297,9 @@ type LiveSessionStatus = {
   generated_at: string;
   active_session: LiveSession | null;
   bridge_adapters: Record<LiveSessionBridgeAgent, LiveSessionBridgeAdapterStatus>;
+  local_relays?: {
+    julian: LocalRelayStatus;
+  };
   runner: {
     status: "running" | "stopped";
     session_id: string | null;
@@ -5123,6 +5133,7 @@ function SessionPanel({
                       <LiveSessionBridgeStatus
                         adapterStatus={liveSessionStatus?.bridge_adapters?.[agent.id]}
                         agent={agent.id}
+                        relayStatus={agent.id === "julian" ? liveSessionStatus?.local_relays?.julian : undefined}
                         session={activeSession}
                       />
                     ) : null}
@@ -5230,10 +5241,12 @@ function SessionPanel({
 function LiveSessionBridgeStatus({
   adapterStatus,
   agent,
+  relayStatus,
   session
 }: {
   adapterStatus?: LiveSessionBridgeAdapterStatus;
   agent: LiveSessionBridgeAgent;
+  relayStatus?: LocalRelayStatus;
   session: LiveSession | null;
 }) {
   const attendant = session?.bridge_attendants[agent];
@@ -5255,11 +5268,23 @@ function LiveSessionBridgeStatus({
           ? "watching"
           : "not watching";
   const lastAt = latestDelivery?.updated_at ?? attendant?.last_delivery_completed_at ?? attendant?.last_poll_at ?? null;
-  const error = attendant?.last_error ?? latestDelivery?.last_error ?? adapterStatus?.reason;
+  const error = relayStatus?.last_error ?? attendant?.last_error ?? latestDelivery?.last_error ?? adapterStatus?.reason;
+  const relayLabel = agent === "julian"
+    ? relayStatus?.status === "running"
+      ? "relay receiving"
+      : relayStatus?.status === "starting"
+        ? "relay starting"
+        : relayStatus?.status === "degraded"
+          ? "relay degraded"
+          : relayStatus?.status === "stale"
+            ? "relay stale"
+            : "relay offline"
+    : null;
 
   return (
     <div className="live-session-bridge-status">
       <span>{statusLabel}</span>
+      {relayLabel ? <span className={relayStatus?.status === "running" ? "relay-ok" : "relay-warn"}>{relayLabel}</span> : null}
       {lastAt ? <time dateTime={lastAt}>{formatMessageTime(lastAt)}</time> : null}
       {error ? (
         <span title={error}>detail</span>

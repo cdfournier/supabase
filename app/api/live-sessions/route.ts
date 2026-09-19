@@ -10,6 +10,7 @@ import {
   tickLiveSession,
   type LiveSessionSurface
 } from "@/lib/live-sessions";
+import { localJulianRelayStatus } from "@/lib/local-relay-status";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,12 @@ type BridgeAgentName = "julian" | "cael";
 type LiveSessionAgentName = NativeAgentName | BridgeAgentName;
 
 export async function GET() {
-  return NextResponse.json(await liveSessionStatus());
+  return NextResponse.json({
+    ...(await liveSessionStatus()),
+    local_relays: {
+      julian: localJulianRelayStatus()
+    }
+  });
 }
 
 export async function POST(request: Request) {
