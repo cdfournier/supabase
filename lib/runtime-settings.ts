@@ -23,6 +23,8 @@ export type FreeMomentsSettings = {
   enabled: boolean;
   interval_minutes: number | null;
   schedule_mode: string | null;
+  next_turn_at: string | null;
+  next_agent_index: number | null;
 };
 
 export type WorkPacketSignalsSettings = {
@@ -79,11 +81,15 @@ export async function readFreeMomentsSettings(): Promise<FreeMomentsSettings> {
   const value = row?.value ?? {};
   const intervalMinutes = Number(value.interval_minutes);
   const scheduleMode = typeof value.schedule_mode === "string" ? value.schedule_mode : null;
+  const nextTurnAt = typeof value.next_turn_at === "string" ? value.next_turn_at : null;
+  const nextAgentIndex = Number(value.next_agent_index);
 
   return {
     enabled: value.enabled === true,
     interval_minutes: Number.isFinite(intervalMinutes) ? intervalMinutes : null,
-    schedule_mode: scheduleMode
+    schedule_mode: scheduleMode,
+    next_turn_at: nextTurnAt,
+    next_agent_index: Number.isInteger(nextAgentIndex) && nextAgentIndex >= 0 ? nextAgentIndex : null
   };
 }
 
@@ -95,6 +101,8 @@ export async function writeFreeMomentsSettings(settings: {
   enabled: boolean;
   interval_minutes?: number | null;
   schedule_mode?: string | null;
+  next_turn_at?: string | null;
+  next_agent_index?: number | null;
 }) {
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
@@ -104,7 +112,9 @@ export async function writeFreeMomentsSettings(settings: {
       value: {
         enabled: settings.enabled,
         interval_minutes: settings.interval_minutes ?? null,
-        schedule_mode: settings.schedule_mode ?? null
+        schedule_mode: settings.schedule_mode ?? null,
+        next_turn_at: settings.next_turn_at ?? null,
+        next_agent_index: settings.next_agent_index ?? null
       },
       updated_at: new Date().toISOString()
     });
@@ -120,12 +130,16 @@ export async function writeFreeMomentsEnabled(enabled: boolean) {
   const existing = await readFreeMomentsSettings().catch(() => ({
     enabled,
     interval_minutes: null,
-    schedule_mode: null
+    schedule_mode: null,
+    next_turn_at: null,
+    next_agent_index: null
   }));
   await writeFreeMomentsSettings({
     enabled,
     interval_minutes: existing.interval_minutes,
-    schedule_mode: existing.schedule_mode
+    schedule_mode: existing.schedule_mode,
+    next_turn_at: existing.next_turn_at,
+    next_agent_index: existing.next_agent_index
   });
 
   return enabled;

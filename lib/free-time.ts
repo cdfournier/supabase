@@ -127,7 +127,7 @@ export function status() {
 export async function statusWithSettings() {
   try {
     const settings = await readFreeMomentsSettings();
-    restoreFromSettings(settings);
+    await restoreFromSettings(settings);
 
     return {
       ...status(),
@@ -146,14 +146,9 @@ export async function statusWithSettings() {
 export async function start(intervalMinutes?: number, scheduleMode?: FreeTimeScheduleMode) {
   state.intervalMinutes = normalizeIntervalMinutes(intervalMinutes);
   state.scheduleMode = normalizeScheduleMode(scheduleMode);
-  await writeFreeMomentsSettings({
-    enabled: true,
-    interval_minutes: state.intervalMinutes,
-    schedule_mode: state.scheduleMode
-  });
   state.running = true;
   addEvent("started", `Free Moments started at ${state.intervalMinutes} minute cadence in ${state.scheduleMode} mode.`);
-  scheduleNextTurn();
+  await scheduleNextTurn();
 
   return {
     ...status(),
@@ -172,7 +167,9 @@ export async function stop() {
     await writeFreeMomentsSettings({
       enabled: false,
       interval_minutes: state.intervalMinutes,
-      schedule_mode: state.scheduleMode
+      schedule_mode: state.scheduleMode,
+      next_turn_at: null,
+      next_agent_index: state.nextAgentIndex
     });
     state.lastError = null;
     return {
@@ -246,7 +243,7 @@ export async function tick(targetAgent?: AgentName, options: { scheduled?: boole
     state.turnInProgress = false;
 
     if (state.running) {
-      scheduleNextTurn();
+      await scheduleNextTurn();
     }
   }
 
@@ -268,12 +265,13 @@ export async function previewPrompt(agent: AgentName) {
   };
 }
 
-function restoreFromSettings(settings: Awaited<ReturnType<typeof readFreeMomentsSettings>>) {
+async function restoreFromSettings(settings: Awaited<ReturnType<typeof readFreeMomentsSettings>>) {
   const intervalMinutes = normalizeStoredIntervalMinutes(settings.interval_minutes);
   const scheduleMode = normalizeStoredScheduleMode(settings.schedule_mode);
 
   state.intervalMinutes = intervalMinutes;
   state.scheduleMode = scheduleMode;
+  state.nextAgentIndex = normalizeStoredAgentIndex(settings.next_agent_index, scheduleMode);
 
   if (!settings.enabled) {
     if (state.running) {
@@ -288,7 +286,7 @@ function restoreFromSettings(settings: Awaited<ReturnType<typeof readFreeMoments
 
   if (state.running) {
     if (!state.nextTurnAt && !state.turnInProgress) {
-      scheduleNextTurn();
+      await scheduleNextTurn(settings.next_turn_at);
     }
 
     return;
@@ -299,7 +297,7 @@ function restoreFromSettings(settings: Awaited<ReturnType<typeof readFreeMoments
     "started",
     `Free Moments restored at ${state.intervalMinutes} minute cadence in ${state.scheduleMode} mode.`
   );
-  scheduleNextTurn();
+  await scheduleNextTurn(settings.next_turn_at);
 }
 
 async function runAgentTurn(agent: AgentName) {
@@ -479,15 +477,19 @@ function operatorNoteCueDigest(unreadCount: number) {
   ].join("\n");
 }
 
-function scheduleNextTurn() {
+async function scheduleNextTurn(restoredNextTurnAt?: string | null) {
   clearScheduledTurn();
 
   if (!state.running || state.turnInProgress) {
     return;
   }
 
-  const delayMs = state.intervalMinutes * 60 * 1000;
-  const nextTurnAt = new Date(Date.now() + delayMs).toISOString();
+  const now = Date.now();
+  const restoredAt = parseScheduledTime(restoredNextTurnAt);
+  const delayMs = restoredAt === null
+    ? state.intervalMinutes * 60 * 1000
+    : Math.max(0, restoredAt - now);
+  const nextTurnAt = new Date(now + delayMs).toISOString();
   state.nextTurnAt = nextTurnAt;
   state.timer = setTimeout(() => {
     state.timer = null;
@@ -495,6 +497,24 @@ function scheduleNextTurn() {
     void tick(undefined, { scheduled: true });
   }, delayMs);
   addEvent("scheduled", `Next Free Moment scheduled for ${nextTurnAt}.`);
+  await persistSchedule();
+}
+
+async function persistSchedule() {
+  try {
+    await writeFreeMomentsSettings({
+      enabled: state.running,
+      interval_minutes: state.intervalMinutes,
+      schedule_mode: state.scheduleMode,
+      next_turn_at: state.nextTurnAt,
+      next_agent_index: state.nextAgentIndex
+    });
+    state.lastError = null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not persist Free Moments schedule.";
+    state.lastError = message;
+    addEvent("turn_failed", message);
+  }
 }
 
 function clearScheduledTurn() {
@@ -538,6 +558,25 @@ function normalizeStoredIntervalMinutes(value: number | null) {
 
 function normalizeStoredScheduleMode(value: string | null) {
   return normalizeScheduleMode(value === "paired" || value === "round_robin" ? value : undefined);
+}
+
+function normalizeStoredAgentIndex(value: number | null, scheduleMode: FreeTimeScheduleMode) {
+  if (scheduleMode === "paired") {
+    return 0;
+  }
+
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value % AGENTS.length
+    : 0;
+}
+
+function parseScheduledTime(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function nextScheduledAgents() {
