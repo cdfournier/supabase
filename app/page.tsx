@@ -5271,7 +5271,7 @@ function LiveSessionBridgeStatus({
   const error = relayStatus?.last_error ?? attendant?.last_error ?? latestDelivery?.last_error ?? adapterStatus?.reason;
   const relayLabel = agent === "julian"
     ? relayStatus?.status === "running"
-      ? "relay receiving"
+      ? "relay ready"
       : relayStatus?.status === "starting"
         ? "relay starting"
         : relayStatus?.status === "degraded"

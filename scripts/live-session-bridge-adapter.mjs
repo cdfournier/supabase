@@ -46,7 +46,13 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 while (true) {
   try {
     const polledAt = new Date().toISOString();
-    const result = await processOneDelivery({ agent, baseUrl, token });
+    const result = await processOneDelivery({ agent, baseUrl, token }).catch((error) => {
+      if (isIdleSessionError(error)) {
+        return null;
+      }
+
+      throw error;
+    });
 
     writeState({
       status: "running",
@@ -247,6 +253,10 @@ function trimTrailingSlash(value) {
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : "Unknown bridge adapter error.";
+}
+
+function isIdleSessionError(error) {
+  return errorMessage(error) === "No active live session.";
 }
 
 function printHelp() {
