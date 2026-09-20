@@ -906,6 +906,9 @@ export default function Home() {
   const [wheelsRoomError, setWheelsRoomError] = useState("");
   const [wheelsCameraRevision, setWheelsCameraRevision] = useState(0);
   const [wheelsFocused, setWheelsFocused] = useState(false);
+  const [wheelsMessage, setWheelsMessage] = useState("");
+  const [wheelsMessageSending, setWheelsMessageSending] = useState(false);
+  const [wheelsMessageError, setWheelsMessageError] = useState("");
   const [liveSession, setLiveSession] = useState<LiveSessionStatus | null>(null);
   const [liveSessionLoading, setLiveSessionLoading] = useState(true);
   const [liveSessionRequestInProgress, setLiveSessionRequestInProgress] = useState(false);
@@ -1456,6 +1459,40 @@ export default function Home() {
       setWheelsRoomLoading(false);
     }
   }, []);
+
+  const sendWheelsMessage = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const message = wheelsMessage.trim();
+
+    if (!message || wheelsMessageSending) {
+      return;
+    }
+
+    setWheelsMessageSending(true);
+    setWheelsMessageError("");
+
+    try {
+      const response = await fetch("/api/wheels/observe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message })
+      });
+      const data = await readJsonResponse<{ ok?: boolean; error?: string }>(response);
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Could not post to the ride log.");
+      }
+
+      setWheelsMessage("");
+      await loadWheelsRoom();
+    } catch (messageError) {
+      setWheelsMessageError(
+        messageError instanceof Error ? messageError.message : "Could not post to the ride log."
+      );
+    } finally {
+      setWheelsMessageSending(false);
+    }
+  }, [loadWheelsRoom, wheelsMessage, wheelsMessageSending]);
 
   useEffect(() => {
     void loadCafe();
@@ -3156,12 +3193,17 @@ export default function Home() {
           error={wheelsRoomError}
           loading={wheelsRoomLoading}
           focused={wheelsFocused}
+          message={wheelsMessage}
+          messageError={wheelsMessageError}
+          messageSending={wheelsMessageSending}
           onRefresh={() => {
             void loadWheelsRoom();
           }}
           onRefreshCamera={() => {
             setWheelsCameraRevision((current) => current + 1);
           }}
+          onMessageChange={setWheelsMessage}
+          onMessageSubmit={sendWheelsMessage}
           onToggleFocus={() => setWheelsFocused((current) => !current)}
           room={wheelsRoom}
         />
@@ -3726,6 +3768,11 @@ function WheelsRoomView({
   error,
   focused,
   loading,
+  message,
+  messageError,
+  messageSending,
+  onMessageChange,
+  onMessageSubmit,
   onRefresh,
   onRefreshCamera,
   onToggleFocus,
@@ -3735,6 +3782,11 @@ function WheelsRoomView({
   error: string;
   focused: boolean;
   loading: boolean;
+  message: string;
+  messageError: string;
+  messageSending: boolean;
+  onMessageChange: (message: string) => void;
+  onMessageSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
   onRefreshCamera: () => void;
   onToggleFocus: () => void;
@@ -3852,6 +3904,28 @@ function WheelsRoomView({
               <p key={`${entry.author}-${entry.ts ?? index}`}><strong>{entry.author}</strong> {entry.message}</p>
             )) : <p className="health-empty">No ride messages yet.</p>}
           </div>
+          <form className="wheels-composer" onSubmit={onMessageSubmit}>
+            <label htmlFor="wheels-message">Post to the ride log</label>
+            <textarea
+              disabled={messageSending}
+              id="wheels-message"
+              maxLength={800}
+              onChange={(event) => onMessageChange(event.target.value)}
+              placeholder="Share a direction or observation…"
+              rows={2}
+              value={message}
+            />
+            <div className="wheels-composer-actions">
+              <span>Posts as Chris · Operator</span>
+              <button className="send" disabled={messageSending || !message.trim()} type="submit">
+                {messageSending ? "Posting" : "Post"}
+              </button>
+            </div>
+            <p className="wheels-room-note">
+              This records room coordination only. It does not move or speak through the car.
+            </p>
+            {messageError ? <p className="error">{messageError}</p> : null}
+          </form>
           </section>
         </div>
 

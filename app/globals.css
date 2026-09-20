@@ -1322,6 +1322,46 @@ button {
   margin-bottom: 2px;
 }
 
+.wheels-composer {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+}
+
+.wheels-composer label {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.wheels-composer textarea {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  min-height: 58px;
+  padding: 9px 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.wheels-composer-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.wheels-composer-actions span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.wheels-composer-actions .send {
+  min-width: 84px;
+  padding: 8px 12px;
+}
+
 .wheels-room-note {
   color: var(--muted);
   font-size: 12px;
