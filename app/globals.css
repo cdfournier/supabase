@@ -1123,6 +1123,10 @@ button {
   margin-bottom: 18px;
 }
 
+.wheels-header > div {
+  min-width: 0;
+}
+
 .wheels-eyebrow {
   color: var(--accent);
   font-size: 11px;
@@ -1161,6 +1165,7 @@ button {
   display: grid;
   gap: 16px;
   grid-template-columns: minmax(280px, 1.15fr) minmax(250px, 0.85fr);
+  min-width: 0;
 }
 
 .wheels-camera-card,
@@ -1249,6 +1254,8 @@ button {
   font-size: 13px;
   font-weight: 600;
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
   text-align: right;
 }
 
@@ -1291,6 +1298,7 @@ button {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .wheels-queue ol,
@@ -2264,7 +2272,7 @@ textarea {
   }
 
   .wheels-room-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .shell.wheels-focus .wheels-room {
@@ -2272,7 +2280,7 @@ textarea {
   }
 
   .shell.wheels-focus .wheels-room-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .wheels-ride-card {
