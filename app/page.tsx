@@ -12,7 +12,7 @@ type AgentName = "soren" | "varro";
 type OperatorNoteAgent = AgentName | "julian" | "cael";
 type OperatorNoteRecipient = OperatorNoteAgent | "all";
 type OperatorNoteFilter = "active" | "needs_operator" | "waiting_agent" | "settled" | "all";
-type ActiveSurface = "chat" | "cafe" | "bar" | "eyes" | "inbox";
+type ActiveSurface = "chat" | "cafe" | "bar" | "eyes" | "wheels" | "inbox";
 
 const OPERATOR_NOTE_RECIPIENTS: OperatorNoteAgent[] = ["soren", "varro", "julian", "cael"];
 
@@ -789,6 +789,41 @@ type WheelsReadinessResponse = {
   readiness?: WheelsReadiness;
 };
 
+type WheelsObserveEntry = {
+  author: string;
+  message: string;
+  ts?: number;
+};
+
+type WheelsRoomState = {
+  fetched_at: string;
+  source: string;
+  readiness: WheelsReadiness;
+  observe: {
+    driver: string | null;
+    log: WheelsObserveEntry[];
+  };
+  passengers: {
+    passengers: Array<{
+      name: string;
+      joined_ago: number;
+      last_seen_ago: number;
+    }>;
+  };
+  queue: {
+    queue: Array<{
+      name: string;
+      intention?: string;
+    }>;
+    claim_expires: number | null;
+  };
+};
+
+type WheelsRoomResponse = {
+  error?: string;
+  source?: string;
+} & Partial<WheelsRoomState>;
+
 type ControlPanelKey = "runtime" | "wheels" | "freeMoments" | "launchpad" | "wake" | "packetSignals";
 type ControlPanelState = Record<ControlPanelKey, boolean>;
 
@@ -866,6 +901,10 @@ export default function Home() {
   const [eyesLoading, setEyesLoading] = useState(true);
   const [eyesSending, setEyesSending] = useState(false);
   const [eyesError, setEyesError] = useState("");
+  const [wheelsRoom, setWheelsRoom] = useState<WheelsRoomState | null>(null);
+  const [wheelsRoomLoading, setWheelsRoomLoading] = useState(true);
+  const [wheelsRoomError, setWheelsRoomError] = useState("");
+  const [wheelsCameraRevision, setWheelsCameraRevision] = useState(0);
   const [liveSession, setLiveSession] = useState<LiveSessionStatus | null>(null);
   const [liveSessionLoading, setLiveSessionLoading] = useState(true);
   const [liveSessionRequestInProgress, setLiveSessionRequestInProgress] = useState(false);
@@ -1394,6 +1433,29 @@ export default function Home() {
     }
   }, []);
 
+  const loadWheelsRoom = useCallback(async () => {
+    setWheelsRoomLoading(true);
+    setWheelsRoomError("");
+
+    try {
+      const response = await fetch("/api/wheels/room", { cache: "no-store" });
+      const data = await readJsonResponse<WheelsRoomResponse>(response);
+
+      if (!response.ok || !data.readiness || !data.observe || !data.passengers || !data.queue || !data.fetched_at || !data.source) {
+        throw new Error(data.error || "Could not load the WHEELS room.");
+      }
+
+      const room = data as WheelsRoomState;
+      setWheelsRoom(room);
+      setWheelsReadiness(room.readiness);
+    } catch (roomError) {
+      setWheelsRoom(null);
+      setWheelsRoomError(roomError instanceof Error ? roomError.message : "Could not load the WHEELS room.");
+    } finally {
+      setWheelsRoomLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadCafe();
   }, [loadCafe]);
@@ -1417,6 +1479,10 @@ export default function Home() {
   useEffect(() => {
     void loadWheelsReadiness();
   }, [loadWheelsReadiness]);
+
+  useEffect(() => {
+    void loadWheelsRoom();
+  }, [loadWheelsRoom]);
 
   useEffect(() => {
     void loadOperatorInbox();
@@ -2908,6 +2974,18 @@ export default function Home() {
           <span>{eyesActivePresenceCount} here</span>
         </button>
         <button
+          className={`cafe-button ${activeSurface === "wheels" ? "active" : ""}`}
+          onClick={() => {
+            setActiveSurface("wheels");
+            void loadWheelsRoom();
+          }}
+          type="button"
+        >
+          <strong>WHEELS</strong>
+          <br />
+          <span>{wheelsReadiness?.wheel.driver ? `with ${wheelsReadiness.wheel.driver}` : "parked"}</span>
+        </button>
+        <button
           className={`cafe-button ${activeSurface === "inbox" ? "active" : ""}`}
           onClick={() => {
             setActiveSurface("inbox");
@@ -3070,6 +3148,20 @@ export default function Home() {
           onSubmit={sendEyesMessage}
           pendingFrames={eyesPendingFrames}
           sending={eyesSending}
+        />
+      ) : activeSurface === "wheels" ? (
+        <WheelsRoomView
+          cameraRevision={wheelsCameraRevision}
+          error={wheelsRoomError}
+          loading={wheelsRoomLoading}
+          onRefresh={() => {
+            void loadWheelsRoom();
+          }}
+          onRefreshCamera={() => {
+            setWheelsCameraRevision((current) => current + 1);
+            void loadWheelsRoom();
+          }}
+          room={wheelsRoom}
         />
       ) : activeSurface === "inbox" ? (
         <OperatorInboxView
@@ -3623,6 +3715,133 @@ function BarView({
           );
         })}
       </div>
+    </section>
+  );
+}
+
+function WheelsRoomView({
+  cameraRevision,
+  error,
+  loading,
+  onRefresh,
+  onRefreshCamera,
+  room
+}: {
+  cameraRevision: number;
+  error: string;
+  loading: boolean;
+  onRefresh: () => void;
+  onRefreshCamera: () => void;
+  room: WheelsRoomState | null;
+}) {
+  const readiness = room?.readiness;
+  const passengers = room?.passengers.passengers ?? [];
+  const messages = room?.observe.log ?? [];
+  const queue = room?.queue.queue ?? [];
+  const distance = readiness?.distance;
+  const distanceLabel = !distance
+    ? "unknown"
+    : distance.state === "open"
+      ? "open space"
+      : distance.state === "reported" && distance.cm !== null
+        ? `${distance.cm} cm`
+        : distance.state;
+  const cameraLabel = !readiness
+    ? "unknown"
+    : readiness.camera.state === "live"
+      ? `live · ${readiness.camera.age_seconds ?? 0}s ago`
+      : readiness.camera.state;
+
+  return (
+    <section className="main wheels-main">
+      <header className="header wheels-header">
+        <div>
+          <p className="wheels-eyebrow">Operator room</p>
+          <h2>WHEELS</h2>
+          <p>
+            {readiness?.wheel.driver
+              ? `${readiness.wheel.driver} holds the wheel.`
+              : "The car is parked; the wheel is unassigned."}
+          </p>
+        </div>
+        <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">
+          {loading ? "Reading" : "Refresh room"}
+        </button>
+      </header>
+
+      <div className="wheels-room-grid">
+        <section className="wheels-camera-card" aria-label="PiCar camera">
+          <div className="wheels-camera-frame">
+            <img
+              alt="Current view from the PiCar camera"
+              key={cameraRevision}
+              onLoad={onRefresh}
+              src={`/api/wheels/camera?revision=${cameraRevision}`}
+            />
+          </div>
+          <div className="wheels-camera-meta">
+            <span>Camera {cameraLabel}</span>
+            <button onClick={onRefreshCamera} type="button">Refresh camera</button>
+          </div>
+        </section>
+
+        <section className="wheels-readiness-card" aria-label="Driving preflight">
+          <div className="wheels-card-heading">
+            <div>
+              <p className="wheels-eyebrow">Preflight</p>
+              <h3>{readiness?.preflight_ready ? "Ready" : "Not ready yet"}</h3>
+            </div>
+            <span className={`status-pill ${readiness?.preflight_ready ? "ok" : "warn"}`}>
+              {readiness?.preflight_ready ? "ready" : "parked"}
+            </span>
+          </div>
+          <dl className="wheels-room-list">
+            <div><dt>Wheel</dt><dd>{readiness?.wheel.driver ? `held by ${readiness.wheel.driver}` : "unassigned"}</dd></div>
+            <div><dt>Gate</dt><dd>{readiness?.wheel.motion_gate ?? "unknown"}</dd></div>
+            <div><dt>Distance</dt><dd>{distanceLabel}</dd></div>
+            <div><dt>Supervision</dt><dd>{readiness?.supervision ?? "unknown"}</dd></div>
+            <div><dt>Network</dt><dd>{readiness?.network ?? "unknown"}</dd></div>
+          </dl>
+          {readiness?.needs.length ? (
+            <p className="wheels-next">Next: {readiness.needs.join(" · ")}</p>
+          ) : null}
+        </section>
+
+        <section className="wheels-ride-card" aria-label="Ride log">
+          <div className="wheels-card-heading">
+            <div>
+              <p className="wheels-eyebrow">Ride log</p>
+              <h3>In the room</h3>
+            </div>
+            <span className="wheels-quiet-count">{passengers.length} present</span>
+          </div>
+          {passengers.length ? (
+            <div className="wheels-passengers">
+              {passengers.map((passenger) => (
+                <span key={passenger.name}>
+                  <strong>{passenger.name}</strong>
+                  <small>seen {formatAge(passenger.last_seen_ago)}</small>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="health-empty">No passengers declared.</p>
+          )}
+          {queue.length ? (
+            <p className="wheels-queue">Queue: {queue.map((entry) => entry.name).join(" → ")}</p>
+          ) : null}
+          <div className="wheels-log">
+            {messages.length ? messages.slice(-12).map((entry, index) => (
+              <p key={`${entry.author}-${entry.ts ?? index}`}><strong>{entry.author}</strong> {entry.message}</p>
+            )) : <p className="health-empty">No ride messages yet.</p>}
+          </div>
+        </section>
+      </div>
+
+      <p className="wheels-room-note">
+        Read-only room for now. The Pi remains the authority for movement; guarded Operator controls come next.
+      </p>
+      {error ? <p className="error">{error}</p> : null}
     </section>
   );
 }
@@ -6166,4 +6385,12 @@ function formatMessageTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(date);
+}
+
+function formatAge(seconds: number) {
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+
+  return `${Math.round(seconds / 60)}m ago`;
 }
