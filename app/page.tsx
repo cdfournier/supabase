@@ -3899,31 +3899,48 @@ function WheelsRoomView({
           {queue.length ? (
             <p className="wheels-queue">Queue: {queue.map((entry) => entry.name).join(" → ")}</p>
           ) : null}
-          <div className="wheels-log">
-            {messages.length ? messages.slice(-12).map((entry, index) => (
-              <p key={`${entry.author}-${entry.ts ?? index}`}><strong>{entry.author}</strong> {entry.message}</p>
-            )) : <p className="health-empty">No ride messages yet.</p>}
+          <div className="transcript wheels-transcript" aria-label="Ride log messages">
+            {!messages.length ? <p className="empty">No ride messages yet.</p> : null}
+            {messages.slice(-12).map((entry, index) => {
+              const author = entry.author.trim() || "Unknown";
+              const isOperator = author.toLowerCase() === "chris" || author.toLowerCase() === "operator";
+              const createdAt = entry.ts ? new Date(entry.ts * 1000).toISOString() : undefined;
+
+              return (
+                <article
+                  className={`message ${isOperator ? "user" : "assistant"}`}
+                  key={`${author}-${entry.ts ?? index}-${entry.message}`}
+                >
+                  <div className="message-meta">
+                    <span>{isOperator ? "Chris · Operator" : author}</span>
+                    {createdAt ? <time dateTime={createdAt}>{formatMessageTime(createdAt)}</time> : null}
+                  </div>
+                  <div>{entry.message}</div>
+                </article>
+              );
+            })}
           </div>
           <form className="wheels-composer" onSubmit={onMessageSubmit}>
-            <label htmlFor="wheels-message">Post to the ride log</label>
-            <textarea
-              disabled={messageSending}
-              id="wheels-message"
-              maxLength={800}
-              onChange={(event) => onMessageChange(event.target.value)}
-              placeholder="Share a direction or observation…"
-              rows={2}
-              value={message}
-            />
-            <div className="wheels-composer-actions">
-              <span>Posts as Chris · Operator</span>
-              <button className="send" disabled={messageSending || !message.trim()} type="submit">
-                {messageSending ? "Posting" : "Post"}
-              </button>
+            <label className="visually-hidden" htmlFor="wheels-message">Post to the ride log</label>
+            <div className="composer-row">
+              <textarea
+                disabled={messageSending}
+                id="wheels-message"
+                maxLength={800}
+                onChange={(event) => onMessageChange(event.target.value)}
+                placeholder="Share a direction or observation…"
+                value={message}
+              />
+              <div className="composer-actions">
+                <button className="send" disabled={messageSending || !message.trim()} type="submit">
+                  {messageSending ? "Posting" : "Post"}
+                </button>
+              </div>
             </div>
-            <p className="wheels-room-note">
-              This records room coordination only. It does not move or speak through the car.
-            </p>
+            <div className="wheels-composer-note">
+              <span>Posts as Chris · Operator</span>
+              <span>Records coordination only; it does not move or speak through the car.</span>
+            </div>
             {messageError ? <p className="error">{messageError}</p> : null}
           </form>
           </section>
