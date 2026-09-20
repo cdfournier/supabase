@@ -3899,27 +3899,6 @@ function WheelsRoomView({
           {queue.length ? (
             <p className="wheels-queue">Queue: {queue.map((entry) => entry.name).join(" → ")}</p>
           ) : null}
-          <div className="transcript wheels-transcript" aria-label="Ride log messages">
-            {!messages.length ? <p className="empty">No ride messages yet.</p> : null}
-            {messages.slice(-12).map((entry, index) => {
-              const author = entry.author.trim() || "Unknown";
-              const isOperator = author.toLowerCase() === "chris" || author.toLowerCase() === "operator";
-              const createdAt = entry.ts ? new Date(entry.ts * 1000).toISOString() : undefined;
-
-              return (
-                <article
-                  className={`message ${isOperator ? "user" : "assistant"}`}
-                  key={`${author}-${entry.ts ?? index}-${entry.message}`}
-                >
-                  <div className="message-meta">
-                    <span>{isOperator ? "Chris · Operator" : author}</span>
-                    {createdAt ? <time dateTime={createdAt}>{formatMessageTime(createdAt)}</time> : null}
-                  </div>
-                  <div>{entry.message}</div>
-                </article>
-              );
-            })}
-          </div>
           <form className="wheels-composer" onSubmit={onMessageSubmit}>
             <label className="visually-hidden" htmlFor="wheels-message">Post to the ride log</label>
             <div className="composer-row">
@@ -3943,6 +3922,27 @@ function WheelsRoomView({
             </div>
             {messageError ? <p className="error">{messageError}</p> : null}
           </form>
+          <div className="transcript wheels-transcript" aria-label="Ride log messages">
+            {!messages.length ? <p className="empty">No ride messages yet.</p> : null}
+            {messages.slice(-12).reverse().map((entry, index) => {
+              const author = entry.author.trim() || "Unknown";
+              const isOperator = author.toLowerCase() === "chris" || author.toLowerCase() === "operator";
+              const createdAt = entry.ts ? new Date(entry.ts * 1000).toISOString() : undefined;
+
+              return (
+                <article
+                  className={`message ${isOperator ? "user" : "assistant"}`}
+                  key={`${author}-${entry.ts ?? index}-${entry.message}`}
+                >
+                  <div className="message-meta">
+                    <span>{isOperator ? "Chris · Operator" : author}</span>
+                    {createdAt ? <time dateTime={createdAt}>{formatMessageTime(createdAt)}</time> : null}
+                  </div>
+                  <div>{entry.message}</div>
+                </article>
+              );
+            })}
+          </div>
           </section>
         </div>
 
