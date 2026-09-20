@@ -1100,6 +1100,14 @@ button {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.shell.wheels-focus {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shell.wheels-focus .sidebar {
+  display: none;
+}
+
 .wheels-room {
   background: #f9fbfa;
   min-width: 0;
@@ -1127,6 +1135,17 @@ button {
 .wheels-header h2 {
   font-size: 22px;
   margin: 0;
+}
+
+.wheels-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.wheels-header-actions .quiet-action {
+  margin-top: 0;
+  width: auto;
 }
 
 .wheels-header p:last-child {
@@ -1300,6 +1319,24 @@ button {
   font-size: 12px;
   line-height: 1.45;
   margin: 0;
+}
+
+.shell.wheels-focus .wheels-room {
+  padding: 28px clamp(24px, 6vw, 96px) 36px;
+}
+
+.shell.wheels-focus .wheels-room-grid {
+  grid-template-columns: minmax(420px, 1.2fr) minmax(300px, 0.8fr);
+  margin: 0 auto;
+  max-width: 1400px;
+}
+
+.shell.wheels-focus .wheels-room-note,
+.shell.wheels-focus .wheels-room > .error {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 1400px;
 }
 
 .main {
@@ -2217,7 +2254,24 @@ textarea {
     width: 100%;
   }
 
+  .wheels-header-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wheels-header-actions .quiet-action {
+    width: 100%;
+  }
+
   .wheels-room-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shell.wheels-focus .wheels-room {
+    padding: 16px;
+  }
+
+  .shell.wheels-focus .wheels-room-grid {
     grid-template-columns: 1fr;
   }
 

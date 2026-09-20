@@ -905,6 +905,7 @@ export default function Home() {
   const [wheelsRoomLoading, setWheelsRoomLoading] = useState(true);
   const [wheelsRoomError, setWheelsRoomError] = useState("");
   const [wheelsCameraRevision, setWheelsCameraRevision] = useState(0);
+  const [wheelsFocused, setWheelsFocused] = useState(false);
   const [liveSession, setLiveSession] = useState<LiveSessionStatus | null>(null);
   const [liveSessionLoading, setLiveSessionLoading] = useState(true);
   const [liveSessionRequestInProgress, setLiveSessionRequestInProgress] = useState(false);
@@ -2937,7 +2938,7 @@ export default function Home() {
   }
 
   return (
-    <main className="shell">
+    <main className={`shell ${activeSurface === "wheels" && wheelsFocused ? "wheels-focus" : ""}`}>
       <aside className="sidebar">
         <h1>Agents</h1>
         <button
@@ -3154,13 +3155,14 @@ export default function Home() {
           cameraRevision={wheelsCameraRevision}
           error={wheelsRoomError}
           loading={wheelsRoomLoading}
+          focused={wheelsFocused}
           onRefresh={() => {
             void loadWheelsRoom();
           }}
           onRefreshCamera={() => {
             setWheelsCameraRevision((current) => current + 1);
-            void loadWheelsRoom();
           }}
+          onToggleFocus={() => setWheelsFocused((current) => !current)}
           room={wheelsRoom}
         />
       ) : activeSurface === "inbox" ? (
@@ -3722,16 +3724,20 @@ function BarView({
 function WheelsRoomView({
   cameraRevision,
   error,
+  focused,
   loading,
   onRefresh,
   onRefreshCamera,
+  onToggleFocus,
   room
 }: {
   cameraRevision: number;
   error: string;
+  focused: boolean;
   loading: boolean;
   onRefresh: () => void;
   onRefreshCamera: () => void;
+  onToggleFocus: () => void;
   room: WheelsRoomState | null;
 }) {
   const readiness = room?.readiness;
@@ -3764,13 +3770,24 @@ function WheelsRoomView({
               : "The car is parked; the wheel is unassigned."}
           </p>
         </div>
-        <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">
-          {loading ? "Reading" : "Refresh room"}
-        </button>
+        <div className="wheels-header-actions">
+          <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">
+            {loading ? "Reading" : "Refresh room"}
+          </button>
+          <button
+            aria-pressed={focused}
+            className="quiet-action"
+            onClick={onToggleFocus}
+            type="button"
+          >
+            {focused ? "Show home" : "Focus WHEELS"}
+          </button>
+        </div>
       </header>
 
-      <div className="wheels-room-grid">
-        <section className="wheels-camera-card" aria-label="PiCar camera">
+      <div className="wheels-room">
+        <div className="wheels-room-grid">
+          <section className="wheels-camera-card" aria-label="PiCar camera">
           <div className="wheels-camera-frame">
             <img
               alt="Current view from the PiCar camera"
@@ -3783,9 +3800,9 @@ function WheelsRoomView({
             <span>Camera {cameraLabel}</span>
             <button onClick={onRefreshCamera} type="button">Refresh camera</button>
           </div>
-        </section>
+          </section>
 
-        <section className="wheels-readiness-card" aria-label="Driving preflight">
+          <section className="wheels-readiness-card" aria-label="Driving preflight">
           <div className="wheels-card-heading">
             <div>
               <p className="wheels-eyebrow">Preflight</p>
@@ -3805,9 +3822,9 @@ function WheelsRoomView({
           {readiness?.needs.length ? (
             <p className="wheels-next">Next: {readiness.needs.join(" · ")}</p>
           ) : null}
-        </section>
+          </section>
 
-        <section className="wheels-ride-card" aria-label="Ride log">
+          <section className="wheels-ride-card" aria-label="Ride log">
           <div className="wheels-card-heading">
             <div>
               <p className="wheels-eyebrow">Ride log</p>
@@ -3835,13 +3852,14 @@ function WheelsRoomView({
               <p key={`${entry.author}-${entry.ts ?? index}`}><strong>{entry.author}</strong> {entry.message}</p>
             )) : <p className="health-empty">No ride messages yet.</p>}
           </div>
-        </section>
-      </div>
+          </section>
+        </div>
 
-      <p className="wheels-room-note">
-        Read-only room for now. The Pi remains the authority for movement; guarded Operator controls come next.
-      </p>
-      {error ? <p className="error">{error}</p> : null}
+        <p className="wheels-room-note">
+          Read-only room for now. The Pi remains the authority for movement; guarded Operator controls come next.
+        </p>
+        {error ? <p className="error">{error}</p> : null}
+      </div>
     </section>
   );
 }
