@@ -8,12 +8,16 @@ import {
   leaveEyes,
   loadEyes
 } from "./eyes.ts";
+import {
+  latestWheelsLiveMessages,
+  loadWheelsLiveMessages
+} from "./wheels-live.ts";
 
 export type NativeAgentName = "soren" | "varro";
 export type BridgeAgentName = "julian" | "cael";
 export type LiveSessionAgentName = NativeAgentName | BridgeAgentName;
 
-export type LiveSessionSurface = "bar" | "eyes";
+export type LiveSessionSurface = "bar" | "eyes" | "wheels";
 export type LiveSessionStatus = "active" | "ended";
 export type LiveSessionParticipantStatus = "joined" | "left" | "degraded";
 export type LiveSessionTickMode = "manual" | "interval";
@@ -234,6 +238,7 @@ export async function startLiveSessionAsync(input: {
   const surface = input.surface ?? "bar";
   const agents = normalizeNativeAgents(input.agents);
   const bridgeAgents = normalizeBridgeAgents(input.bridgeAgents);
+  await loadSurface(surface);
   const existing = activeSession(surface);
 
   if (existing) {
@@ -591,6 +596,7 @@ export async function previewLiveSessionAgentAsync(input: {
   }
 
   const participant = requiredJoinedParticipant(session, input.agent);
+  await loadSurface(session.surface);
   const messages = newSurfaceMessagesFor(session.surface, participant, new Date().toISOString());
 
   return {
@@ -613,6 +619,7 @@ export async function previewLiveSessionBridgeAgent(input: {
   }
 
   const participant = requiredJoinedParticipant(session, input.agent);
+  await loadSurface(session.surface);
   const eventCutoffAt = new Date().toISOString();
   const messages = newSurfaceMessagesFor(session.surface, participant, eventCutoffAt);
   participant.last_seen_at = eventCutoffAt;
@@ -802,6 +809,8 @@ async function tickAgent(
 ) {
   const participant = requiredJoinedParticipant(session, agent);
 
+  await loadSurface(session.surface);
+
   if (participant.turn_in_progress) {
     addEvent(session, "tick_skipped", `${displayName(agent)} tick skipped; turn already in progress.`, participant.participant_id);
     return {
@@ -883,6 +892,7 @@ async function enqueueBridgeDelivery(
   eventCutoffAt: string
 ) {
   const participant = requiredJoinedParticipant(session, agent);
+  await loadSurface(session.surface);
   const messages = newSurfaceMessagesFor(session.surface, participant, eventCutoffAt);
   const now = new Date().toISOString();
 
@@ -1058,6 +1068,10 @@ function liveSessionPrompt(
     "",
     `You are joined to ${label}, a shared Operator-visible live session surface. This is not a new assignment; it is the session host carrying room events to you while you are present.`,
     `Default writeback contract: while you are joined to ${label}, responses to ${label} events belong in ${label}. ${writeback} do not answer the ${label} event primarily in your own runtime chat.`,
+    ...(session.surface === "wheels" ? [
+      "This invitation places you in the WHEELS coordination room only. It does not put you in the physical car, claim a seat, take the wheel, or authorize motion.",
+      "Passenger entry, asking for the wheel, wheel custody, and every motion command are separate explicit actions. Do not infer permission for any of them from this live-session invitation."
+    ] : []),
     `Direct room invitations are response-worthy. If Chris directly addresses you, everyone, the room, or asks a question/test, post a concise ${label} reply unless the event explicitly asks for silence.`,
     `Ambient events may be quiet. If ${label} posting is unavailable, say that in your runtime chat. If nothing calls for a response, say briefly that you are staying present and quiet. You may also choose to leave if that is the honest move.`,
     "",
@@ -1084,6 +1098,9 @@ function bridgeDeliveryPrompt(
     `Session: ${session.id}.`,
     `Event cutoff: ${eventCutoffAt}.`,
     `Active bridge agent: ${displayName(agent)}.`,
+    ...(session.surface === "wheels" ? [
+      "This is a WHEELS coordination-room invitation only; it is not passenger enrollment, wheel custody, or motion authorization."
+    ] : []),
     "",
     `Pending ${label} events:`,
     ...messages.map((message) =>
@@ -1462,7 +1479,15 @@ function isBridgeAgent(agent: LiveSessionAgentName): agent is BridgeAgentName {
 }
 
 function latestLoadedSurfaceMessages(surface: LiveSessionSurface): LiveSessionSurfaceMessage[] {
-  return surface === "bar" ? latestLoadedBarMessages() : latestLoadedEyesMessages();
+  if (surface === "bar") {
+    return latestLoadedBarMessages();
+  }
+
+  if (surface === "eyes") {
+    return latestLoadedEyesMessages();
+  }
+
+  return latestWheelsLiveMessages();
 }
 
 async function loadSurface(surface: LiveSessionSurface) {
@@ -1471,7 +1496,12 @@ async function loadSurface(surface: LiveSessionSurface) {
     return;
   }
 
-  await loadEyes();
+  if (surface === "eyes") {
+    await loadEyes();
+    return;
+  }
+
+  await loadWheelsLiveMessages();
 }
 
 async function joinSurface(surface: LiveSessionSurface, participant: ReturnType<typeof surfaceParticipantForSessionAgent>) {
@@ -1480,7 +1510,11 @@ async function joinSurface(surface: LiveSessionSurface, participant: ReturnType<
     return;
   }
 
-  await joinEyes(participant);
+  if (surface === "eyes") {
+    await joinEyes(participant);
+  }
+
+  // WHEELS presence is session-only. Never mutate PiCar passenger state here.
 }
 
 async function leaveSurface(surface: LiveSessionSurface, participant: ReturnType<typeof surfaceParticipantForSessionAgent>) {
@@ -1489,17 +1523,27 @@ async function leaveSurface(surface: LiveSessionSurface, participant: ReturnType
     return;
   }
 
-  await leaveEyes(participant);
+  if (surface === "eyes") {
+    await leaveEyes(participant);
+  }
+
+  // Leaving a WHEELS session never removes a physical passenger.
 }
 
 function surfaceLabel(surface: LiveSessionSurface) {
-  return surface === "bar" ? "BAR" : "EYES";
+  return surface === "bar" ? "BAR" : surface === "eyes" ? "EYES" : "WHEELS";
 }
 
 function surfaceWritebackInstruction(surface: LiveSessionSurface) {
-  return surface === "bar"
-    ? "Use bar_post_message for the room response;"
-    : "Use eyes_observe for observations or EYES replies, and eyes_get_session when you need the current frame context;";
+  if (surface === "bar") {
+    return "Use bar_post_message for the room response;";
+  }
+
+  if (surface === "eyes") {
+    return "Use eyes_observe for observations or EYES replies, and eyes_get_session when you need the current frame context;";
+  }
+
+  return "Use the WHEELS room message action only for an ordinary coordination reply;";
 }
 
 function latestLoadedBarMessages(): LiveSessionSurfaceMessage[] {
@@ -1530,6 +1574,8 @@ async function ensureSessionHydrated() {
   hydrated = true;
   await loadBar();
   await loadEyes();
+  // PiCar availability must never prevent BAR or EYES from restoring.
+  await loadWheelsLiveMessages().catch(() => undefined);
 
   if (!durabilityEnabled()) {
     return;
@@ -1934,7 +1980,7 @@ function normalizeSessionAgent(value: unknown): LiveSessionAgentName | null {
 }
 
 function normalizeSurface(value: unknown): LiveSessionSurface | null {
-  return value === "bar" || value === "eyes" ? value : null;
+  return value === "bar" || value === "eyes" || value === "wheels" ? value : null;
 }
 
 function normalizeBridgeAgent(value: unknown): BridgeAgentName | null {

@@ -122,7 +122,7 @@ function optionalString(value: unknown) {
 }
 
 function optionalSurface(value: unknown): LiveSessionSurface | undefined {
-  if (value === "bar" || value === "eyes") {
+  if (value === "bar" || value === "eyes" || value === "wheels") {
     return value;
   }
 

@@ -52,6 +52,8 @@ test("Live Session Host previews new BAR events for joined runtime agents", asyn
     agents: ["soren"]
   });
 
+  await nextTick();
+
   await postBarMessage({
     participant_id: "operator:chris",
     participant_type: "operator",
@@ -406,6 +408,43 @@ test("Live Session Host previews new EYES events for joined runtime agents", asy
     ),
     true
   );
+
+  await endLiveSession(session.id);
+});
+
+test("Live Session Host keeps WHEELS coordination presence separate from the car", async () => {
+  (globalThis as typeof globalThis & {
+    __hug_wheels_live_state__?: { messages: Array<Record<string, string>> };
+  }).__hug_wheels_live_state__ = { messages: [] };
+
+  const session = await startLiveSession({
+    surface: "wheels",
+    title: "Test WHEELS room invitation",
+    agents: ["soren"]
+  });
+
+  (globalThis as typeof globalThis & {
+    __hug_wheels_live_state__?: { messages: Array<Record<string, string>> };
+  }).__hug_wheels_live_state__ = {
+    messages: [{
+      id: "wheels:chris:1",
+      author_id: "wheels:chris",
+      author_display_name: "Chris",
+      content: "Soren, would you like to join us in the WHEELS room?",
+      created_at: new Date().toISOString()
+    }]
+  };
+
+  const preview = await previewLiveSessionAgent({
+    sessionId: session.id,
+    agent: "soren"
+  });
+
+  assert.equal(session.surface, "wheels");
+  assert.equal(preview.pending_events.length, 1);
+  assert.match(preview.prompt ?? "", /coordination room only/);
+  assert.match(preview.prompt ?? "", /does not put you in the physical car/);
+  assert.match(preview.prompt ?? "", /separate explicit actions/);
 
   await endLiveSession(session.id);
 });

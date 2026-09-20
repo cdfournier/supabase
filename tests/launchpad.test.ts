@@ -92,14 +92,35 @@ test("Launchpad creates an EYES live session through the same host", async () =>
   await endLiveSession(invitation.session_id);
 });
 
-test("Launchpad exposes BAR and EYES as executable surfaces", async () => {
+test("Launchpad exposes BAR, EYES, and WHEELS as executable surfaces", async () => {
   const status = await launchpadStatus();
   const liveAdapters = status.adapters
     .filter((adapter) => adapter.status === "live" && adapter.executable)
     .map((adapter) => adapter.surface)
     .sort();
 
-  assert.deepEqual(liveAdapters, ["bar", "eyes"]);
+  assert.deepEqual(liveAdapters, ["bar", "eyes", "wheels"]);
+});
+
+test("Launchpad WHEELS presence does not imply physical passenger entry", async () => {
+  await endLiveSession();
+
+  const invitation = await createLaunchpadInvitation({
+    surface: "wheels",
+    title: "WHEELS room-only invitation",
+    agents: ["soren", "julian"],
+    intent: "live_session"
+  });
+
+  assert.equal(invitation.live_session?.surface, "wheels");
+  assert.equal(invitation.invitees.every((invitee) => invitee.status === "present"), true);
+  const status = await launchpadStatus();
+  assert.match(
+    status.adapters.find((adapter) => adapter.surface === "wheels")?.notes.join(" ") ?? "",
+    /does not enroll a passenger/
+  );
+
+  await endLiveSession(invitation.session_id ?? undefined);
 });
 
 test("Launchpad end closes the active BAR session and records left receipts", async () => {

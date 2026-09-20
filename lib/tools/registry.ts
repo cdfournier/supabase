@@ -63,6 +63,7 @@ import {
 } from "@/lib/tools/runtime-journal";
 import { postCafeMessage, readCafeRoom } from "@/lib/tools/cafe";
 import { postBarRoomMessage, readBarRoom } from "@/lib/tools/bar";
+import { postWheelsRoomMessage, readWheelsRoom } from "@/lib/tools/wheels";
 import {
   getLiveSessionStatus,
   leaveLiveSession
@@ -376,6 +377,38 @@ export const toolDefinitions: ToolDefinition[] = [
         content: {
           type: "string",
           description: "The message to post to BAR. Keep it appropriate for shared Operator-visible group space."
+        }
+      },
+      required: ["content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_read_room",
+    description:
+      "Read the WHEELS coordination room: current readiness, declared passengers, queue, and bounded recent ride-log messages. This does not put the active agent in the car, claim the wheel, or authorize motion.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Optional number of recent WHEELS ride-log messages. Defaults to 12 and caps at 25."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_post_message",
+    description:
+      "Post an ordinary coordination reply to the WHEELS ride log as the active runtime agent. This cannot enroll a passenger, claim/release the wheel, or move the PiCar.",
+    input_schema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "The coordination message to post in WHEELS."
         }
       },
       required: ["content"],
@@ -1774,6 +1807,16 @@ export async function runTool(
         return {
           ok: true,
           content: await postBarRoomMessage(agent, input)
+        };
+      case "wheels_read_room":
+        return {
+          ok: true,
+          content: await readWheelsRoom(agent, input)
+        };
+      case "wheels_post_message":
+        return {
+          ok: true,
+          content: await postWheelsRoomMessage(agent, input)
         };
       case "live_session_status":
         return {

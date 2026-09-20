@@ -67,7 +67,7 @@ function invitationInput(body: Record<string, unknown>) {
 }
 
 function optionalSurface(value: unknown): LaunchpadSurface | undefined {
-  if (value === "bar" || value === "eyes") {
+  if (value === "bar" || value === "eyes" || value === "wheels") {
     return value;
   }
 

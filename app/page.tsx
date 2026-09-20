@@ -274,7 +274,7 @@ type LiveSessionTickPolicy = {
 };
 type LiveSession = {
   id: string;
-  surface: "bar" | "eyes";
+  surface: "bar" | "eyes" | "wheels";
   status: "active" | "ended";
   title: string;
   tick_policy: LiveSessionTickPolicy;
@@ -346,7 +346,7 @@ type LaunchpadInvitee = {
 };
 type LaunchpadInvitation = {
   id: string;
-  surface: "bar" | "eyes";
+  surface: "bar" | "eyes" | "wheels";
   title: string;
   intent: "gather" | "live_session" | "work_session" | "celebration" | "quiet_check";
   tone: "quiet" | "soft" | "directed" | "high_signal" | "celebratory";
@@ -365,7 +365,7 @@ type LaunchpadInvitation = {
 type LaunchpadStatus = {
   generated_at: string;
   adapters: Array<{
-    surface: "bar" | "eyes";
+    surface: "bar" | "eyes" | "wheels";
     label: string;
     status: "live";
     executable: boolean;
@@ -862,7 +862,7 @@ const launchpadDestinations: Array<{
 }> = [
   { id: "bar", label: "BAR", status: "live" },
   { id: "eyes", label: "EYES", status: "live" },
-  { id: "wheels", label: "WHEELS", status: "planned" },
+  { id: "wheels", label: "WHEELS", status: "live" },
   { id: "world", label: "The World", status: "planned" }
 ];
 const wakeControlAgents: Array<{ id: WakeControlAgentId; label: string }> = [
@@ -909,6 +909,20 @@ export default function Home() {
   const [wheelsMessage, setWheelsMessage] = useState("");
   const [wheelsMessageSending, setWheelsMessageSending] = useState(false);
   const [wheelsMessageError, setWheelsMessageError] = useState("");
+  const [wheelsInviteMessage, setWheelsInviteMessage] = useState(
+    "Would you like to join us in the WHEELS room? We are passengers first; no one is taking the wheel."
+  );
+  const [wheelsInvitees, setWheelsInvitees] = useState<Record<LiveSessionAgent, boolean>>({
+    soren: true,
+    varro: true,
+    julian: true,
+    cael: true
+  });
+  const [wheelsInviteSending, setWheelsInviteSending] = useState(false);
+  const [wheelsInviteError, setWheelsInviteError] = useState("");
+  const [wheelsControlSending, setWheelsControlSending] = useState(false);
+  const [wheelsControlError, setWheelsControlError] = useState("");
+  const [wheelsSupervisionConfirmed, setWheelsSupervisionConfirmed] = useState(false);
   const [liveSession, setLiveSession] = useState<LiveSessionStatus | null>(null);
   const [liveSessionLoading, setLiveSessionLoading] = useState(true);
   const [liveSessionRequestInProgress, setLiveSessionRequestInProgress] = useState(false);
@@ -1493,6 +1507,125 @@ export default function Home() {
       setWheelsMessageSending(false);
     }
   }, [loadWheelsRoom, wheelsMessage, wheelsMessageSending]);
+
+  const inviteToWheelsSession = useCallback(async () => {
+    const message = wheelsInviteMessage.trim();
+    const agents = (Object.entries(wheelsInvitees) as Array<[LiveSessionAgent, boolean]>)
+      .filter(([, selected]) => selected)
+      .map(([agent]) => agent);
+
+    if (!message || !agents.length || wheelsInviteSending) {
+      return;
+    }
+
+    setWheelsInviteSending(true);
+    setWheelsInviteError("");
+
+    try {
+      const inviteResponse = await fetch("/api/launchpad", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          title: "WHEELS live session",
+          surface: "wheels",
+          agents,
+          intent: "live_session",
+          tone: "directed",
+          context: message,
+          tick_mode: "manual"
+        })
+      });
+      const inviteData = await readJsonResponse<{ invitation?: LaunchpadInvitation | null; error?: string }>(inviteResponse);
+
+      if (!inviteResponse.ok || !inviteData.invitation?.session_id) {
+        throw new Error(inviteData.error || "Could not open the WHEELS live session.");
+      }
+
+      const names = agents.map((agent) => displayAgentName(agent)).join(", ");
+      const logResponse = await fetch("/api/wheels/observe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: `WHEELS live-session invitation for ${names}: ${message}`
+        })
+      });
+      const logData = await readJsonResponse<{ ok?: boolean; error?: string }>(logResponse);
+
+      if (!logResponse.ok || !logData.ok) {
+        throw new Error(logData.error || "Could not post the WHEELS invitation.");
+      }
+
+      const tickResponse = await fetch("/api/live-sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "tick",
+          session_id: inviteData.invitation.session_id
+        })
+      });
+      const tickData = await readJsonResponse<{ error?: string }>(tickResponse);
+
+      if (!tickResponse.ok) {
+        throw new Error(tickData.error || "The WHEELS invitation was posted, but delivery could not begin.");
+      }
+
+      setLaunchpadPreview(inviteData.invitation);
+      await Promise.all([
+        loadWheelsRoom(),
+        loadLaunchpadStatus(),
+        loadLiveSessionStatus()
+      ]);
+    } catch (inviteError) {
+      setWheelsInviteError(
+        inviteError instanceof Error ? inviteError.message : "Could not send the WHEELS invitation."
+      );
+    } finally {
+      setWheelsInviteSending(false);
+    }
+  }, [
+    loadLaunchpadStatus,
+    loadLiveSessionStatus,
+    loadWheelsRoom,
+    wheelsInviteMessage,
+    wheelsInviteSending,
+    wheelsInvitees
+  ]);
+
+  const runWheelsControl = useCallback(async (
+    action: "take_wheel" | "release_wheel" | "stop" | "nudge_forward" | "nudge_backward" | "nudge_left" | "nudge_right"
+  ) => {
+    if (wheelsControlSending) {
+      return;
+    }
+
+    setWheelsControlSending(true);
+    setWheelsControlError("");
+
+    try {
+      const response = await fetch("/api/wheels/control", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action,
+          supervision_confirmed: wheelsSupervisionConfirmed
+        })
+      });
+      const data = await readJsonResponse<{ error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "WHEELS control request failed.");
+      }
+
+      await loadWheelsRoom();
+    } catch (controlError) {
+      setWheelsControlError(
+        controlError instanceof Error ? controlError.message : "WHEELS control request failed."
+      );
+    } finally {
+      setWheelsControlSending(false);
+    }
+  }, [loadWheelsRoom, wheelsControlSending, wheelsSupervisionConfirmed]);
 
   useEffect(() => {
     void loadCafe();
@@ -3196,6 +3329,25 @@ export default function Home() {
           message={wheelsMessage}
           messageError={wheelsMessageError}
           messageSending={wheelsMessageSending}
+          inviteError={wheelsInviteError}
+          inviteMessage={wheelsInviteMessage}
+          inviteSending={wheelsInviteSending}
+          invitees={wheelsInvitees}
+          onInvite={() => {
+            void inviteToWheelsSession();
+          }}
+          onInviteMessageChange={setWheelsInviteMessage}
+          onInviteeChange={(agent, selected) => setWheelsInvitees((current) => ({
+            ...current,
+            [agent]: selected
+          }))}
+          controlError={wheelsControlError}
+          controlSending={wheelsControlSending}
+          onControl={(action) => {
+            void runWheelsControl(action);
+          }}
+          onSupervisionChange={setWheelsSupervisionConfirmed}
+          supervisionConfirmed={wheelsSupervisionConfirmed}
           onRefresh={() => {
             void loadWheelsRoom();
           }}
@@ -3771,6 +3923,18 @@ function WheelsRoomView({
   message,
   messageError,
   messageSending,
+  inviteError,
+  inviteMessage,
+  inviteSending,
+  invitees,
+  controlError,
+  controlSending,
+  onControl,
+  onSupervisionChange,
+  supervisionConfirmed,
+  onInvite,
+  onInviteMessageChange,
+  onInviteeChange,
   onMessageChange,
   onMessageSubmit,
   onRefresh,
@@ -3785,6 +3949,18 @@ function WheelsRoomView({
   message: string;
   messageError: string;
   messageSending: boolean;
+  inviteError: string;
+  inviteMessage: string;
+  inviteSending: boolean;
+  invitees: Record<LiveSessionAgent, boolean>;
+  controlError: string;
+  controlSending: boolean;
+  onControl: (action: "take_wheel" | "release_wheel" | "stop" | "nudge_forward" | "nudge_backward" | "nudge_left" | "nudge_right") => void;
+  onSupervisionChange: (confirmed: boolean) => void;
+  supervisionConfirmed: boolean;
+  onInvite: () => void;
+  onInviteMessageChange: (message: string) => void;
+  onInviteeChange: (agent: LiveSessionAgent, selected: boolean) => void;
   onMessageChange: (message: string) => void;
   onMessageSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
@@ -3876,6 +4052,53 @@ function WheelsRoomView({
           ) : null}
           </section>
 
+          <section className="wheels-controls-card" aria-label="Operator drive controls">
+            <div className="wheels-card-heading">
+              <div>
+                <p className="wheels-eyebrow">Operator controls</p>
+                <h3>Chris at the wheel</h3>
+              </div>
+              <span>{readiness?.wheel.driver === "Chris" ? "held" : "parked"}</span>
+            </div>
+            <p className="health-empty">Bounded controls only. The Pi must independently accept every request.</p>
+            <div className="wheels-wheel-actions">
+              <button
+                disabled={controlSending || Boolean(readiness?.wheel.driver && readiness.wheel.driver !== "Chris")}
+                onClick={() => onControl("take_wheel")}
+                type="button"
+              >
+                Take wheel
+              </button>
+              <button
+                disabled={controlSending || readiness?.wheel.driver !== "Chris"}
+                onClick={() => onControl("release_wheel")}
+                type="button"
+              >
+                Release wheel
+              </button>
+              <button className="wheels-stop" disabled={controlSending} onClick={() => onControl("stop")} type="button">
+                Stop
+              </button>
+            </div>
+            <label className="wheels-supervision">
+              <input
+                checked={supervisionConfirmed}
+                disabled={controlSending}
+                onChange={(event) => onSupervisionChange(event.target.checked)}
+                type="checkbox"
+              />
+              <span>I have current visual confirmation and direct supervision.</span>
+            </label>
+            <div className="wheels-nudges" aria-label="Bounded drive nudges">
+              <button disabled={controlSending || !readiness?.preflight_ready || readiness.wheel.driver !== "Chris" || !supervisionConfirmed} onClick={() => onControl("nudge_left")} type="button">Forward left</button>
+              <button disabled={controlSending || !readiness?.preflight_ready || readiness.wheel.driver !== "Chris" || !supervisionConfirmed} onClick={() => onControl("nudge_forward")} type="button">Forward</button>
+              <button disabled={controlSending || !readiness?.preflight_ready || readiness.wheel.driver !== "Chris" || !supervisionConfirmed} onClick={() => onControl("nudge_right")} type="button">Forward right</button>
+              <button disabled={controlSending || !readiness?.preflight_ready || readiness.wheel.driver !== "Chris" || !supervisionConfirmed} onClick={() => onControl("nudge_backward")} type="button">Back</button>
+            </div>
+            <p className="wheels-control-note">Each nudge is speed 20 for 0.2 seconds; continuous motion is not available here.</p>
+            {controlError ? <p className="error">{controlError}</p> : null}
+          </section>
+
           <section className="wheels-ride-card" aria-label="Ride log">
           <div className="wheels-card-heading">
             <div>
@@ -3899,6 +4122,49 @@ function WheelsRoomView({
           {queue.length ? (
             <p className="wheels-queue">Queue: {queue.map((entry) => entry.name).join(" → ")}</p>
           ) : null}
+          <section className="wheels-invite" aria-label="Invite to WHEELS live session">
+            <div className="wheels-card-heading">
+              <div>
+                <p className="wheels-eyebrow">Live session</p>
+                <h3>Invite to the room</h3>
+              </div>
+              <span>room only</span>
+            </div>
+            <label>
+              <span className="visually-hidden">Invitation prompt</span>
+              <textarea
+                disabled={inviteSending}
+                maxLength={600}
+                onChange={(event) => onInviteMessageChange(event.target.value)}
+                value={inviteMessage}
+              />
+            </label>
+            <div className="wheels-invitees" aria-label="Invitees">
+              {(Object.keys(invitees) as LiveSessionAgent[]).map((agent) => (
+                <label key={agent}>
+                  <input
+                    checked={invitees[agent]}
+                    disabled={inviteSending}
+                    onChange={(event) => onInviteeChange(agent, event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>{displayAgentName(agent)}</span>
+                </label>
+              ))}
+            </div>
+            <div className="wheels-invite-actions">
+              <button
+                className="send"
+                disabled={inviteSending || !inviteMessage.trim() || !Object.values(invitees).some(Boolean)}
+                onClick={onInvite}
+                type="button"
+              >
+                {inviteSending ? "Inviting" : "Invite to session"}
+              </button>
+              <span>Session presence only — no passenger entry, wheel claim, or motion.</span>
+            </div>
+            {inviteError ? <p className="error">{inviteError}</p> : null}
+          </section>
           <form className="wheels-composer" onSubmit={onMessageSubmit}>
             <label className="visually-hidden" htmlFor="wheels-message">Post to the ride log</label>
             <div className="composer-row">
@@ -3947,7 +4213,7 @@ function WheelsRoomView({
         </div>
 
         <p className="wheels-room-note">
-          Read-only room for now. The Pi remains the authority for movement; guarded Operator controls come next.
+          The Pi remains the authority for every passenger, wheel, and movement change. A live-session invitation only opens the coordination room.
         </p>
         {error ? <p className="error">{error}</p> : null}
       </div>
@@ -5399,7 +5665,11 @@ function launchpadRequestBody(
 
   return {
     action,
-    title: draft.destination === "eyes" ? "Whole family EYES" : "Whole family BAR",
+    title: draft.destination === "eyes"
+      ? "Whole family EYES"
+      : draft.destination === "wheels"
+        ? "Whole family WHEELS"
+        : "Whole family BAR",
     surface: draft.destination,
     agents: OPERATOR_NOTE_RECIPIENTS.filter((agent) => draft.agents[agent]),
     intent: "live_session",
@@ -5498,7 +5768,7 @@ function SessionPanel({
       </div>
 
       <div className="health-panel-body" hidden={!expanded}>
-        <p className="health-empty">Gather people in BAR or EYES. Delivery follows each person’s configured lane.</p>
+        <p className="health-empty">Gather people in BAR, EYES, or WHEELS. WHEELS sessions are room presence only: no passenger entry, wheel custody, or motion is implied.</p>
 
         {activeSession ? (
           <div className="live-session-summary">

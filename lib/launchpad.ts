@@ -302,6 +302,16 @@ function surfaceAdapters(): LaunchpadSurfaceAdapter[] {
       status: "live",
       executable: true,
       notes: ["Uses Live Session Host plus EYES presence receipts and shared frame context."]
+    },
+    {
+      surface: "wheels",
+      label: "WHEELS",
+      status: "live",
+      executable: true,
+      notes: [
+        "Uses Live Session Host plus the read-only PiCar ride log.",
+        "Joining this live session does not enroll a passenger, claim the wheel, or authorize motion."
+      ]
     }
   ];
 }
@@ -353,7 +363,7 @@ function displayName(agent: LaunchpadAgentName) {
 }
 
 function surfaceLabel(surface: LaunchpadSurface) {
-  return surface === "bar" ? "BAR" : "EYES";
+  return surface === "bar" ? "BAR" : surface === "eyes" ? "EYES" : "WHEELS";
 }
 
 function optionalText(value: unknown) {
@@ -505,7 +515,7 @@ function normalizeAgent(value: unknown): LaunchpadAgentName | null {
 }
 
 function normalizeSurface(value: unknown): LaunchpadSurface | null {
-  return value === "bar" || value === "eyes" ? value : null;
+  return value === "bar" || value === "eyes" || value === "wheels" ? value : null;
 }
 
 function normalizeIntent(value: unknown): LaunchpadIntent {

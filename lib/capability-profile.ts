@@ -315,6 +315,11 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   cafe_post_message: { surface: "cafe", action: "write" },
   bar_read_room: { surface: "bar", action: "read" },
   bar_post_message: { surface: "bar", action: "write" },
+  // WHEELS room chat uses the existing BAR-style shared-room permission. The
+  // physical WHEELS capability remains off and is never used for coordination
+  // messages; future passenger and motion tools will require their own gates.
+  wheels_read_room: { surface: "bar", action: "read" },
+  wheels_post_message: { surface: "bar", action: "write" },
   live_session_status: { surface: "live_sessions", action: "read" },
   live_session_leave: { surface: "live_sessions", action: "write" },
   work_packet_list: { surface: "work_packets", action: "read" },

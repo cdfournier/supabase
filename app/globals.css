@@ -1170,6 +1170,7 @@ button {
 
 .wheels-camera-card,
 .wheels-readiness-card,
+.wheels-controls-card,
 .wheels-ride-card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -1213,6 +1214,56 @@ button {
 .wheels-readiness-card {
   display: grid;
   gap: 12px;
+}
+
+.wheels-controls-card {
+  display: grid;
+  gap: 12px;
+}
+
+.wheels-controls-card .health-empty {
+  margin: 0;
+}
+
+.wheels-wheel-actions,
+.wheels-nudges {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wheels-nudges {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wheels-wheel-actions button,
+.wheels-nudges button {
+  min-height: 36px;
+}
+
+.wheels-stop {
+  border-color: var(--error) !important;
+  color: var(--error);
+}
+
+.wheels-supervision {
+  align-items: flex-start;
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  line-height: 1.35;
+}
+
+.wheels-supervision input {
+  margin-top: 2px;
+}
+
+.wheels-control-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
 }
 
 .wheels-card-heading {
@@ -1311,6 +1362,46 @@ button {
   display: grid;
   gap: 8px;
   padding-top: 14px;
+}
+
+.wheels-invite {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.wheels-invite textarea {
+  min-height: 72px;
+  resize: vertical;
+  width: 100%;
+}
+
+.wheels-invitees {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.wheels-invitees label {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.wheels-invite-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.wheels-invite-actions span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .wheels-composer .composer-actions {
