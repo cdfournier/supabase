@@ -439,6 +439,28 @@ button {
   background: rgba(255, 255, 255, 0.66);
 }
 
+.wheels-panel {
+  background: rgba(233, 242, 237, 0.72);
+}
+
+.wheels-list dd {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.wheels-next,
+.wheels-caveat {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 10px 0 0;
+}
+
+.wheels-next {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
 .free-time-list {
   gap: 7px;
 }

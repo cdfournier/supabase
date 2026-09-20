@@ -758,7 +758,38 @@ type GitHubEvidenceHandle = {
   max_bytes?: number;
 };
 
-type ControlPanelKey = "runtime" | "freeMoments" | "launchpad" | "wake" | "packetSignals";
+type WheelsReadiness = {
+  generated_at: string;
+  wheel: {
+    driver: string | null;
+    state: "held" | "unassigned";
+    motion_gate: "active";
+  };
+  camera: {
+    state: "live" | "stale" | "error" | "unknown";
+    age_seconds: number | null;
+    last_success_at: number | null;
+    last_error: string | null;
+  };
+  distance: {
+    state: "reported" | "open" | "error" | "unknown";
+    cm: number | null;
+    error: string | null;
+  };
+  preflight_ready: boolean;
+  needs: string[];
+  supervision: string;
+  network: string;
+};
+
+type WheelsReadinessResponse = {
+  error?: string;
+  source?: string;
+  fetched_at?: string;
+  readiness?: WheelsReadiness;
+};
+
+type ControlPanelKey = "runtime" | "wheels" | "freeMoments" | "launchpad" | "wake" | "packetSignals";
 type ControlPanelState = Record<ControlPanelKey, boolean>;
 
 const defaultAgent: AgentName = "soren";
@@ -767,6 +798,7 @@ const workPacketSignalsPollMs = 15_000;
 const liveTranscriptLimit = 120;
 const expandedControlPanels: ControlPanelState = {
   runtime: true,
+  wheels: true,
   freeMoments: true,
   launchpad: true,
   wake: true,
@@ -774,6 +806,7 @@ const expandedControlPanels: ControlPanelState = {
 };
 const collapsedControlPanels: ControlPanelState = {
   runtime: false,
+  wheels: false,
   freeMoments: false,
   launchpad: false,
   wake: false,
@@ -866,6 +899,9 @@ export default function Home() {
     intervalSeconds: 30
   });
   const [health, setHealth] = useState<Health | null>(null);
+  const [wheelsReadiness, setWheelsReadiness] = useState<WheelsReadiness | null>(null);
+  const [wheelsReadinessLoading, setWheelsReadinessLoading] = useState(true);
+  const [wheelsReadinessError, setWheelsReadinessError] = useState("");
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
   const [toolEvents, setToolEvents] = useState<Record<string, ToolEvent[]>>({});
   const [freeTimeLoading, setFreeTimeLoading] = useState(true);
@@ -1335,6 +1371,29 @@ export default function Home() {
     }
   }, []);
 
+  const loadWheelsReadiness = useCallback(async () => {
+    setWheelsReadinessLoading(true);
+    setWheelsReadinessError("");
+
+    try {
+      const response = await fetch("/api/wheels/readiness", { cache: "no-store" });
+      const data = await readJsonResponse<WheelsReadinessResponse>(response);
+
+      if (!response.ok || !data.readiness) {
+        throw new Error(data.error || "Could not read PiCar readiness.");
+      }
+
+      setWheelsReadiness(data.readiness);
+    } catch (readinessError) {
+      setWheelsReadiness(null);
+      setWheelsReadinessError(
+        readinessError instanceof Error ? readinessError.message : "Could not read PiCar readiness."
+      );
+    } finally {
+      setWheelsReadinessLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadCafe();
   }, [loadCafe]);
@@ -1354,6 +1413,10 @@ export default function Home() {
   useEffect(() => {
     void loadLaunchpadStatus();
   }, [loadLaunchpadStatus]);
+
+  useEffect(() => {
+    void loadWheelsReadiness();
+  }, [loadWheelsReadiness]);
 
   useEffect(() => {
     void loadOperatorInbox();
@@ -2892,6 +2955,15 @@ export default function Home() {
           onPreviewCompaction={previewCompaction}
           savedProposalError={savedProposalError}
           savedProposalLoading={savedProposalLoading}
+        />
+
+        <WheelsReadinessPanel
+          error={wheelsReadinessError}
+          expanded={controlPanels.wheels}
+          loading={wheelsReadinessLoading}
+          onRefresh={loadWheelsReadiness}
+          onToggle={() => toggleControlPanel("wheels")}
+          readiness={wheelsReadiness}
         />
 
         <FreeTimePanel
@@ -5497,6 +5569,104 @@ function WakeSwitch({
       </span>
       <span aria-hidden="true" className="wake-switch-text">{checked ? onText : offText}</span>
     </label>
+  );
+}
+
+function WheelsReadinessPanel({
+  error,
+  expanded,
+  loading,
+  onRefresh,
+  onToggle,
+  readiness
+}: {
+  error: string;
+  expanded: boolean;
+  loading: boolean;
+  onRefresh: () => void;
+  onToggle: () => void;
+  readiness: WheelsReadiness | null;
+}) {
+  const state = readiness?.preflight_ready ? "ok" : readiness ? "warn" : "warn";
+  const driver = readiness?.wheel.driver;
+  const distance = readiness?.distance;
+  const distanceLabel = !distance
+    ? "unknown"
+    : distance.state === "open"
+      ? "open space"
+      : distance.state === "reported" && distance.cm !== null
+        ? `${distance.cm} cm`
+        : distance.state;
+  const cameraAge = readiness?.camera.age_seconds;
+  const cameraLabel = !readiness
+    ? "unknown"
+    : readiness.camera.state === "live"
+      ? `live${cameraAge === null ? "" : ` · ${cameraAge}s ago`}`
+      : readiness.camera.state;
+
+  return (
+    <section className={`health-panel wheels-panel ${expanded ? "" : "collapsed"}`} aria-label="WHEELS readiness">
+      <div className="health-heading">
+        <h2>
+          <button
+            aria-expanded={expanded}
+            className="health-toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            <span>WHEELS</span>
+            <span className="health-toggle-icon" aria-hidden="true">
+              {expanded ? "-" : "+"}
+            </span>
+          </button>
+        </h2>
+        <span
+          className={`status-pill ${state}`}
+          title={readiness?.preflight_ready ? "preflight ready" : "preflight incomplete"}
+        >
+          {readiness?.preflight_ready ? "ready" : readiness ? "parked" : "unknown"}
+        </span>
+      </div>
+
+      <div className="health-panel-body" hidden={!expanded}>
+        {readiness ? (
+          <>
+            <dl className="health-list wheels-list">
+              <div>
+                <dt>Wheel</dt>
+                <dd>{driver ? `held by ${driver}` : "unassigned"}</dd>
+              </div>
+              <div>
+                <dt>Gate</dt>
+                <dd>{readiness.wheel.motion_gate}</dd>
+              </div>
+              <div>
+                <dt>Camera</dt>
+                <dd>{cameraLabel}</dd>
+              </div>
+              <div>
+                <dt>Distance</dt>
+                <dd>{distanceLabel}</dd>
+              </div>
+            </dl>
+
+            {readiness.needs.length ? (
+              <p className="wheels-next">Next: {readiness.needs.join(" · ")}</p>
+            ) : null}
+            <p className="wheels-caveat">
+              {readiness.supervision} · network {readiness.network}
+            </p>
+          </>
+        ) : (
+          <p className="health-empty">{loading ? "Reading PiCar..." : "PiCar readiness unavailable."}</p>
+        )}
+
+        <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">
+          {loading ? "Reading" : "Refresh PiCar"}
+        </button>
+        {error ? <p className="health-error">{error}</p> : null}
+      </div>
+    </section>
   );
 }
 
