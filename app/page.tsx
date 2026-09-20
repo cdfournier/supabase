@@ -5662,7 +5662,7 @@ function WheelsReadinessPanel({
         )}
 
         <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">
-          {loading ? "Reading" : "Refresh PiCar"}
+          {loading ? "Reading" : "Check readiness"}
         </button>
         {error ? <p className="health-error">{error}</p> : null}
       </div>
