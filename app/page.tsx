@@ -1023,9 +1023,8 @@ export default function Home() {
   );
   const activeMessages = transcripts[selectedAgent] ?? [];
   const activeToolEvents = toolEvents[selectedAgent] ?? [];
-  const pendingOperatorRollups = operatorInboxPackets.filter(isPendingOperatorRollup);
   const unreadOperatorNotes = operatorInboxOperatorNotes.filter((note) => note.operator_status === "unread");
-  const operatorInboxCount = pendingOperatorRollups.length + unreadOperatorNotes.length;
+  const operatorInboxCount = operatorInboxPackets.length + unreadOperatorNotes.length;
   const barActivePresenceCount = (bar?.presence ?? []).filter((receipt) =>
     ["present", "degraded"].includes(receipt.state)
   ).length;
@@ -2421,6 +2420,48 @@ export default function Home() {
     }
   }
 
+  async function closeOperatorPacket(packetId: string) {
+    if (operatorInboxActionInProgress) {
+      return;
+    }
+
+    setOperatorInboxActionInProgress(`${packetId}:close`);
+    setOperatorInboxError("");
+
+    try {
+      const response = await fetch("/api/work-packets", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "close",
+          id: packetId,
+          note: operatorInboxNotes[packetId] ?? ""
+        })
+      });
+      const data = await readJsonResponse<{ error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not close work packet.");
+      }
+
+      setOperatorInboxNotes((current) => {
+        const next = { ...current };
+        delete next[packetId];
+        return next;
+      });
+      await loadOperatorInbox();
+      void loadWorkPacketSignalsStatus();
+    } catch (closeError) {
+      setOperatorInboxError(
+        closeError instanceof Error ? closeError.message : "Could not close work packet."
+      );
+    } finally {
+      setOperatorInboxActionInProgress(null);
+    }
+  }
+
   async function updateOperatorNote(
     noteId: string,
     action: "reply" | "mark_read" | "archive",
@@ -3383,8 +3424,9 @@ export default function Home() {
             setOperatorInboxNotes((current) => ({ ...current, [packetId]: note }))
           }
           onRefresh={loadOperatorInbox}
+          onClose={closeOperatorPacket}
           onReview={reviewOperatorRollup}
-          packets={pendingOperatorRollups}
+          packets={operatorInboxPackets}
         />
       ) : (
       <section className="main">
@@ -4489,6 +4531,7 @@ function OperatorInboxView({
   onOperatorReplyChange,
   onOperatorNoteTrailToggle,
   onRefresh,
+  onClose,
   onReview,
   operatorNoteDraft,
   operatorNoteDetails,
@@ -4514,6 +4557,7 @@ function OperatorInboxView({
   onOperatorReplyChange: (noteId: string, reply: string) => void;
   onOperatorNoteTrailToggle: (noteId: string) => void;
   onRefresh: () => void;
+  onClose: (packetId: string) => void;
   onReview: (packetId: string, reviewState: "approved" | "request_changes" | "hold") => void;
   operatorNoteDraft: { agent: OperatorNoteRecipient; subject: string; body: string };
   operatorNoteDetails: Record<string, OperatorNoteDetail>;
@@ -4853,6 +4897,14 @@ function OperatorInboxView({
                   type="button"
                 >
                   Hold
+                </button>
+                <button
+                  className="quiet-action"
+                  disabled={actionDisabled}
+                  onClick={() => onClose(packet.id)}
+                  type="button"
+                >
+                  {actionInProgress === `${packet.id}:close` ? "Closing" : "Close Packet"}
                 </button>
               </div>
             </article>
@@ -6589,18 +6641,6 @@ function operatorNoteMatchesFilter(note: OperatorNote, filter: OperatorNoteFilte
     default:
       return true;
   }
-}
-
-function isPendingOperatorRollup(packet: WorkPacket) {
-  const rollup = packet.review_rollup ?? {};
-
-  return (
-    packet.status === "review" &&
-    Boolean(rollup.summary?.trim()) &&
-    rollup.operator_review?.state !== "approved" &&
-    rollup.operator_review?.state !== "changes_requested" &&
-    rollup.operator_review?.state !== "hold"
-  );
 }
 
 function attachmentsFromCafeMetadata(metadata: Record<string, unknown>): SourceMaterialReference[] {

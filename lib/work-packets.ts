@@ -71,7 +71,8 @@ export type WorkPacketEventType =
   | "evidence_resolved"
   | "packet_ready_for_rollup"
   | "rollup"
-  | "rollup_review";
+  | "rollup_review"
+  | "closed";
 export type WorkPacketRollupReviewState = "approved" | "request_changes" | "hold";
 
 type Supabase = SupabaseClient;
@@ -439,6 +440,64 @@ export async function reviewWorkPacketRollup(supabase: Supabase, input: unknown,
       review_state: storedReviewState,
       note
     }
+  );
+
+  return getWorkPacket(supabase, { id: packetId });
+}
+
+/**
+ * Records the final Operator conclusion for a reviewed packet.
+ *
+ * Approved rollups close automatically. This action handles older packets
+ * whose review is substantively complete but never received that final state
+ * transition, preventing them from resurfacing as stale work.
+ */
+export async function closeWorkPacket(supabase: Supabase, input: unknown, actor: Actor) {
+  if (!isRecord(input)) {
+    throw new Error("work_packet_close requires an object input.");
+  }
+
+  const packetId = requireId(input);
+  const note = optionalString(input.note, MAX_TEXT) ?? "";
+  const packet = await loadPacket(supabase, packetId);
+
+  if (packet.status === "closed") {
+    throw new Error("This work packet is already closed.");
+  }
+
+  if (packet.status !== "review") {
+    throw new Error(`Only a packet in review may be closed; this packet is ${packet.status}.`);
+  }
+
+  const closedAt = new Date().toISOString();
+  const closure = {
+    closed_by: actor.actorId,
+    closed_at: closedAt,
+    note
+  };
+
+  const { error } = await supabase
+    .from("work_packets")
+    .update({
+      metadata: { ...packet.metadata, closure },
+      status: "closed",
+      updated_at: closedAt,
+      closed_at: closedAt
+    })
+    .eq("id", packetId);
+
+  if (error) {
+    throw workPacketSetupError(error.message);
+  }
+
+  await insertPacketEvent(
+    supabase,
+    packetId,
+    actor,
+    "closed",
+    null,
+    note || "Operator closed the reviewed work packet.",
+    closure
   );
 
   return getWorkPacket(supabase, { id: packetId });
