@@ -1042,7 +1042,7 @@ button {
 }
 
 .eyes-main {
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
 }
 
 .bar-header {
@@ -1074,6 +1074,21 @@ button {
 .room-utility .quiet-action {
   margin: 0;
   max-width: 140px;
+}
+
+.eyes-header h2 {
+  font-size: 24px;
+}
+
+.eyes-utility {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.eyes-utility .quiet-action {
+  flex: 0 0 auto;
 }
 
 .participant-chip.stale,
@@ -1127,6 +1142,12 @@ button {
   align-content: start;
   display: grid;
   gap: 10px;
+}
+
+.eyes-camera-status {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
 }
 
 .eyes-controls button {
@@ -2498,6 +2519,15 @@ textarea {
 
   .room-utility {
     padding: 10px 16px;
+  }
+
+  .eyes-utility {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eyes-utility .quiet-action {
+    align-self: start;
   }
 
   .wheels-header {

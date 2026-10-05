@@ -4426,23 +4426,8 @@ function EyesView({
 
   return (
     <section className="main bar-main eyes-main">
-      <header className="header cafe-header bar-header">
-        <h2 className="visually-hidden">{eyes?.room.title ?? "EYES"}</h2>
-        <div className="cafe-participants" aria-label="EYES participants">
-          {presence.length ? (
-            presence.map((receipt) => (
-              <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
-                <strong>{receipt.display_name}</strong>
-                <small>{presenceStateLabel(receipt.state)}</small>
-              </span>
-            ))
-          ) : (
-            <span className="participant-chip muted">No observers loaded</span>
-          )}
-        </div>
-        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
-          Refresh
-        </button>
+      <header className="header eyes-header">
+        <h2>{eyes?.room.title ?? "EYES"}</h2>
       </header>
 
       <div className="eyes-viewfinder">
@@ -4454,9 +4439,17 @@ function EyesView({
         </div>
         <canvas ref={canvasRef} />
         <div className="eyes-controls">
-          <button disabled={sending || cameraState === "starting"} onClick={startCamera} type="button">
-            {cameraState === "live" ? "Camera live" : "Start camera"}
-          </button>
+          {cameraState === "idle" ? (
+            <button disabled={sending} onClick={startCamera} type="button">
+              Start camera
+            </button>
+          ) : null}
+          {cameraState === "starting" ? <p className="eyes-camera-status">Starting camera…</p> : null}
+          {cameraState === "unavailable" ? (
+            <button disabled={sending} onClick={startCamera} type="button">
+              Retry camera
+            </button>
+          ) : null}
           <button disabled={sending || cameraState !== "live"} onClick={captureFrame} type="button">
             Capture frame
           </button>
@@ -4540,6 +4533,27 @@ function EyesView({
           </div>
         ) : null}
       </form>
+
+      <div className="room-utility eyes-utility">
+        <div>
+          <p className="room-presence-label">Present</p>
+          <div className="cafe-participants" aria-label="EYES participants">
+            {presence.length ? (
+              presence.map((receipt) => (
+                <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
+                  <strong>{receipt.display_name}</strong>
+                  <small>{presenceStateLabel(receipt.state)}</small>
+                </span>
+              ))
+            ) : (
+              <span className="participant-chip muted">No observers loaded</span>
+            )}
+          </div>
+        </div>
+        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
+          Refresh EYES
+        </button>
+      </div>
 
       <div className="transcript cafe-transcript bar-transcript">
         {loading ? <p className="empty">Loading EYES...</p> : null}
