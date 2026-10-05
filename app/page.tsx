@@ -4355,7 +4355,6 @@ function EyesView({
   const [cameraState, setCameraState] = useState<"idle" | "starting" | "live" | "unavailable">("idle");
   const presence = eyes?.presence ?? [];
   const messages = eyes?.messages ?? [];
-  const frames = eyes?.frames ?? [];
 
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -4457,17 +4456,6 @@ function EyesView({
             Attach frame
           </button>
         </div>
-        {frames.length ? (
-          <div className="eyes-latest" aria-label="Latest EYES frames">
-            <strong>Latest frames</strong>
-            {frames.map((frame) => (
-              <span key={`${frame.id}-${frame.sequence}`}>
-                {frame.title}
-                <small>{formatMessageTime(frame.captured_at)}</small>
-              </span>
-            ))}
-          </div>
-        ) : null}
       </div>
 
       <form
@@ -4574,14 +4562,20 @@ function EyesView({
               </div>
               <div>{eyesMessage.content}</div>
               {messageFrames.length > 0 ? (
-                <div className="message-attachments" aria-label="EYES message frames">
+                <div className="eyes-message-frames" aria-label="EYES message frames">
                   {messageFrames.map((frame) => (
-                    <span className="message-attachment" key={frame.id}>
-                      {frame.title}
-                      <small>
-                        {frame.material_type} · {formatBytes(frame.size_bytes)}
-                      </small>
-                    </span>
+                    <figure className="eyes-message-frame" key={frame.id}>
+                      <img
+                        alt={frame.title}
+                        decoding="async"
+                        loading="lazy"
+                        src={`/api/eyes/frames/${encodeURIComponent(frame.id)}`}
+                      />
+                      <figcaption>
+                        {frame.title}
+                        <small>{formatMessageTime(eyesMessage.created_at)}</small>
+                      </figcaption>
+                    </figure>
                   ))}
                 </div>
               ) : null}

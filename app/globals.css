@@ -1165,31 +1165,39 @@ button {
   opacity: 0.7;
 }
 
-.eyes-latest {
-  align-self: start;
+.eyes-message-frames {
   display: grid;
-  gap: 6px;
-  grid-column: 2;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 12px;
 }
 
-.eyes-latest strong {
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.eyes-latest span {
+.eyes-message-frame {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
-  display: grid;
-  font-size: 13px;
-  gap: 2px;
+  margin: 0;
   min-width: 0;
+  overflow: hidden;
+}
+
+.eyes-message-frame img {
+  aspect-ratio: 4 / 3;
+  background: #1f2528;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.eyes-message-frame figcaption {
+  display: grid;
+  font-size: 12px;
+  gap: 2px;
+  overflow-wrap: anywhere;
   padding: 8px 10px;
 }
 
-.eyes-latest small {
+.eyes-message-frame small {
   color: var(--muted);
   font-size: 11px;
 }
@@ -2561,10 +2569,6 @@ textarea {
   }
 
   .wheels-ride-card {
-    grid-column: auto;
-  }
-
-  .eyes-latest {
     grid-column: auto;
   }
 
