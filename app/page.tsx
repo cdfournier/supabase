@@ -3883,22 +3883,22 @@ function BarView({
   return (
     <section className="main bar-main">
       <header className="header cafe-header bar-header">
-        <h2 className="visually-hidden">{bar?.room.title ?? "BAR"}</h2>
-        <div className="cafe-participants" aria-label="BAR participants">
-          {presence.length ? (
-            presence.map((receipt) => (
-              <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
-                <strong>{receipt.display_name}</strong>
-                <small>{presenceStateLabel(receipt.state)}</small>
-              </span>
-            ))
-          ) : (
-            <span className="participant-chip muted">No participants loaded</span>
-          )}
+        <h2>{bar?.room.title ?? "BAR"}</h2>
+        <div>
+          <p className="room-presence-label">Present</p>
+          <div className="cafe-participants" aria-label="BAR participants">
+            {presence.length ? (
+              presence.map((receipt) => (
+                <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
+                  <strong>{receipt.display_name}</strong>
+                  <small>{presenceStateLabel(receipt.state)}</small>
+                </span>
+              ))
+            ) : (
+              <span className="participant-chip muted">No participants loaded</span>
+            )}
+          </div>
         </div>
-        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
-          Refresh
-        </button>
       </header>
 
       <form
@@ -3971,6 +3971,12 @@ function BarView({
           </div>
         ) : null}
       </form>
+
+      <div className="room-utility">
+        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
+          Refresh BAR
+        </button>
+      </div>
 
       <div className="transcript cafe-transcript bar-transcript">
         {loading ? <p className="empty">Loading BAR...</p> : null}

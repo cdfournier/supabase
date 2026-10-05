@@ -1038,15 +1038,41 @@ button {
 }
 
 .bar-main {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .eyes-main {
   grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
-.bar-header .quiet-action {
-  margin-top: 0;
+.bar-header {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  justify-content: stretch;
+}
+
+.bar-header h2 {
+  font-size: 24px;
+}
+
+.room-presence-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.room-utility {
+  border-bottom: 1px solid var(--line);
+  background: #f9fbfa;
+  padding: 10px 24px;
+}
+
+.room-utility .quiet-action {
+  margin: 0;
   max-width: 140px;
 }
 
@@ -2468,6 +2494,10 @@ textarea {
 
   .wheels-room {
     padding: 16px;
+  }
+
+  .room-utility {
+    padding: 10px 16px;
   }
 
   .wheels-header {
