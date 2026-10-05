@@ -1210,6 +1210,10 @@ button {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.wheels-room-main {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
 .shell.wheels-focus {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1268,6 +1272,59 @@ button {
   line-height: 1.45;
   margin: 6px 0 0;
   max-width: 620px;
+}
+
+.wheels-composer.wheels-room-composer {
+  border-top: 0;
+  padding-top: 16px;
+}
+
+.wheels-utility {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.wheels-room-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.wheels-room-actions .quiet-action {
+  margin: 0;
+  width: auto;
+}
+
+.wheels-drive-entry {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.wheels-session-details {
+  border-bottom: 1px solid var(--line);
+  background: #f9fbfa;
+  padding: 0 24px 12px;
+}
+
+.wheels-session-details summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 10px 0 0;
+  text-transform: uppercase;
+}
+
+.wheels-session-details .wheels-invite {
+  margin-top: 10px;
+}
+
+.wheels-room-error {
+  margin: 12px 24px;
 }
 
 .wheels-room-grid {
@@ -2523,6 +2580,31 @@ textarea {
 
   .wheels-room {
     padding: 16px;
+  }
+
+  .wheels-utility {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .wheels-room-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .wheels-room-actions .quiet-action {
+    width: 100%;
+  }
+
+  .wheels-session-details {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .wheels-room-error {
+    margin-left: 16px;
+    margin-right: 16px;
   }
 
   .room-utility {

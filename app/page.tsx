@@ -3173,6 +3173,7 @@ export default function Home() {
               } else if (surface === "eyes") {
                 void loadEyes();
               } else if (surface === "wheels") {
+                setWheelsFocused(false);
                 void loadWheelsRoom();
               } else if (surface === "inbox") {
                 void loadOperatorInbox();
@@ -3234,6 +3235,7 @@ export default function Home() {
             className={`cafe-button ${activeSurface === "wheels" ? "active" : ""}`}
             onClick={() => {
               setActiveSurface("wheels");
+              setWheelsFocused(false);
               void loadWheelsRoom();
             }}
             type="button"
@@ -4088,12 +4090,143 @@ function WheelsRoomView({
       ? `live · ${readiness.camera.age_seconds ?? 0}s ago`
       : readiness.camera.state;
 
+  if (!focused) {
+    return (
+      <section className="main wheels-main wheels-room-main">
+        <header className="header bar-header">
+          <h2>WHEELS</h2>
+        </header>
+
+        <form className="composer cafe-composer bar-composer wheels-composer wheels-room-composer" onSubmit={onMessageSubmit}>
+          <label className="visually-hidden" htmlFor="wheels-message">Post to the WHEELS room</label>
+          <div className="composer-row">
+            <textarea
+              disabled={messageSending}
+              id="wheels-message"
+              maxLength={800}
+              onChange={(event) => onMessageChange(event.target.value)}
+              placeholder="Share a direction or observation…"
+              value={message}
+            />
+            <div className="composer-actions">
+              <button className="send" disabled={messageSending || !message.trim()} type="submit">
+                {messageSending ? "Posting" : "Post"}
+              </button>
+            </div>
+          </div>
+          <div className="wheels-composer-note">
+            <span>Posts as Chris · Operator</span>
+            <span>Records coordination only; it does not move or speak through the car.</span>
+          </div>
+          {messageError ? <p className="error">{messageError}</p> : null}
+        </form>
+
+        <div className="room-utility wheels-utility">
+          <div>
+            <p className="room-presence-label">Present</p>
+            <div className="cafe-participants" aria-label="WHEELS participants">
+              {passengers.length ? (
+                passengers.map((passenger) => (
+                  <span className="participant-chip" key={passenger.name}>
+                    <strong>{passenger.name}</strong>
+                    <small>present</small>
+                  </span>
+                ))
+              ) : (
+                <span className="participant-chip muted">No one in the room</span>
+              )}
+            </div>
+            {queue.length ? <p className="wheels-queue">Queue: {queue.map((entry) => entry.name).join(" → ")}</p> : null}
+          </div>
+          <div className="wheels-room-actions">
+            <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">
+              {loading ? "Reading" : "Refresh WHEELS"}
+            </button>
+            <button className="quiet-action wheels-drive-entry" onClick={onToggleFocus} type="button">
+              Drive
+            </button>
+          </div>
+        </div>
+
+        <details className="wheels-session-details">
+          <summary>Invite to WHEELS</summary>
+          <section className="wheels-invite" aria-label="Invite to WHEELS live session">
+            <div className="wheels-card-heading">
+              <div>
+                <p className="wheels-eyebrow">Live session</p>
+                <h3>Invite to the room</h3>
+              </div>
+              <span>room only</span>
+            </div>
+            <label>
+              <span className="visually-hidden">Invitation prompt</span>
+              <textarea
+                disabled={inviteSending}
+                maxLength={600}
+                onChange={(event) => onInviteMessageChange(event.target.value)}
+                value={inviteMessage}
+              />
+            </label>
+            <div className="wheels-invitees" aria-label="Invitees">
+              {(Object.keys(invitees) as LiveSessionAgent[]).map((agent) => (
+                <label key={agent}>
+                  <input
+                    checked={invitees[agent]}
+                    disabled={inviteSending}
+                    onChange={(event) => onInviteeChange(agent, event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>{displayAgentName(agent)}</span>
+                </label>
+              ))}
+            </div>
+            <div className="wheels-invite-actions">
+              <button
+                className="send"
+                disabled={inviteSending || !inviteMessage.trim() || !Object.values(invitees).some(Boolean)}
+                onClick={onInvite}
+                type="button"
+              >
+                {inviteSending ? "Inviting" : "Invite to session"}
+              </button>
+              <span>Session presence only — no passenger entry, wheel claim, or motion.</span>
+            </div>
+            {inviteError ? <p className="error">{inviteError}</p> : null}
+          </section>
+        </details>
+
+        <div className="transcript wheels-transcript" aria-label="WHEELS room messages">
+          {!messages.length ? <p className="empty">No WHEELS messages yet.</p> : null}
+          {messages.slice(-12).reverse().map((entry, index) => {
+            const author = entry.author.trim() || "Unknown";
+            const isOperator = author.toLowerCase() === "chris" || author.toLowerCase() === "operator";
+            const createdAt = entry.ts ? new Date(entry.ts * 1000).toISOString() : undefined;
+
+            return (
+              <article
+                className={`message ${isOperator ? "user" : "assistant"}`}
+                key={`${author}-${entry.ts ?? index}-${entry.message}`}
+              >
+                <div className="message-meta">
+                  <span>{isOperator ? "Chris · Operator" : author}</span>
+                  {createdAt ? <time dateTime={createdAt}>{formatMessageTime(createdAt)}</time> : null}
+                </div>
+                <div>{entry.message}</div>
+              </article>
+            );
+          })}
+        </div>
+        {error ? <p className="error wheels-room-error">{error}</p> : null}
+      </section>
+    );
+  }
+
   return (
     <section className="main wheels-main">
       <header className="header wheels-header">
         <div>
-          <p className="wheels-eyebrow">Operator room</p>
-          <h2>WHEELS</h2>
+          <p className="wheels-eyebrow">Operator controls</p>
+          <h2>DRIVE</h2>
           <p>
             {readiness?.wheel.driver
               ? `${readiness.wheel.driver} holds the wheel.`
@@ -4102,7 +4235,7 @@ function WheelsRoomView({
         </div>
         <div className="wheels-header-actions">
           <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">
-            {loading ? "Reading" : "Refresh room"}
+            {loading ? "Reading" : "Refresh DRIVE"}
           </button>
           <button
             aria-pressed={focused}
@@ -4110,7 +4243,7 @@ function WheelsRoomView({
             onClick={onToggleFocus}
             type="button"
           >
-            {focused ? "Show home" : "Focus WHEELS"}
+            Return to WHEELS
           </button>
         </div>
       </header>
