@@ -129,6 +129,57 @@ button {
   display: none;
 }
 
+.system-details {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  margin-top: 24px;
+}
+
+.system-details summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  list-style: none;
+  padding: 12px;
+  text-transform: uppercase;
+}
+
+.system-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.system-details summary > span:last-child {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.system-details[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.system-details[open] summary > span:last-child {
+  font-size: 0;
+}
+
+.system-details[open] summary > span:last-child::after {
+  content: "Close";
+  font-size: 11px;
+}
+
+.system-details-panels {
+  padding: 0 12px 12px;
+}
+
+.system-details .health-panel {
+  margin: 12px 0 0;
+}
+
 .agent-list {
   display: grid;
   gap: 8px;
@@ -2376,6 +2427,10 @@ textarea {
   .room-switcher select:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  .system-details {
+    margin-top: 16px;
   }
 
   .agent-list {

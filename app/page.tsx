@@ -3276,6 +3276,12 @@ export default function Home() {
           </div>
         </div>
 
+        <details className="system-details">
+          <summary>
+            <span>System &amp; feature details</span>
+            <span aria-hidden="true">Open</span>
+          </summary>
+          <div className="system-details-panels">
         <RuntimeHealthPanel
           activeHealth={activeHealth}
           compactionError={compactionError}
@@ -3363,6 +3369,8 @@ export default function Home() {
           selectedAgent={selectedAgent}
           status={workPacketSignals}
         />
+          </div>
+        </details>
       </aside>
 
       {activeSurface === "cafe" ? (
