@@ -125,6 +125,10 @@ button {
   margin: 0 0 20px;
 }
 
+.room-switcher {
+  display: none;
+}
+
 .agent-list {
   display: grid;
   gap: 8px;
@@ -2328,6 +2332,50 @@ textarea {
   .sidebar {
     border-bottom: 1px solid var(--line);
     border-right: 0;
+    padding: 16px;
+  }
+
+  .sidebar h1 {
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+
+  .room-navigation {
+    display: none;
+  }
+
+  .room-switcher {
+    align-items: center;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .room-switcher span {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .room-switcher select {
+    appearance: auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--text);
+    font: inherit;
+    min-height: 44px;
+    padding: 8px 12px;
+    width: 100%;
+  }
+
+  .room-switcher select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   .agent-list {

@@ -3152,82 +3152,128 @@ export default function Home() {
     <main className={`shell ${activeSurface === "wheels" && wheelsFocused ? "wheels-focus" : ""}`}>
       <aside className="sidebar">
         <h1>Agents</h1>
-        <button
-          className={`cafe-button ${activeSurface === "cafe" ? "active" : ""}`}
-          onClick={() => setActiveSurface("cafe")}
-          type="button"
-        >
-          <strong>Cafe</strong>
-          <br />
-          <span>shared room</span>
-        </button>
-        <button
-          className={`cafe-button ${activeSurface === "bar" ? "active" : ""}`}
-          onClick={() => {
-            setActiveSurface("bar");
-            void loadBar();
-          }}
-          type="button"
-        >
-          <strong>BAR</strong>
-          <br />
-          <span>{barActivePresenceCount} here</span>
-        </button>
-        <button
-          className={`cafe-button ${activeSurface === "eyes" ? "active" : ""}`}
-          onClick={() => {
-            setActiveSurface("eyes");
-            void loadEyes();
-          }}
-          type="button"
-        >
-          <strong>EYES</strong>
-          <br />
-          <span>{eyesActivePresenceCount} here</span>
-        </button>
-        <button
-          className={`cafe-button ${activeSurface === "wheels" ? "active" : ""}`}
-          onClick={() => {
-            setActiveSurface("wheels");
-            void loadWheelsRoom();
-          }}
-          type="button"
-        >
-          <strong>WHEELS</strong>
-          <br />
-          <span>{wheelsReadiness?.wheel.driver ? `with ${wheelsReadiness.wheel.driver}` : "parked"}</span>
-        </button>
-        <button
-          className={`cafe-button ${activeSurface === "inbox" ? "active" : ""}`}
-          onClick={() => {
-            setActiveSurface("inbox");
-            void loadOperatorInbox();
-          }}
-          type="button"
-        >
-          <strong>Inbox</strong>
-          <br />
-          <span>{operatorInboxCount} item{operatorInboxCount === 1 ? "" : "s"}</span>
-        </button>
-        <div className="agent-list">
-          {agents.map((agent) => (
-            <button
-              className={`agent-button ${
-                activeSurface === "chat" && agent.name === selectedAgent ? "active" : ""
-              }`}
-              disabled={sending}
-              key={agent.name}
-              onClick={() => {
-                setSelectedAgent(agent.name);
+        <label className="room-switcher" htmlFor="operator-destination">
+          <span>Open</span>
+          <select
+            id="operator-destination"
+            onChange={(event) => {
+              const destination = event.target.value;
+
+              if (destination.startsWith("chat:")) {
+                setSelectedAgent(destination.slice("chat:".length) as AgentName);
                 setActiveSurface("chat");
-              }}
-              type="button"
-            >
-              <strong>{agent.display_name ?? agent.name}</strong>
-              <br />
-              <span>{agent.status ?? "active"}</span>
-            </button>
-          ))}
+                return;
+              }
+
+              const surface = destination as Exclude<ActiveSurface, "chat">;
+              setActiveSurface(surface);
+
+              if (surface === "bar") {
+                void loadBar();
+              } else if (surface === "eyes") {
+                void loadEyes();
+              } else if (surface === "wheels") {
+                void loadWheelsRoom();
+              } else if (surface === "inbox") {
+                void loadOperatorInbox();
+              }
+            }}
+            value={activeSurface === "chat" ? `chat:${selectedAgent}` : activeSurface}
+          >
+            <optgroup label="Rooms">
+              <option value="cafe">Cafe</option>
+              <option value="bar">BAR</option>
+              <option value="eyes">EYES</option>
+              <option value="wheels">WHEELS</option>
+              <option value="inbox">Inbox</option>
+            </optgroup>
+            <optgroup label="Agent chats">
+              {agents.map((agent) => (
+                <option key={agent.name} value={`chat:${agent.name}`}>
+                  {agent.display_name ?? agent.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </label>
+        <div className="room-navigation">
+          <button
+            className={`cafe-button ${activeSurface === "cafe" ? "active" : ""}`}
+            onClick={() => setActiveSurface("cafe")}
+            type="button"
+          >
+            <strong>Cafe</strong>
+            <br />
+            <span>shared room</span>
+          </button>
+          <button
+            className={`cafe-button ${activeSurface === "bar" ? "active" : ""}`}
+            onClick={() => {
+              setActiveSurface("bar");
+              void loadBar();
+            }}
+            type="button"
+          >
+            <strong>BAR</strong>
+            <br />
+            <span>{barActivePresenceCount} here</span>
+          </button>
+          <button
+            className={`cafe-button ${activeSurface === "eyes" ? "active" : ""}`}
+            onClick={() => {
+              setActiveSurface("eyes");
+              void loadEyes();
+            }}
+            type="button"
+          >
+            <strong>EYES</strong>
+            <br />
+            <span>{eyesActivePresenceCount} here</span>
+          </button>
+          <button
+            className={`cafe-button ${activeSurface === "wheels" ? "active" : ""}`}
+            onClick={() => {
+              setActiveSurface("wheels");
+              void loadWheelsRoom();
+            }}
+            type="button"
+          >
+            <strong>WHEELS</strong>
+            <br />
+            <span>{wheelsReadiness?.wheel.driver ? `with ${wheelsReadiness.wheel.driver}` : "parked"}</span>
+          </button>
+          <button
+            className={`cafe-button ${activeSurface === "inbox" ? "active" : ""}`}
+            onClick={() => {
+              setActiveSurface("inbox");
+              void loadOperatorInbox();
+            }}
+            type="button"
+          >
+            <strong>Inbox</strong>
+            <br />
+            <span>{operatorInboxCount} item{operatorInboxCount === 1 ? "" : "s"}</span>
+          </button>
+          <div className="agent-list">
+            {agents.map((agent) => (
+              <button
+                className={`agent-button ${
+                  activeSurface === "chat" && agent.name === selectedAgent ? "active" : ""
+                }`}
+                disabled={sending}
+                key={agent.name}
+                onClick={() => {
+                  setSelectedAgent(agent.name);
+                  setActiveSurface("chat");
+                }}
+                type="button"
+              >
+                <strong>{agent.display_name ?? agent.name}</strong>
+                <br />
+                <span>{agent.status ?? "active"}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <RuntimeHealthPanel
