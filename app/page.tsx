@@ -4097,6 +4097,20 @@ function WheelsRoomView({
           <h2>WHEELS</h2>
         </header>
 
+        <section className="wheels-room-viewfinder" aria-label="PiCar camera">
+          <div className="wheels-camera-frame">
+            <img
+              alt="Current view from the PiCar camera"
+              key={cameraRevision}
+              src={`/api/wheels/camera?revision=${cameraRevision}`}
+            />
+          </div>
+          <div className="wheels-camera-meta">
+            <span>Camera {cameraLabel}</span>
+            <button onClick={onRefreshCamera} type="button">Refresh camera</button>
+          </div>
+        </section>
+
         <form className="composer cafe-composer bar-composer wheels-composer wheels-room-composer" onSubmit={onMessageSubmit}>
           <label className="visually-hidden" htmlFor="wheels-message">Post to the WHEELS room</label>
           <div className="composer-row">

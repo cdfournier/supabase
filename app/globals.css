@@ -1211,7 +1211,7 @@ button {
 }
 
 .wheels-room-main {
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto;
 }
 
 .shell.wheels-focus {
@@ -1272,6 +1272,25 @@ button {
   line-height: 1.45;
   margin: 6px 0 0;
   max-width: 620px;
+}
+
+.wheels-room-viewfinder {
+  border-bottom: 1px solid var(--line);
+  background: #f9fbfa;
+  display: grid;
+  gap: 10px;
+  padding: 18px 24px;
+}
+
+.wheels-room-viewfinder .wheels-camera-frame {
+  margin: 0 auto;
+  max-width: 760px;
+}
+
+.wheels-room-viewfinder .wheels-camera-meta {
+  margin: 0 auto;
+  max-width: 760px;
+  width: 100%;
 }
 
 .wheels-composer.wheels-room-composer {
@@ -2580,6 +2599,10 @@ textarea {
 
   .wheels-room {
     padding: 16px;
+  }
+
+  .wheels-room-viewfinder {
+    padding: 14px 16px;
   }
 
   .wheels-utility {
