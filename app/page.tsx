@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type SourceMaterialReference,
   attachmentsFromContent,
@@ -906,6 +906,9 @@ export default function Home() {
   const [wheelsRoomError, setWheelsRoomError] = useState("");
   const [wheelsCameraRevision, setWheelsCameraRevision] = useState(0);
   const [wheelsFocused, setWheelsFocused] = useState(false);
+  const [wheelsDriveMinimized, setWheelsDriveMinimized] = useState(false);
+  const [wheelsDriveSpeed, setWheelsDriveSpeed] = useState(20);
+  const [wheelsMotionActive, setWheelsMotionActive] = useState(false);
   const [wheelsMessage, setWheelsMessage] = useState("");
   const [wheelsMessageSending, setWheelsMessageSending] = useState(false);
   const [wheelsMessageError, setWheelsMessageError] = useState("");
@@ -923,6 +926,9 @@ export default function Home() {
   const [wheelsControlSending, setWheelsControlSending] = useState(false);
   const [wheelsControlError, setWheelsControlError] = useState("");
   const [wheelsSupervisionConfirmed, setWheelsSupervisionConfirmed] = useState(false);
+  const wheelsMotionStartingRef = useRef(false);
+  const wheelsMotionReleaseRequestedRef = useRef(false);
+  const wheelsPullOverRequestedRef = useRef(false);
   const [liveSession, setLiveSession] = useState<LiveSessionStatus | null>(null);
   const [liveSessionLoading, setLiveSessionLoading] = useState(true);
   const [liveSessionRequestInProgress, setLiveSessionRequestInProgress] = useState(false);
@@ -1592,10 +1598,11 @@ export default function Home() {
   ]);
 
   const runWheelsControl = useCallback(async (
-    action: "take_wheel" | "release_wheel" | "stop" | "nudge_forward" | "nudge_backward" | "nudge_left" | "nudge_right"
+    action: "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive",
+    command?: { angle: number; direction: "forward" | "backward"; speed: number; continuous: boolean; duration: number; }
   ) => {
-    if (wheelsControlSending) {
-      return;
+    if (wheelsControlSending && action !== "stop" && action !== "pull_over") {
+      return false;
     }
 
     setWheelsControlSending(true);
@@ -1607,7 +1614,7 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action,
-          supervision_confirmed: wheelsSupervisionConfirmed
+          ...command
         })
       });
       const data = await readJsonResponse<{ error?: string }>(response);
@@ -1617,14 +1624,84 @@ export default function Home() {
       }
 
       await loadWheelsRoom();
+      return true;
     } catch (controlError) {
       setWheelsControlError(
         controlError instanceof Error ? controlError.message : "WHEELS control request failed."
       );
+      return false;
     } finally {
       setWheelsControlSending(false);
     }
-  }, [loadWheelsRoom, wheelsControlSending, wheelsSupervisionConfirmed]);
+  }, [loadWheelsRoom, wheelsControlSending]);
+
+  const stopWheelsMotion = useCallback(async () => {
+    wheelsMotionReleaseRequestedRef.current = true;
+
+    if (wheelsMotionStartingRef.current || !wheelsMotionActive) {
+      return;
+    }
+
+    const stopped = await runWheelsControl("stop");
+    if (stopped) {
+      setWheelsMotionActive(false);
+    }
+  }, [runWheelsControl, wheelsMotionActive]);
+
+  const startWheelsMotion = useCallback(async (direction: "forward" | "backward", angle: number) => {
+    if (wheelsMotionStartingRef.current || wheelsMotionActive || wheelsControlSending) {
+      return;
+    }
+
+    wheelsMotionStartingRef.current = true;
+    wheelsMotionReleaseRequestedRef.current = false;
+    const started = await runWheelsControl("drive", {
+      angle,
+      direction,
+      speed: wheelsDriveSpeed,
+      duration: 0,
+      continuous: true
+    });
+
+    if (!started) {
+      wheelsMotionStartingRef.current = false;
+      return;
+    }
+
+    setWheelsMotionActive(true);
+
+    if (wheelsPullOverRequestedRef.current) {
+      const pulledOver = await runWheelsControl("pull_over");
+      if (pulledOver) {
+        setWheelsMotionActive(false);
+        setWheelsFocused(false);
+        setWheelsDriveMinimized(false);
+      }
+    } else if (wheelsMotionReleaseRequestedRef.current) {
+      const stopped = await runWheelsControl("stop");
+      if (stopped) {
+        setWheelsMotionActive(false);
+      }
+    }
+
+    wheelsMotionStartingRef.current = false;
+  }, [runWheelsControl, wheelsControlSending, wheelsDriveSpeed, wheelsMotionActive]);
+
+  const pullOverWheels = useCallback(async () => {
+    wheelsMotionReleaseRequestedRef.current = true;
+    wheelsPullOverRequestedRef.current = true;
+
+    if (wheelsMotionStartingRef.current) {
+      return;
+    }
+
+    const pulledOver = await runWheelsControl("pull_over");
+    if (pulledOver) {
+      setWheelsMotionActive(false);
+      setWheelsFocused(false);
+      setWheelsDriveMinimized(false);
+    }
+  }, [runWheelsControl]);
 
   useEffect(() => {
     void loadCafe();
@@ -3149,7 +3226,7 @@ export default function Home() {
   }
 
   return (
-    <main className={`shell ${activeSurface === "wheels" && wheelsFocused ? "wheels-focus" : ""}`}>
+    <main className="shell">
       <aside className="sidebar">
         <h1>Agents</h1>
         <label className="room-switcher" htmlFor="operator-destination">
@@ -3418,11 +3495,12 @@ export default function Home() {
           sending={eyesSending}
         />
       ) : activeSurface === "wheels" ? (
+        <>
         <WheelsRoomView
           cameraRevision={wheelsCameraRevision}
           error={wheelsRoomError}
           loading={wheelsRoomLoading}
-          focused={wheelsFocused}
+          focused={false}
           message={wheelsMessage}
           messageError={wheelsMessageError}
           messageSending={wheelsMessageSending}
@@ -3441,7 +3519,17 @@ export default function Home() {
           controlError={wheelsControlError}
           controlSending={wheelsControlSending}
           onControl={(action) => {
-            void runWheelsControl(action);
+            if (action === "nudge_forward") {
+              void runWheelsControl("drive", { angle: 0, direction: "forward", speed: 20, duration: 0.2, continuous: false });
+            } else if (action === "nudge_backward") {
+              void runWheelsControl("drive", { angle: 0, direction: "backward", speed: 20, duration: 0.2, continuous: false });
+            } else if (action === "nudge_left") {
+              void runWheelsControl("drive", { angle: -12, direction: "forward", speed: 20, duration: 0.2, continuous: false });
+            } else if (action === "nudge_right") {
+              void runWheelsControl("drive", { angle: 12, direction: "forward", speed: 20, duration: 0.2, continuous: false });
+            } else {
+              void runWheelsControl(action);
+            }
           }}
           onSupervisionChange={setWheelsSupervisionConfirmed}
           supervisionConfirmed={wheelsSupervisionConfirmed}
@@ -3453,9 +3541,39 @@ export default function Home() {
           }}
           onMessageChange={setWheelsMessage}
           onMessageSubmit={sendWheelsMessage}
-          onToggleFocus={() => setWheelsFocused((current) => !current)}
+          onToggleFocus={() => {
+            wheelsPullOverRequestedRef.current = false;
+            wheelsMotionReleaseRequestedRef.current = false;
+            setWheelsDriveMinimized(false);
+            setWheelsFocused(true);
+          }}
           room={wheelsRoom}
         />
+        {wheelsFocused ? (
+          <DriveDrawer
+            controlError={wheelsControlError}
+            controlSending={wheelsControlSending}
+            minimized={wheelsDriveMinimized}
+            motionActive={wheelsMotionActive}
+            onPullOver={() => {
+              void pullOverWheels();
+            }}
+            onStartMotion={(direction, angle) => {
+              void startWheelsMotion(direction, angle);
+            }}
+            onStopMotion={() => {
+              void stopWheelsMotion();
+            }}
+            onTakeWheel={() => {
+              void runWheelsControl("take_wheel");
+            }}
+            onToggleMinimized={() => setWheelsDriveMinimized((current) => !current)}
+            onSpeedChange={setWheelsDriveSpeed}
+            readiness={wheelsRoom?.readiness ?? null}
+            speed={wheelsDriveSpeed}
+          />
+        ) : null}
+        </>
       ) : activeSurface === "inbox" ? (
         <OperatorInboxView
           actionInProgress={operatorInboxActionInProgress}
@@ -4467,6 +4585,127 @@ function WheelsRoomView({
         {error ? <p className="error">{error}</p> : null}
       </div>
     </section>
+  );
+}
+
+function DriveDrawer({
+  controlError,
+  controlSending,
+  minimized,
+  motionActive,
+  onPullOver,
+  onSpeedChange,
+  onStartMotion,
+  onStopMotion,
+  onTakeWheel,
+  onToggleMinimized,
+  readiness,
+  speed
+}: {
+  controlError: string;
+  controlSending: boolean;
+  minimized: boolean;
+  motionActive: boolean;
+  onPullOver: () => void;
+  onSpeedChange: (speed: number) => void;
+  onStartMotion: (direction: "forward" | "backward", angle: number) => void;
+  onStopMotion: () => void;
+  onTakeWheel: () => void;
+  onToggleMinimized: () => void;
+  readiness: WheelsReadiness | null;
+  speed: number;
+}) {
+  const driver = readiness?.wheel.driver ?? null;
+  const ChrisHasWheel = driver === "Chris";
+  const anotherDriverHasWheel = Boolean(driver && !ChrisHasWheel);
+
+  function directionHandlers(direction: "forward" | "backward", angle: number) {
+    return {
+      onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        onStartMotion(direction, angle);
+      },
+      onPointerUp: onStopMotion,
+      onPointerCancel: onStopMotion,
+      onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+        if ((event.key === "Enter" || event.key === " ") && !event.repeat) {
+          event.preventDefault();
+          onStartMotion(direction, angle);
+        }
+      },
+      onKeyUp: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onStopMotion();
+        }
+      }
+    };
+  }
+
+  return (
+    <aside className={`wheels-drive-drawer ${minimized ? "minimized" : ""}`} aria-label="DRIVE controls">
+      <div className="wheels-drive-drawer-bar">
+        <div>
+          <p className="wheels-eyebrow">Operator controls</p>
+          <h2>DRIVE</h2>
+          <p>{ChrisHasWheel ? "Chris holds the wheel." : driver ? `${driver} holds the wheel.` : "Wheel unassigned."}</p>
+        </div>
+        <button
+          aria-expanded={!minimized}
+          className="quiet-action wheels-drawer-minimize"
+          onClick={onToggleMinimized}
+          type="button"
+        >
+          {minimized ? "Open controls" : "Minimize"}
+        </button>
+      </div>
+
+      {!minimized ? (
+        <div className="wheels-drive-drawer-content">
+          {!ChrisHasWheel ? (
+            <section className="wheels-drive-claim">
+              <p>The WHEELS room stays open underneath while you drive.</p>
+              <button
+                className="send"
+                disabled={controlSending || anotherDriverHasWheel}
+                onClick={onTakeWheel}
+                type="button"
+              >
+                {anotherDriverHasWheel ? `Wheel held by ${driver}` : "Take wheel"}
+              </button>
+            </section>
+          ) : (
+            <section className="wheels-drive-controls" aria-label="Continuous drive controls">
+              <div className="wheels-direction-pad">
+                <button aria-label="Drive forward" disabled={controlSending} type="button" {...directionHandlers("forward", 0)}>↑</button>
+                <button aria-label="Drive forward left" disabled={controlSending} type="button" {...directionHandlers("forward", -35)}>←</button>
+                <button aria-label="Drive forward right" disabled={controlSending} type="button" {...directionHandlers("forward", 35)}>→</button>
+                <button aria-label="Drive backward" disabled={controlSending} type="button" {...directionHandlers("backward", 0)}>↓</button>
+              </div>
+              <label className="wheels-speed-control">
+                <span>Speed <strong>{speed}</strong></span>
+                <input
+                  aria-label="Drive speed"
+                  disabled={controlSending || motionActive}
+                  max="50"
+                  min="1"
+                  onChange={(event) => onSpeedChange(Number(event.target.value))}
+                  type="range"
+                  value={speed}
+                />
+                <small>Hold a direction to drive; releasing stops the car.</small>
+              </label>
+            </section>
+          )}
+
+          {controlError ? <p className="error">{controlError}</p> : null}
+        </div>
+      ) : null}
+
+      <button className="wheels-pull-over" onClick={onPullOver} type="button">
+        Pull Over
+      </button>
+    </aside>
   );
 }
 
