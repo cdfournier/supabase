@@ -4,7 +4,10 @@ import test from "node:test";
 import {
   joinWheelsRide,
   leaveWheelsRide,
+  driveWheels,
+  pullOverWheels,
   requestWheelsTurn,
+  takeWheelsWheel,
   withdrawWheelsTurn
 } from "../lib/tools/wheels.ts";
 
@@ -85,5 +88,69 @@ test("WHEELS queue action requires a concise intention", async () => {
   await assert.rejects(
     () => requestWheelsTurn("soren", {}),
     /requires a short intention/
+  );
+});
+
+test("persistent WHEELS permission permits a queued agent to take and drive bounded segments", async (t) => {
+  await withPiFetch(t, async (calls) => {
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+
+      if (url.endsWith("/queue") && (!init || init.method !== "POST")) {
+        return Response.json({ driver: null, queue: [{ name: "Soren", intention: "Explore slowly" }] });
+      }
+
+      return Response.json({ ok: true, driver: "Soren" });
+    };
+
+    const taken = await takeWheelsWheel("soren", {});
+    assert.match(taken, /persistent-permission driver/);
+    assert.deepEqual(body(calls[1]!), { action: "take", driver: "Soren" });
+
+    const driven = await driveWheels("soren", {
+      direction: "forward",
+      angle: -12,
+      speed: 20,
+      duration_seconds: 1.5
+    });
+    assert.match(driven, /bounded WHEELS drive segment/);
+    assert.deepEqual(body(calls[2]!), {
+      driver: "Soren",
+      direction: "forward",
+      angle: -12,
+      speed: 20,
+      duration: 1.5
+    });
+
+    const pulledOver = await pullOverWheels("soren", {});
+    assert.match(pulledOver, /atomically released/);
+    assert.deepEqual(body(calls[3]!), { driver: "Soren" });
+  });
+});
+
+test("WHEELS self-claim respects another agent's visible queue turn", async (t) => {
+  await withPiFetch(t, async (calls) => {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input), init });
+      return Response.json({ driver: null, queue: [{ name: "Varro", intention: "Take a look" }] });
+    };
+
+    await assert.rejects(
+      () => takeWheelsWheel("soren", {}),
+      /Varro is first in the WHEELS queue/
+    );
+    assert.equal(calls.length, 1);
+  });
+});
+
+test("WHEELS bounded agent drives reject unsafe values before reaching the Pi", async () => {
+  await assert.rejects(
+    () => driveWheels("soren", { direction: "forward", speed: 41 }),
+    /speed must be between 1 and 40/
+  );
+  await assert.rejects(
+    () => driveWheels("soren", { direction: "left" }),
+    /direction must be forward or backward/
   );
 });

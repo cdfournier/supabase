@@ -5,6 +5,8 @@ import type { AgentName } from "@/lib/agent-context";
 const DEFAULT_PICAR_BASE_URL = "https://picar.blackcoffeeshoppe.com";
 const MAX_MESSAGE_LENGTH = 800;
 const MAX_QUEUE_INTENTION_LENGTH = 240;
+const MAX_AGENT_SPEED = 40;
+const MAX_AGENT_DURATION_SECONDS = 3;
 const DEFAULT_LOG_LIMIT = 12;
 const MAX_LOG_LIMIT = 25;
 
@@ -163,6 +165,98 @@ export async function withdrawWheelsTurn(agent: AgentName, input: unknown) {
   });
 }
 
+export async function takeWheelsWheel(agent: AgentName, input: unknown) {
+  requireEmptyObject(input, "wheels_take_wheel");
+
+  const name = displayName(agent);
+  const queueState = await readJson(picarBaseUrl(), "/queue");
+  const driver = isRecord(queueState) ? normalizedText(queueState.driver) : "";
+  const queue = isRecord(queueState) && Array.isArray(queueState.queue) ? queueState.queue : [];
+  const nextUp = isRecord(queue[0]) ? normalizedText(queue[0].name) : "";
+
+  if (driver) {
+    throw new Error(`The wheel is held by ${driver}. Wait for it to be released before taking it.`);
+  }
+
+  if (nextUp && nextUp !== name) {
+    throw new Error(`${nextUp} is first in the WHEELS queue. Wait for their turn or for the queue to clear.`);
+  }
+
+  const result = await postPiJson("/handoff", { action: "take", driver: name });
+
+  return stringifyPayload({
+    note: "Took the currently unassigned WHEELS wheel as a named, persistent-permission driver. The Pi has stopped and reset prior motion before custody begins. Use bounded drive segments; Pull Over always stops and releases.",
+    driver: name,
+    state: result
+  });
+}
+
+export async function driveWheels(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("wheels_drive requires an object input.");
+  }
+
+  const direction = normalizedText(input.direction).toLowerCase();
+
+  if (direction !== "forward" && direction !== "backward") {
+    throw new Error("wheels_drive direction must be forward or backward.");
+  }
+
+  const angle = boundedNumber(input.angle, 0, -35, 35, "wheels_drive angle");
+  const speed = boundedNumber(input.speed, 20, 1, MAX_AGENT_SPEED, "wheels_drive speed");
+  const duration = boundedDecimal(
+    input.duration_seconds,
+    1,
+    0.1,
+    MAX_AGENT_DURATION_SECONDS,
+    "wheels_drive duration_seconds"
+  );
+  const name = displayName(agent);
+  const result = await postPiJson("/drive", {
+    driver: name,
+    direction,
+    angle,
+    speed,
+    duration
+  });
+
+  return stringifyPayload({
+    note: "Completed one bounded WHEELS drive segment. The Pi stops at the end of the requested duration; active custody remains named until the driver releases or pulls over.",
+    driver: name,
+    direction,
+    angle,
+    speed,
+    duration_seconds: duration,
+    state: result
+  });
+}
+
+export async function releaseWheelsWheel(agent: AgentName, input: unknown) {
+  requireEmptyObject(input, "wheels_release_wheel");
+
+  const name = displayName(agent);
+  const result = await postPiJson("/handoff", { action: "release", driver: name });
+
+  return stringifyPayload({
+    note: "Released the WHEELS wheel. The Pi stopped before releasing custody.",
+    driver: name,
+    state: result
+  });
+}
+
+export async function pullOverWheels(agent: AgentName, input: unknown) {
+  requireEmptyObject(input, "wheels_pull_over");
+
+  const name = displayName(agent);
+  const result = await postPiJson("/pull-over", { driver: name });
+
+  return stringifyPayload({
+    note: "Pulled over: the Pi stopped the car and atomically released the WHEELS wheel.",
+    driver: name,
+    state: result
+  });
+}
+
 function picarBaseUrl() {
   return (process.env.PICAR_BASE_URL || DEFAULT_PICAR_BASE_URL).replace(/\/+$/, "");
 }
@@ -223,6 +317,38 @@ function requireEmptyObject(input: unknown, toolName: string) {
   if (!isRecord(input) || Object.keys(input).length) {
     throw new Error(`${toolName} requires an empty object input.`);
   }
+}
+
+function normalizedText(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function boundedNumber(value: unknown, fallback: number, min: number, max: number, label: string) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number) || number < min || number > max) {
+    throw new Error(`${label} must be between ${min} and ${max}.`);
+  }
+
+  return Math.round(number);
+}
+
+function boundedDecimal(value: unknown, fallback: number, min: number, max: number, label: string) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number) || number < min || number > max) {
+    throw new Error(`${label} must be between ${min} and ${max}.`);
+  }
+
+  return number;
 }
 
 function stringifyPayload(value: unknown) {

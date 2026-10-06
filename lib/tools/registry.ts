@@ -67,8 +67,12 @@ import {
   joinWheelsRide,
   leaveWheelsRide,
   postWheelsRoomMessage,
+  pullOverWheels,
   readWheelsRoom,
+  releaseWheelsWheel,
   requestWheelsTurn,
+  takeWheelsWheel,
+  driveWheels,
   withdrawWheelsTurn
 } from "@/lib/tools/wheels";
 import {
@@ -464,6 +468,68 @@ export const toolDefinitions: ToolDefinition[] = [
     name: "wheels_withdraw_turn",
     description:
       "Withdraw the active agent's pending WHEELS wheel request. This has no custody or motion effect.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_take_wheel",
+    description:
+      "Take the currently unassigned WHEELS wheel as the active agent. This is available only to agents with persistent WHEELS drive permission, never replaces another driver, and honors the visible queue.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_drive",
+    description:
+      "Drive one bounded WHEELS segment as the active named driver: direction, steering angle, speed, and duration. The Pi stops at the end of the segment. Use only while holding the wheel and only when it is safe to do so.",
+    input_schema: {
+      type: "object",
+      properties: {
+        direction: {
+          type: "string",
+          enum: ["forward", "backward"],
+          description: "Travel direction."
+        },
+        angle: {
+          type: "number",
+          description: "Steering angle from -35 (left) to 35 (right). Defaults to 0."
+        },
+        speed: {
+          type: "number",
+          description: "Speed from 1 to 40. Defaults to 20."
+        },
+        duration_seconds: {
+          type: "number",
+          description: "Bounded travel duration from 0.1 to 3 seconds. Defaults to 1."
+        }
+      },
+      required: ["direction"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_release_wheel",
+    description:
+      "Stop and release the WHEELS wheel as the active driver, allowing the next participant to take it.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_pull_over",
+    description:
+      "Immediately stop and atomically release the WHEELS wheel as the active driver. Use when ending a drive or if anything feels uncertain.",
     input_schema: {
       type: "object",
       properties: {},
@@ -1893,6 +1959,26 @@ export async function runTool(
         return {
           ok: true,
           content: await withdrawWheelsTurn(agent, input)
+        };
+      case "wheels_take_wheel":
+        return {
+          ok: true,
+          content: await takeWheelsWheel(agent, input)
+        };
+      case "wheels_drive":
+        return {
+          ok: true,
+          content: await driveWheels(agent, input)
+        };
+      case "wheels_release_wheel":
+        return {
+          ok: true,
+          content: await releaseWheelsWheel(agent, input)
+        };
+      case "wheels_pull_over":
+        return {
+          ok: true,
+          content: await pullOverWheels(agent, input)
         };
       case "live_session_status":
         return {

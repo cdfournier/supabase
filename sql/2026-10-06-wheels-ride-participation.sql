@@ -1,20 +1,21 @@
 -- Enable the first embodied WHEELS layer for local runtime agents.
 --
--- This grants only explicit passenger entry/exit and visible wheel-queue
--- requests. It does not grant custody, handoff, /drive, renewal, or any
--- physical motion command. Those remain behind a later Operator-grant path.
+-- This grants explicit passenger entry/exit, visible wheel-queue requests,
+-- self-claim of an unassigned wheel, and bounded drive segments. Persistent
+-- permission replaces per-drive approval; the Pi still permits only one named
+-- active driver, stops before custody changes, and owns watchdog expiry.
 
 insert into public.agent_capabilities
   (agent, surface, access_level, default_bias, requires_operator_approval, notify_operator, max_actions_per_moment, quiet_mode, notes)
 select agent.name,
        'wheels',
        'write',
-       'explicit ride participation only',
+       'persistent supervised self-drive',
        false,
        'audit_only',
        null::int,
        false,
-       'May explicitly join or leave the PiCar and request or withdraw a future turn. No wheel custody or motion authority.'
+       'May explicitly ride, queue, take an unassigned wheel, and drive bounded segments. Cannot replace another driver; Pi watchdog, stop, and Pull Over remain final.'
 from public.agents agent
 where agent.name in ('soren', 'varro')
 on conflict (agent, surface) do update set
