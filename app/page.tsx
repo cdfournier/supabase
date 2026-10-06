@@ -929,6 +929,9 @@ export default function Home() {
   const wheelsMotionStartingRef = useRef(false);
   const wheelsMotionReleaseRequestedRef = useRef(false);
   const wheelsPullOverRequestedRef = useRef(false);
+  const wheelsMotionIdRef = useRef<string | null>(null);
+  const wheelsMotionRenewalTimerRef = useRef<number | null>(null);
+  const wheelsMotionRenewalInFlightRef = useRef(false);
   const [liveSession, setLiveSession] = useState<LiveSessionStatus | null>(null);
   const [liveSessionLoading, setLiveSessionLoading] = useState(true);
   const [liveSessionRequestInProgress, setLiveSessionRequestInProgress] = useState(false);
@@ -1598,8 +1601,8 @@ export default function Home() {
   ]);
 
   const runWheelsControl = useCallback(async (
-    action: "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive",
-    command?: { angle: number; direction: "forward" | "backward"; speed: number; continuous: boolean; duration: number; }
+    action: "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive" | "renew_drive",
+    command?: { angle: number; direction: "forward" | "backward"; speed: number; continuous: boolean; duration: number; motionId?: string; }
   ) => {
     if (wheelsControlSending && action !== "stop" && action !== "pull_over") {
       return false;
@@ -1609,12 +1612,14 @@ export default function Home() {
     setWheelsControlError("");
 
     try {
+      const { motionId, ...controlCommand } = command ?? {};
       const response = await fetch("/api/wheels/control", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action,
-          ...command
+          ...controlCommand,
+          ...(motionId ? { motion_id: motionId } : {})
         })
       });
       const data = await readJsonResponse<{ error?: string }>(response);
@@ -1635,8 +1640,56 @@ export default function Home() {
     }
   }, [loadWheelsRoom, wheelsControlSending]);
 
+  const clearWheelsMotionRenewal = useCallback(() => {
+    if (wheelsMotionRenewalTimerRef.current !== null) {
+      window.clearInterval(wheelsMotionRenewalTimerRef.current);
+      wheelsMotionRenewalTimerRef.current = null;
+    }
+    wheelsMotionRenewalInFlightRef.current = false;
+  }, []);
+
+  const renewWheelsMotion = useCallback(async () => {
+    const motionId = wheelsMotionIdRef.current;
+    if (!motionId || wheelsMotionRenewalInFlightRef.current) {
+      return;
+    }
+
+    wheelsMotionRenewalInFlightRef.current = true;
+    try {
+      const response = await fetch("/api/wheels/control", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "renew_drive", motion_id: motionId })
+      });
+      const data = await readJsonResponse<{ error?: string }>(response);
+      if (!response.ok) {
+        throw new Error(data.error || "PiCar motion renewal failed.");
+      }
+    } catch (renewalError) {
+      clearWheelsMotionRenewal();
+      wheelsMotionIdRef.current = null;
+      setWheelsMotionActive(false);
+      setWheelsControlError(
+        renewalError instanceof Error
+          ? `${renewalError.message} The Pi watchdog will stop the car.`
+          : "PiCar motion renewal failed. The Pi watchdog will stop the car."
+      );
+    } finally {
+      wheelsMotionRenewalInFlightRef.current = false;
+    }
+  }, [clearWheelsMotionRenewal]);
+
+  const startWheelsMotionRenewal = useCallback(() => {
+    clearWheelsMotionRenewal();
+    wheelsMotionRenewalTimerRef.current = window.setInterval(() => {
+      void renewWheelsMotion();
+    }, 250);
+  }, [clearWheelsMotionRenewal, renewWheelsMotion]);
+
   const stopWheelsMotion = useCallback(async () => {
     wheelsMotionReleaseRequestedRef.current = true;
+    clearWheelsMotionRenewal();
+    wheelsMotionIdRef.current = null;
 
     if (wheelsMotionStartingRef.current || !wheelsMotionActive) {
       return;
@@ -1646,7 +1699,7 @@ export default function Home() {
     if (stopped) {
       setWheelsMotionActive(false);
     }
-  }, [runWheelsControl, wheelsMotionActive]);
+  }, [clearWheelsMotionRenewal, runWheelsControl, wheelsMotionActive]);
 
   const startWheelsMotion = useCallback(async (direction: "forward" | "backward", angle: number) => {
     if (wheelsMotionStartingRef.current || wheelsMotionActive || wheelsControlSending) {
@@ -1655,15 +1708,19 @@ export default function Home() {
 
     wheelsMotionStartingRef.current = true;
     wheelsMotionReleaseRequestedRef.current = false;
+    const motionId = crypto.randomUUID();
+    wheelsMotionIdRef.current = motionId;
     const started = await runWheelsControl("drive", {
       angle,
       direction,
       speed: wheelsDriveSpeed,
       duration: 0,
-      continuous: true
+      continuous: true,
+      motionId
     });
 
     if (!started) {
+      wheelsMotionIdRef.current = null;
       wheelsMotionStartingRef.current = false;
       return;
     }
@@ -1671,6 +1728,8 @@ export default function Home() {
     setWheelsMotionActive(true);
 
     if (wheelsPullOverRequestedRef.current) {
+      clearWheelsMotionRenewal();
+      wheelsMotionIdRef.current = null;
       const pulledOver = await runWheelsControl("pull_over");
       if (pulledOver) {
         setWheelsMotionActive(false);
@@ -1678,18 +1737,24 @@ export default function Home() {
         setWheelsDriveMinimized(false);
       }
     } else if (wheelsMotionReleaseRequestedRef.current) {
+      clearWheelsMotionRenewal();
+      wheelsMotionIdRef.current = null;
       const stopped = await runWheelsControl("stop");
       if (stopped) {
         setWheelsMotionActive(false);
       }
+    } else {
+      startWheelsMotionRenewal();
     }
 
     wheelsMotionStartingRef.current = false;
-  }, [runWheelsControl, wheelsControlSending, wheelsDriveSpeed, wheelsMotionActive]);
+  }, [clearWheelsMotionRenewal, runWheelsControl, startWheelsMotionRenewal, wheelsControlSending, wheelsDriveSpeed, wheelsMotionActive]);
 
   const pullOverWheels = useCallback(async () => {
     wheelsMotionReleaseRequestedRef.current = true;
     wheelsPullOverRequestedRef.current = true;
+    clearWheelsMotionRenewal();
+    wheelsMotionIdRef.current = null;
 
     if (wheelsMotionStartingRef.current) {
       return;
@@ -1701,7 +1766,31 @@ export default function Home() {
       setWheelsFocused(false);
       setWheelsDriveMinimized(false);
     }
-  }, [runWheelsControl]);
+  }, [clearWheelsMotionRenewal, runWheelsControl]);
+
+  useEffect(() => () => {
+    clearWheelsMotionRenewal();
+  }, [clearWheelsMotionRenewal]);
+
+  useEffect(() => {
+    const stopForExit = () => {
+      if (wheelsMotionActive) {
+        void stopWheelsMotion();
+      }
+    };
+    const stopWhenHidden = () => {
+      if (document.hidden) {
+        stopForExit();
+      }
+    };
+
+    window.addEventListener("pagehide", stopForExit);
+    document.addEventListener("visibilitychange", stopWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", stopForExit);
+      document.removeEventListener("visibilitychange", stopWhenHidden);
+    };
+  }, [stopWheelsMotion, wheelsMotionActive]);
 
   useEffect(() => {
     void loadCafe();

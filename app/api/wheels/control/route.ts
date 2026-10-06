@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 const DEFAULT_PICAR_BASE_URL = "https://picar.blackcoffeeshoppe.com";
 const OPERATOR_DRIVER = "Chris";
 
-type ControlAction = "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive";
+type ControlAction = "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive" | "renew_drive";
 
 /**
  * A narrow, operator-only control proxy. This is not a general vehicle API:
@@ -46,6 +46,17 @@ export async function POST(request: Request) {
       });
     }
 
+    if (action === "renew_drive") {
+      const motionId = stringValue(body.motion_id);
+      if (!motionId) {
+        return NextResponse.json({ error: "motion_id is required to renew continuous drive." }, { status: 400 });
+      }
+      return NextResponse.json({
+        action,
+        ...(await postJson(baseUrl, "/drive/renew", { driver: OPERATOR_DRIVER, motion_id: motionId }))
+      });
+    }
+
     if (action === "release_wheel") {
       return NextResponse.json({
         action,
@@ -65,6 +76,7 @@ export async function POST(request: Request) {
     const speed = numberInRange(body.speed, 1, 50, 20);
     const continuous = body.continuous === true;
     const duration = numberInRange(body.duration, 0, 20, 0);
+    const motionId = stringValue(body.motion_id);
 
     if (!continuous && duration <= 0) {
       return NextResponse.json(
@@ -73,13 +85,18 @@ export async function POST(request: Request) {
       );
     }
 
+    if (continuous && !motionId) {
+      return NextResponse.json({ error: "motion_id is required for continuous drive." }, { status: 400 });
+    }
+
     const result = await postJson(baseUrl, "/drive", {
       driver: OPERATOR_DRIVER,
       angle,
       direction,
       speed,
       duration,
-      continuous
+      continuous,
+      ...(continuous ? { motion_id: motionId } : {})
     });
 
     return NextResponse.json({
@@ -100,7 +117,8 @@ function controlAction(value: unknown): ControlAction | null {
     value === "release_wheel" ||
     value === "stop" ||
     value === "pull_over" ||
-    value === "drive"
+    value === "drive" ||
+    value === "renew_drive"
     ? value
     : null;
 }
@@ -108,6 +126,10 @@ function controlAction(value: unknown): ControlAction | null {
 function numberInRange(value: unknown, min: number, max: number, fallback: number) {
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) ? Math.min(max, Math.max(min, numeric)) : fallback;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 async function postJson(baseUrl: string, path: string, payload: object) {
