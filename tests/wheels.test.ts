@@ -5,6 +5,7 @@ import {
   joinWheelsRide,
   leaveWheelsRide,
   driveWheels,
+  lookWheels,
   pullOverWheels,
   requestWheelsTurn,
   takeWheelsWheel,
@@ -153,4 +154,28 @@ test("WHEELS bounded agent drives reject unsafe values before reaching the Pi", 
     () => driveWheels("soren", { direction: "left" }),
     /direction must be forward or backward/
   );
+});
+
+test("WHEELS look returns a current Pi camera image without custody or motion", async (t) => {
+  await withPiFetch(t, async (calls) => {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input), init });
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        headers: { "content-type": "image/jpeg" }
+      });
+    };
+
+    const result = await lookWheels("varro", {});
+
+    assert.equal(calls[0]?.url, "http://picar.test/camera");
+    assert.match(result[0]?.type === "text" ? result[0].text : "", /observation only/);
+    assert.deepEqual(result[1], {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: "image/jpeg",
+        data: "AQIDBA=="
+      }
+    });
+  });
 });

@@ -319,6 +319,7 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   // Explicit passenger and queue actions are controlled by the physical
   // WHEELS capability; custody and motion will remain separately gated.
   wheels_read_room: { surface: "bar", action: "read" },
+  wheels_look: { surface: "wheels", action: "read" },
   wheels_post_message: { surface: "bar", action: "write" },
   wheels_join_ride: { surface: "wheels", action: "write" },
   wheels_leave_ride: { surface: "wheels", action: "write" },

@@ -66,6 +66,7 @@ import { postBarRoomMessage, readBarRoom } from "@/lib/tools/bar";
 import {
   joinWheelsRide,
   leaveWheelsRide,
+  lookWheels,
   postWheelsRoomMessage,
   pullOverWheels,
   readWheelsRoom,
@@ -406,6 +407,17 @@ export const toolDefinitions: ToolDefinition[] = [
           description: "Optional number of recent WHEELS ride-log messages. Defaults to 12 and caps at 25."
         }
       },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_look",
+    description:
+      "Capture and inspect one current PiCar camera frame from inside WHEELS. This is observation only and never moves the car or changes wheel custody.",
+    input_schema: {
+      type: "object",
+      properties: {},
       required: [],
       additionalProperties: false
     }
@@ -1934,6 +1946,11 @@ export async function runTool(
         return {
           ok: true,
           content: await readWheelsRoom(agent, input)
+        };
+      case "wheels_look":
+        return {
+          ok: true,
+          content: await lookWheels(agent, input)
         };
       case "wheels_post_message":
         return {

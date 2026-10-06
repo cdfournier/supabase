@@ -1,6 +1,8 @@
 import "server-only";
 
+import { Buffer } from "node:buffer";
 import type { AgentName } from "@/lib/agent-context";
+import type { ToolResultContentBlock } from "@/lib/tools/types";
 
 const DEFAULT_PICAR_BASE_URL = "https://picar.blackcoffeeshoppe.com";
 const MAX_MESSAGE_LENGTH = 800;
@@ -11,8 +13,8 @@ const DEFAULT_LOG_LIMIT = 12;
 const MAX_LOG_LIMIT = 25;
 
 /**
- * WHEELS room tools support explicit, Operator-visible ride participation.
- * They never acquire/release the wheel or issue a motion command.
+ * WHEELS tools make ride participation, custody, bounded motion, and vision
+ * explicit and Operator-visible. Each operation has its own named tool.
  */
 export async function readWheelsRoom(agent: AgentName, input: unknown) {
   if (input !== undefined && !isRecord(input)) {
@@ -257,6 +259,46 @@ export async function pullOverWheels(agent: AgentName, input: unknown) {
   });
 }
 
+export async function lookWheels(agent: AgentName, input: unknown): Promise<ToolResultContentBlock[]> {
+  requireEmptyObject(input, "wheels_look");
+
+  const response = await fetch(`${picarBaseUrl()}/camera`, {
+    cache: "no-store",
+    headers: { accept: "image/jpeg,image/png,image/webp" },
+    signal: AbortSignal.timeout(30_000)
+  });
+
+  if (!response.ok) {
+    throw new Error(`PiCar camera returned ${response.status}.`);
+  }
+
+  const mediaType = imageMediaType(response.headers.get("content-type"));
+
+  if (!mediaType) {
+    throw new Error("PiCar camera returned an unsupported image type.");
+  }
+
+  const image = Buffer.from(await response.arrayBuffer()).toString("base64");
+
+  return [
+    {
+      type: "text",
+      text: stringifyPayload({
+        note: "Read one current PiCar camera frame from WHEELS. This is observation only; it does not move the car or change custody.",
+        observer: displayName(agent)
+      })
+    },
+    {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: mediaType,
+        data: image
+      }
+    }
+  ];
+}
+
 function picarBaseUrl() {
   return (process.env.PICAR_BASE_URL || DEFAULT_PICAR_BASE_URL).replace(/\/+$/, "");
 }
@@ -349,6 +391,16 @@ function boundedDecimal(value: unknown, fallback: number, min: number, max: numb
   }
 
   return number;
+}
+
+function imageMediaType(value: string | null) {
+  const mime = String(value ?? "").split(";")[0].trim().toLowerCase();
+
+  if (mime === "image/jpeg" || mime === "image/png" || mime === "image/gif" || mime === "image/webp") {
+    return mime;
+  }
+
+  return null;
 }
 
 function stringifyPayload(value: unknown) {
