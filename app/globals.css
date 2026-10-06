@@ -1042,7 +1042,7 @@ button {
 }
 
 .eyes-main {
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .bar-header {
@@ -1103,7 +1103,7 @@ button {
   border-bottom: 1px solid var(--line);
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(280px, 460px) minmax(180px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   padding: 18px 24px;
 }
 
@@ -1211,7 +1211,28 @@ button {
 }
 
 .wheels-room-main {
-  grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.operator-room-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.operator-room-conversation {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+}
+
+.eyes-room-conversation {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.wheels-room-conversation {
+  grid-template-rows: auto auto auto minmax(120px, 1fr) auto;
 }
 
 .shell.wheels-focus {
@@ -1344,6 +1365,27 @@ button {
 
 .wheels-room-error {
   margin: 12px 24px;
+}
+
+@media (min-width: 841px) {
+  .operator-room-layout {
+    grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .operator-room-layout > .eyes-viewfinder,
+  .operator-room-layout > .wheels-room-viewfinder {
+    align-content: start;
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .operator-room-layout > .wheels-room-viewfinder .wheels-camera-frame,
+  .operator-room-layout > .wheels-room-viewfinder .wheels-camera-meta {
+    max-width: none;
+  }
 }
 
 .wheels-drive-drawer {

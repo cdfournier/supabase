@@ -4304,45 +4304,47 @@ function WheelsRoomView({
           <h2>WHEELS</h2>
         </header>
 
-        <section className="wheels-room-viewfinder" aria-label="PiCar camera">
-          <div className="wheels-camera-frame">
-            <img
-              alt="Current view from the PiCar camera"
-              key={cameraRevision}
-              src={`/api/wheels/camera?revision=${cameraRevision}`}
-            />
-          </div>
-          <div className="wheels-camera-meta">
-            <span>Camera {cameraLabel}</span>
-            <button onClick={onRefreshCamera} type="button">Refresh camera</button>
-          </div>
-        </section>
-
-        <form className="composer cafe-composer bar-composer wheels-composer wheels-room-composer" onSubmit={onMessageSubmit}>
-          <label className="visually-hidden" htmlFor="wheels-message">Post to the WHEELS room</label>
-          <div className="composer-row">
-            <textarea
-              disabled={messageSending}
-              id="wheels-message"
-              maxLength={800}
-              onChange={(event) => onMessageChange(event.target.value)}
-              placeholder="Share a direction or observation…"
-              value={message}
-            />
-            <div className="composer-actions">
-              <button className="send" disabled={messageSending || !message.trim()} type="submit">
-                {messageSending ? "Posting" : "Post"}
-              </button>
+        <div className="operator-room-layout wheels-room-layout">
+          <section className="wheels-room-viewfinder" aria-label="PiCar camera">
+            <div className="wheels-camera-frame">
+              <img
+                alt="Current view from the PiCar camera"
+                key={cameraRevision}
+                src={`/api/wheels/camera?revision=${cameraRevision}`}
+              />
             </div>
-          </div>
-          <div className="wheels-composer-note">
-            <span>Posts as Chris · Operator</span>
-            <span>Records coordination only; it does not move or speak through the car.</span>
-          </div>
-          {messageError ? <p className="error">{messageError}</p> : null}
-        </form>
+            <div className="wheels-camera-meta">
+              <span>Camera {cameraLabel}</span>
+              <button onClick={onRefreshCamera} type="button">Refresh camera</button>
+            </div>
+          </section>
 
-        <div className="room-utility wheels-utility">
+          <div className="operator-room-conversation wheels-room-conversation">
+            <form className="composer cafe-composer bar-composer wheels-composer wheels-room-composer" onSubmit={onMessageSubmit}>
+              <label className="visually-hidden" htmlFor="wheels-message">Post to the WHEELS room</label>
+              <div className="composer-row">
+                <textarea
+                  disabled={messageSending}
+                  id="wheels-message"
+                  maxLength={800}
+                  onChange={(event) => onMessageChange(event.target.value)}
+                  placeholder="Share a direction or observation…"
+                  value={message}
+                />
+                <div className="composer-actions">
+                  <button className="send" disabled={messageSending || !message.trim()} type="submit">
+                    {messageSending ? "Posting" : "Post"}
+                  </button>
+                </div>
+              </div>
+              <div className="wheels-composer-note">
+                <span>Posts as Chris · Operator</span>
+                <span>Records coordination only; it does not move or speak through the car.</span>
+              </div>
+              {messageError ? <p className="error">{messageError}</p> : null}
+            </form>
+
+            <div className="room-utility wheels-utility">
           <div>
             <p className="room-presence-label">Present</p>
             <div className="cafe-participants" aria-label="WHEELS participants">
@@ -4367,9 +4369,9 @@ function WheelsRoomView({
               Drive
             </button>
           </div>
-        </div>
+            </div>
 
-        <details className="wheels-session-details">
+            <details className="wheels-session-details">
           <summary>Invite to WHEELS</summary>
           <section className="wheels-invite" aria-label="Invite to WHEELS live session">
             <div className="wheels-card-heading">
@@ -4414,9 +4416,9 @@ function WheelsRoomView({
             </div>
             {inviteError ? <p className="error">{inviteError}</p> : null}
           </section>
-        </details>
+            </details>
 
-        <div className="transcript wheels-transcript" aria-label="WHEELS room messages">
+            <div className="transcript wheels-transcript" aria-label="WHEELS room messages">
           {!messages.length ? <p className="empty">No WHEELS messages yet.</p> : null}
           {messages.slice(-12).reverse().map((entry, index) => {
             const author = entry.author.trim() || "Unknown";
@@ -4436,8 +4438,10 @@ function WheelsRoomView({
               </article>
             );
           })}
+            </div>
+            {error ? <p className="error wheels-room-error">{error}</p> : null}
+          </div>
         </div>
-        {error ? <p className="error wheels-room-error">{error}</p> : null}
       </section>
     );
   }
@@ -4904,7 +4908,8 @@ function EyesView({
         <h2>{eyes?.room.title ?? "EYES"}</h2>
       </header>
 
-      <div className="eyes-viewfinder">
+      <div className="operator-room-layout eyes-room-layout">
+        <div className="eyes-viewfinder">
         <div className={`eyes-camera-frame ${cameraState}`}>
           <video autoPlay muted playsInline ref={videoRef} />
           {cameraState === "idle" ? <span>Camera idle</span> : null}
@@ -4931,9 +4936,10 @@ function EyesView({
             Attach frame
           </button>
         </div>
-      </div>
+        </div>
 
-      <form
+        <div className="operator-room-conversation eyes-room-conversation">
+          <form
         className="composer cafe-composer bar-composer eyes-composer"
         onDragOver={(event) => {
           event.preventDefault();
@@ -4995,9 +5001,9 @@ function EyesView({
             ))}
           </div>
         ) : null}
-      </form>
+          </form>
 
-      <div className="room-utility eyes-utility">
+          <div className="room-utility eyes-utility">
         <div>
           <p className="room-presence-label">Present</p>
           <div className="cafe-participants" aria-label="EYES participants">
@@ -5016,9 +5022,9 @@ function EyesView({
         <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
           Refresh EYES
         </button>
-      </div>
+          </div>
 
-      <div className="transcript cafe-transcript bar-transcript">
+          <div className="transcript cafe-transcript bar-transcript">
         {loading ? <p className="empty">Loading EYES...</p> : null}
         {!loading && !messages.length ? (
           <p className="empty">No EYES observations yet.</p>
@@ -5057,6 +5063,8 @@ function EyesView({
             </article>
           );
         })}
+          </div>
+        </div>
       </div>
     </section>
   );
