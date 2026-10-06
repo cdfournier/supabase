@@ -15,7 +15,11 @@ import {
   buildAttachmentDelivery,
   formatDeliverySummary
 } from "@/lib/anthropic-attachments";
-import { filterToolsForAgent } from "@/lib/capability-profile";
+import {
+  filterToolsForAgent,
+  isSurfaceAllowed,
+  loadAgentCapabilityProfile
+} from "@/lib/capability-profile";
 import { latestCompactionCheckpoint, messagesAfterCheckpoint } from "@/lib/compaction";
 import { recordModelUsage } from "@/lib/model-usage";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -29,6 +33,7 @@ import {
   buildOperatorMessageContent
 } from "@/lib/source-materials-shared";
 import { runTool, toolDefinitions } from "@/lib/tools/registry";
+import { isCurrentWheelsDriver } from "@/lib/tools/wheels";
 
 type AnthropicMessage = {
   role: "user" | "assistant";
@@ -275,9 +280,38 @@ async function runAnthropicToolLoop({
   const maxTokens = maxResponseTokens();
   const configuredMaxToolRounds = maxToolRounds();
   const toolEvents: RuntimeToolEvent[] = [];
-  const tools = await filterToolsForAgent(getSupabaseAdmin(), agent, toolDefinitions);
+  const supabase = getSupabaseAdmin();
+  const [profile, tools] = await Promise.all([
+    loadAgentCapabilityProfile(supabase, agent),
+    filterToolsForAgent(supabase, agent, toolDefinitions)
+  ]);
+  const hasWheelsDrivePermission = isSurfaceAllowed(profile, "wheels", "write");
 
-  for (let round = 0; round <= configuredMaxToolRounds; round += 1) {
+  for (let round = 0; ; round += 1) {
+    // Ordinary conversations are bounded. A WHEELS driver is the explicit
+    // exception: the Pi must still name this authorized agent as driver on
+    // every loop, so custody can end immediately when anyone pulls over or
+    // releases the wheel.
+    const activeWheelsDriveSession =
+      hasWheelsDrivePermission && (await isCurrentWheelsDriver(agent));
+
+    if (round > configuredMaxToolRounds && !activeWheelsDriveSession) {
+      return settleAfterToolLimit({
+        apiKey,
+        model,
+        maxTokens,
+        system,
+        messages,
+        agent,
+        conversationId,
+        turnId,
+        source,
+        maxRounds: configuredMaxToolRounds,
+        round,
+        toolEvents
+      });
+    }
+
     const messageCount = messages.length;
     const data = await callAnthropic({
       apiKey,
@@ -311,46 +345,22 @@ async function runAnthropicToolLoop({
       return { data, toolEvents, settledAfterToolLimit: false };
     }
 
-    if (round === configuredMaxToolRounds) {
-      const settlementMessages = withToolLimitSettlementPrompt(
-        messages,
-        configuredMaxToolRounds,
-        toolUses.map((toolUse) => String(toolUse.name ?? "unknown_tool"))
-      );
-      const settlementData = await callAnthropic({
+    if (round === configuredMaxToolRounds && !activeWheelsDriveSession) {
+      return settleAfterToolLimit({
         apiKey,
         model,
         maxTokens,
         system,
-        messages: settlementMessages,
-        tools: []
-      });
-      await recordModelUsage(getSupabaseAdmin(), {
-        provider: "anthropic",
-        model: settlementData.model || model,
+        messages,
         agent,
         conversationId,
         turnId,
         source,
-        operation: "chat_tool_loop_settle_after_limit",
-        round: round + 1,
-        providerRequestId: settlementData.id ?? null,
-        stopReason: settlementData.stop_reason ?? null,
-        usage: settlementData.usage,
-        request: {
-          maxTokens,
-          messageCount: settlementMessages.length,
-          toolCount: 0
-        }
+        maxRounds: configuredMaxToolRounds,
+        round,
+        toolEvents,
+        blockedToolNames: toolUses.map((toolUse) => String(toolUse.name ?? "unknown_tool"))
       });
-
-      if (toolUseBlocks(settlementData).length) {
-        throw new Error(
-          `Tool use did not settle after ${configuredMaxToolRounds} rounds; settlement response requested tools again.`
-        );
-      }
-
-      return { data: settlementData, toolEvents, settledAfterToolLimit: true };
     }
 
     messages.push({
@@ -388,7 +398,76 @@ async function runAnthropicToolLoop({
     });
   }
 
-  throw new Error("Tool use loop exited unexpectedly.");
+}
+
+async function settleAfterToolLimit({
+  apiKey,
+  model,
+  maxTokens,
+  system,
+  messages,
+  agent,
+  conversationId,
+  turnId,
+  source,
+  maxRounds,
+  round,
+  toolEvents,
+  blockedToolNames = []
+}: {
+  apiKey: string;
+  model: string;
+  maxTokens: number;
+  system: string;
+  messages: AnthropicMessage[];
+  agent: AgentName;
+  conversationId: string;
+  turnId: string;
+  source: string;
+  maxRounds: number;
+  round: number;
+  toolEvents: RuntimeToolEvent[];
+  blockedToolNames?: string[];
+}): Promise<ToolLoopResult> {
+  const settlementMessages = withToolLimitSettlementPrompt(
+    messages,
+    maxRounds,
+    blockedToolNames
+  );
+  const settlementData = await callAnthropic({
+    apiKey,
+    model,
+    maxTokens,
+    system,
+    messages: settlementMessages,
+    tools: []
+  });
+  await recordModelUsage(getSupabaseAdmin(), {
+    provider: "anthropic",
+    model: settlementData.model || model,
+    agent,
+    conversationId,
+    turnId,
+    source,
+    operation: "chat_tool_loop_settle_after_limit",
+    round: round + 1,
+    providerRequestId: settlementData.id ?? null,
+    stopReason: settlementData.stop_reason ?? null,
+    usage: settlementData.usage,
+    request: {
+      maxTokens,
+      messageCount: settlementMessages.length,
+      toolCount: 0
+    }
+  });
+
+  if (toolUseBlocks(settlementData).length) {
+    throw new Error(
+      `Tool use did not settle after ${maxRounds} rounds; settlement response requested tools again.`
+    );
+  }
+
+  return { data: settlementData, toolEvents, settledAfterToolLimit: true };
 }
 
 function previewToolContent(content: unknown) {
