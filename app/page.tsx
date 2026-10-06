@@ -15,6 +15,7 @@ type OperatorNoteFilter = "active" | "needs_operator" | "waiting_agent" | "settl
 type ActiveSurface = "chat" | "cafe" | "bar" | "eyes" | "wheels" | "inbox";
 
 const OPERATOR_NOTE_RECIPIENTS: OperatorNoteAgent[] = ["soren", "varro", "julian", "cael"];
+const WHEELS_LIVE_CAMERA_REFRESH_MS = 1000;
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
@@ -1819,6 +1820,23 @@ export default function Home() {
   useEffect(() => {
     void loadWheelsRoom();
   }, [loadWheelsRoom]);
+
+  useEffect(() => {
+    const cameraIsLive = wheelsRoom?.readiness.camera.state === "live";
+
+    if (activeSurface !== "wheels" || !cameraIsLive) {
+      return;
+    }
+
+    const refreshCamera = () => {
+      if (!document.hidden) {
+        setWheelsCameraRevision((current) => current + 1);
+      }
+    };
+    const interval = window.setInterval(refreshCamera, WHEELS_LIVE_CAMERA_REFRESH_MS);
+
+    return () => window.clearInterval(interval);
+  }, [activeSurface, wheelsRoom?.readiness.camera.state]);
 
   useEffect(() => {
     void loadOperatorInbox();
@@ -4294,7 +4312,7 @@ function WheelsRoomView({
   const cameraLabel = !readiness
     ? "unknown"
     : readiness.camera.state === "live"
-      ? `live · ${readiness.camera.age_seconds ?? 0}s ago`
+      ? `live · auto-updating · ${readiness.camera.age_seconds ?? 0}s ago`
       : readiness.camera.state;
 
   if (!focused) {
@@ -4315,7 +4333,7 @@ function WheelsRoomView({
             </div>
             <div className="wheels-camera-meta">
               <span>Camera {cameraLabel}</span>
-              <button onClick={onRefreshCamera} type="button">Refresh camera</button>
+              <button onClick={onRefreshCamera} type="button">Refresh now</button>
             </div>
           </section>
 
@@ -4486,7 +4504,7 @@ function WheelsRoomView({
           </div>
           <div className="wheels-camera-meta">
             <span>Camera {cameraLabel}</span>
-            <button onClick={onRefreshCamera} type="button">Refresh camera</button>
+            <button onClick={onRefreshCamera} type="button">Refresh now</button>
           </div>
           </section>
 
