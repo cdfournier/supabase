@@ -63,7 +63,14 @@ import {
 } from "@/lib/tools/runtime-journal";
 import { postCafeMessage, readCafeRoom } from "@/lib/tools/cafe";
 import { postBarRoomMessage, readBarRoom } from "@/lib/tools/bar";
-import { postWheelsRoomMessage, readWheelsRoom } from "@/lib/tools/wheels";
+import {
+  joinWheelsRide,
+  leaveWheelsRide,
+  postWheelsRoomMessage,
+  readWheelsRoom,
+  requestWheelsTurn,
+  withdrawWheelsTurn
+} from "@/lib/tools/wheels";
 import {
   getLiveSessionStatus,
   leaveLiveSession
@@ -412,6 +419,55 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_join_ride",
+    description:
+      "Explicitly join the PiCar as the active agent's named passenger. This is visible in WHEELS and grants no wheel or motion authority.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_leave_ride",
+    description:
+      "Explicitly leave the PiCar as the active agent and withdraw any pending wheel request. This never moves the car.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_request_turn",
+    description:
+      "Ask visibly for a future turn at the WHEELS wheel, with a short intention. This does not claim custody or authorize motion; the Operator must explicitly hand over the wheel.",
+    input_schema: {
+      type: "object",
+      properties: {
+        intention: {
+          type: "string",
+          description: "A concise purpose for the requested turn, up to 240 characters."
+        }
+      },
+      required: ["intention"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_withdraw_turn",
+    description:
+      "Withdraw the active agent's pending WHEELS wheel request. This has no custody or motion effect.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
       additionalProperties: false
     }
   },
@@ -1817,6 +1873,26 @@ export async function runTool(
         return {
           ok: true,
           content: await postWheelsRoomMessage(agent, input)
+        };
+      case "wheels_join_ride":
+        return {
+          ok: true,
+          content: await joinWheelsRide(agent, input)
+        };
+      case "wheels_leave_ride":
+        return {
+          ok: true,
+          content: await leaveWheelsRide(agent, input)
+        };
+      case "wheels_request_turn":
+        return {
+          ok: true,
+          content: await requestWheelsTurn(agent, input)
+        };
+      case "wheels_withdraw_turn":
+        return {
+          ok: true,
+          content: await withdrawWheelsTurn(agent, input)
         };
       case "live_session_status":
         return {
