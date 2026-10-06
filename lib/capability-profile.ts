@@ -315,11 +315,19 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   cafe_post_message: { surface: "cafe", action: "write" },
   bar_read_room: { surface: "bar", action: "read" },
   bar_post_message: { surface: "bar", action: "write" },
-  // WHEELS room chat uses the existing BAR-style shared-room permission. The
-  // physical WHEELS capability remains off and is never used for coordination
-  // messages; future passenger and motion tools will require their own gates.
+  // WHEELS room chat uses the existing BAR-style shared-room permission.
+  // Explicit passenger and queue actions are controlled by the physical
+  // WHEELS capability; custody and motion will remain separately gated.
   wheels_read_room: { surface: "bar", action: "read" },
   wheels_post_message: { surface: "bar", action: "write" },
+  wheels_join_ride: { surface: "wheels", action: "write" },
+  wheels_leave_ride: { surface: "wheels", action: "write" },
+  wheels_request_turn: { surface: "wheels", action: "write" },
+  wheels_withdraw_turn: { surface: "wheels", action: "write" },
+  wheels_take_wheel: { surface: "wheels", action: "write" },
+  wheels_drive: { surface: "wheels", action: "write" },
+  wheels_release_wheel: { surface: "wheels", action: "write" },
+  wheels_pull_over: { surface: "wheels", action: "write" },
   live_session_status: { surface: "live_sessions", action: "read" },
   live_session_leave: { surface: "live_sessions", action: "write" },
   work_packet_list: { surface: "work_packets", action: "read" },

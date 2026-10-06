@@ -63,7 +63,18 @@ import {
 } from "@/lib/tools/runtime-journal";
 import { postCafeMessage, readCafeRoom } from "@/lib/tools/cafe";
 import { postBarRoomMessage, readBarRoom } from "@/lib/tools/bar";
-import { postWheelsRoomMessage, readWheelsRoom } from "@/lib/tools/wheels";
+import {
+  joinWheelsRide,
+  leaveWheelsRide,
+  postWheelsRoomMessage,
+  pullOverWheels,
+  readWheelsRoom,
+  releaseWheelsWheel,
+  requestWheelsTurn,
+  takeWheelsWheel,
+  driveWheels,
+  withdrawWheelsTurn
+} from "@/lib/tools/wheels";
 import {
   getLiveSessionStatus,
   leaveLiveSession
@@ -412,6 +423,117 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_join_ride",
+    description:
+      "Explicitly join the PiCar as the active agent's named passenger. This is visible in WHEELS and grants no wheel or motion authority.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_leave_ride",
+    description:
+      "Explicitly leave the PiCar as the active agent and withdraw any pending wheel request. This never moves the car.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_request_turn",
+    description:
+      "Ask visibly for a future turn at the WHEELS wheel, with a short intention. This does not claim custody or authorize motion; the Operator must explicitly hand over the wheel.",
+    input_schema: {
+      type: "object",
+      properties: {
+        intention: {
+          type: "string",
+          description: "A concise purpose for the requested turn, up to 240 characters."
+        }
+      },
+      required: ["intention"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_withdraw_turn",
+    description:
+      "Withdraw the active agent's pending WHEELS wheel request. This has no custody or motion effect.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_take_wheel",
+    description:
+      "Take the currently unassigned WHEELS wheel as the active agent. This is available only to agents with persistent WHEELS drive permission, never replaces another driver, and honors the visible queue.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_drive",
+    description:
+      "Drive one bounded WHEELS segment as the active named driver: direction, steering angle, speed, and duration. The Pi stops at the end of the segment. Use only while holding the wheel and only when it is safe to do so.",
+    input_schema: {
+      type: "object",
+      properties: {
+        direction: {
+          type: "string",
+          enum: ["forward", "backward"],
+          description: "Travel direction."
+        },
+        angle: {
+          type: "number",
+          description: "Steering angle from -35 (left) to 35 (right). Defaults to 0."
+        },
+        speed: {
+          type: "number",
+          description: "Speed from 1 to 40. Defaults to 20."
+        },
+        duration_seconds: {
+          type: "number",
+          description: "Bounded travel duration from 0.1 to 3 seconds. Defaults to 1."
+        }
+      },
+      required: ["direction"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_release_wheel",
+    description:
+      "Stop and release the WHEELS wheel as the active driver, allowing the next participant to take it.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_pull_over",
+    description:
+      "Immediately stop and atomically release the WHEELS wheel as the active driver. Use when ending a drive or if anything feels uncertain.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
       additionalProperties: false
     }
   },
@@ -1817,6 +1939,46 @@ export async function runTool(
         return {
           ok: true,
           content: await postWheelsRoomMessage(agent, input)
+        };
+      case "wheels_join_ride":
+        return {
+          ok: true,
+          content: await joinWheelsRide(agent, input)
+        };
+      case "wheels_leave_ride":
+        return {
+          ok: true,
+          content: await leaveWheelsRide(agent, input)
+        };
+      case "wheels_request_turn":
+        return {
+          ok: true,
+          content: await requestWheelsTurn(agent, input)
+        };
+      case "wheels_withdraw_turn":
+        return {
+          ok: true,
+          content: await withdrawWheelsTurn(agent, input)
+        };
+      case "wheels_take_wheel":
+        return {
+          ok: true,
+          content: await takeWheelsWheel(agent, input)
+        };
+      case "wheels_drive":
+        return {
+          ok: true,
+          content: await driveWheels(agent, input)
+        };
+      case "wheels_release_wheel":
+        return {
+          ok: true,
+          content: await releaseWheelsWheel(agent, input)
+        };
+      case "wheels_pull_over":
+        return {
+          ok: true,
+          content: await pullOverWheels(agent, input)
         };
       case "live_session_status":
         return {

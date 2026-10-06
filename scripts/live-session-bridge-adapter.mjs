@@ -9,7 +9,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 const AGENTS = new Set(["julian"]);
 const DEFAULT_BASE_URL = "http://localhost:3001";
 const DEFAULT_INTERVAL_SECONDS = 5;
-const DEFAULT_CODEX_CLI = "/Applications/ChatGPT.app/Contents/Resources/codex";
+const DEFAULT_CODEX_CLI = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex";
 const DEFAULT_STATE_PATH = join(homedir(), "Library", "Application Support", "HUG", "julian-live-session-relay.json");
 
 loadLocalEnv();

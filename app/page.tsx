@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type SourceMaterialReference,
   attachmentsFromContent,
@@ -15,6 +15,9 @@ type OperatorNoteFilter = "active" | "needs_operator" | "waiting_agent" | "settl
 type ActiveSurface = "chat" | "cafe" | "bar" | "eyes" | "wheels" | "inbox";
 
 const OPERATOR_NOTE_RECIPIENTS: OperatorNoteAgent[] = ["soren", "varro", "julian", "cael"];
+// The Pi's own console captures a fresh frame every five seconds. Matching
+// that cadence avoids piling competing camera captures onto its locked path.
+const WHEELS_LIVE_CAMERA_REFRESH_MS = 5000;
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
@@ -906,6 +909,9 @@ export default function Home() {
   const [wheelsRoomError, setWheelsRoomError] = useState("");
   const [wheelsCameraRevision, setWheelsCameraRevision] = useState(0);
   const [wheelsFocused, setWheelsFocused] = useState(false);
+  const [wheelsDriveMinimized, setWheelsDriveMinimized] = useState(false);
+  const [wheelsDriveSpeed, setWheelsDriveSpeed] = useState(20);
+  const [wheelsMotionActive, setWheelsMotionActive] = useState(false);
   const [wheelsMessage, setWheelsMessage] = useState("");
   const [wheelsMessageSending, setWheelsMessageSending] = useState(false);
   const [wheelsMessageError, setWheelsMessageError] = useState("");
@@ -923,6 +929,12 @@ export default function Home() {
   const [wheelsControlSending, setWheelsControlSending] = useState(false);
   const [wheelsControlError, setWheelsControlError] = useState("");
   const [wheelsSupervisionConfirmed, setWheelsSupervisionConfirmed] = useState(false);
+  const wheelsMotionStartingRef = useRef(false);
+  const wheelsMotionReleaseRequestedRef = useRef(false);
+  const wheelsPullOverRequestedRef = useRef(false);
+  const wheelsMotionIdRef = useRef<string | null>(null);
+  const wheelsMotionRenewalTimerRef = useRef<number | null>(null);
+  const wheelsMotionRenewalInFlightRef = useRef(false);
   const [liveSession, setLiveSession] = useState<LiveSessionStatus | null>(null);
   const [liveSessionLoading, setLiveSessionLoading] = useState(true);
   const [liveSessionRequestInProgress, setLiveSessionRequestInProgress] = useState(false);
@@ -1592,22 +1604,25 @@ export default function Home() {
   ]);
 
   const runWheelsControl = useCallback(async (
-    action: "take_wheel" | "release_wheel" | "stop" | "nudge_forward" | "nudge_backward" | "nudge_left" | "nudge_right"
+    action: "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive" | "renew_drive",
+    command?: { angle: number; direction: "forward" | "backward"; speed: number; continuous: boolean; duration: number; motionId?: string; }
   ) => {
-    if (wheelsControlSending) {
-      return;
+    if (wheelsControlSending && action !== "stop" && action !== "pull_over") {
+      return false;
     }
 
     setWheelsControlSending(true);
     setWheelsControlError("");
 
     try {
+      const { motionId, ...controlCommand } = command ?? {};
       const response = await fetch("/api/wheels/control", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action,
-          supervision_confirmed: wheelsSupervisionConfirmed
+          ...controlCommand,
+          ...(motionId ? { motion_id: motionId } : {})
         })
       });
       const data = await readJsonResponse<{ error?: string }>(response);
@@ -1617,14 +1632,168 @@ export default function Home() {
       }
 
       await loadWheelsRoom();
+      return true;
     } catch (controlError) {
       setWheelsControlError(
         controlError instanceof Error ? controlError.message : "WHEELS control request failed."
       );
+      return false;
     } finally {
       setWheelsControlSending(false);
     }
-  }, [loadWheelsRoom, wheelsControlSending, wheelsSupervisionConfirmed]);
+  }, [loadWheelsRoom, wheelsControlSending]);
+
+  const clearWheelsMotionRenewal = useCallback(() => {
+    if (wheelsMotionRenewalTimerRef.current !== null) {
+      window.clearInterval(wheelsMotionRenewalTimerRef.current);
+      wheelsMotionRenewalTimerRef.current = null;
+    }
+    wheelsMotionRenewalInFlightRef.current = false;
+  }, []);
+
+  const renewWheelsMotion = useCallback(async () => {
+    const motionId = wheelsMotionIdRef.current;
+    if (!motionId || wheelsMotionRenewalInFlightRef.current) {
+      return;
+    }
+
+    wheelsMotionRenewalInFlightRef.current = true;
+    try {
+      const response = await fetch("/api/wheels/control", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "renew_drive", motion_id: motionId })
+      });
+      const data = await readJsonResponse<{ error?: string }>(response);
+      if (!response.ok) {
+        throw new Error(data.error || "PiCar motion renewal failed.");
+      }
+    } catch (renewalError) {
+      clearWheelsMotionRenewal();
+      wheelsMotionIdRef.current = null;
+      setWheelsMotionActive(false);
+      setWheelsControlError(
+        renewalError instanceof Error
+          ? `${renewalError.message} The Pi watchdog will stop the car.`
+          : "PiCar motion renewal failed. The Pi watchdog will stop the car."
+      );
+    } finally {
+      wheelsMotionRenewalInFlightRef.current = false;
+    }
+  }, [clearWheelsMotionRenewal]);
+
+  const startWheelsMotionRenewal = useCallback(() => {
+    clearWheelsMotionRenewal();
+    wheelsMotionRenewalTimerRef.current = window.setInterval(() => {
+      void renewWheelsMotion();
+    }, 250);
+  }, [clearWheelsMotionRenewal, renewWheelsMotion]);
+
+  const stopWheelsMotion = useCallback(async () => {
+    wheelsMotionReleaseRequestedRef.current = true;
+    clearWheelsMotionRenewal();
+    wheelsMotionIdRef.current = null;
+
+    if (wheelsMotionStartingRef.current || !wheelsMotionActive) {
+      return;
+    }
+
+    const stopped = await runWheelsControl("stop");
+    if (stopped) {
+      setWheelsMotionActive(false);
+    }
+  }, [clearWheelsMotionRenewal, runWheelsControl, wheelsMotionActive]);
+
+  const startWheelsMotion = useCallback(async (direction: "forward" | "backward", angle: number) => {
+    if (wheelsMotionStartingRef.current || wheelsMotionActive || wheelsControlSending) {
+      return;
+    }
+
+    wheelsMotionStartingRef.current = true;
+    wheelsMotionReleaseRequestedRef.current = false;
+    const motionId = crypto.randomUUID();
+    wheelsMotionIdRef.current = motionId;
+    const started = await runWheelsControl("drive", {
+      angle,
+      direction,
+      speed: wheelsDriveSpeed,
+      duration: 0,
+      continuous: true,
+      motionId
+    });
+
+    if (!started) {
+      wheelsMotionIdRef.current = null;
+      wheelsMotionStartingRef.current = false;
+      return;
+    }
+
+    setWheelsMotionActive(true);
+
+    if (wheelsPullOverRequestedRef.current) {
+      clearWheelsMotionRenewal();
+      wheelsMotionIdRef.current = null;
+      const pulledOver = await runWheelsControl("pull_over");
+      if (pulledOver) {
+        setWheelsMotionActive(false);
+        setWheelsFocused(false);
+        setWheelsDriveMinimized(false);
+      }
+    } else if (wheelsMotionReleaseRequestedRef.current) {
+      clearWheelsMotionRenewal();
+      wheelsMotionIdRef.current = null;
+      const stopped = await runWheelsControl("stop");
+      if (stopped) {
+        setWheelsMotionActive(false);
+      }
+    } else {
+      startWheelsMotionRenewal();
+    }
+
+    wheelsMotionStartingRef.current = false;
+  }, [clearWheelsMotionRenewal, runWheelsControl, startWheelsMotionRenewal, wheelsControlSending, wheelsDriveSpeed, wheelsMotionActive]);
+
+  const pullOverWheels = useCallback(async () => {
+    wheelsMotionReleaseRequestedRef.current = true;
+    wheelsPullOverRequestedRef.current = true;
+    clearWheelsMotionRenewal();
+    wheelsMotionIdRef.current = null;
+
+    if (wheelsMotionStartingRef.current) {
+      return;
+    }
+
+    const pulledOver = await runWheelsControl("pull_over");
+    if (pulledOver) {
+      setWheelsMotionActive(false);
+      setWheelsFocused(false);
+      setWheelsDriveMinimized(false);
+    }
+  }, [clearWheelsMotionRenewal, runWheelsControl]);
+
+  useEffect(() => () => {
+    clearWheelsMotionRenewal();
+  }, [clearWheelsMotionRenewal]);
+
+  useEffect(() => {
+    const stopForExit = () => {
+      if (wheelsMotionActive) {
+        void stopWheelsMotion();
+      }
+    };
+    const stopWhenHidden = () => {
+      if (document.hidden) {
+        stopForExit();
+      }
+    };
+
+    window.addEventListener("pagehide", stopForExit);
+    document.addEventListener("visibilitychange", stopWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", stopForExit);
+      document.removeEventListener("visibilitychange", stopWhenHidden);
+    };
+  }, [stopWheelsMotion, wheelsMotionActive]);
 
   useEffect(() => {
     void loadCafe();
@@ -1653,6 +1822,23 @@ export default function Home() {
   useEffect(() => {
     void loadWheelsRoom();
   }, [loadWheelsRoom]);
+
+  useEffect(() => {
+    const cameraIsLive = wheelsRoom?.readiness.camera.state === "live";
+
+    if (activeSurface !== "wheels" || !cameraIsLive) {
+      return;
+    }
+
+    const refreshCamera = () => {
+      if (!document.hidden) {
+        setWheelsCameraRevision((current) => current + 1);
+      }
+    };
+    const interval = window.setInterval(refreshCamera, WHEELS_LIVE_CAMERA_REFRESH_MS);
+
+    return () => window.clearInterval(interval);
+  }, [activeSurface, wheelsRoom?.readiness.camera.state]);
 
   useEffect(() => {
     void loadOperatorInbox();
@@ -3149,87 +3335,141 @@ export default function Home() {
   }
 
   return (
-    <main className={`shell ${activeSurface === "wheels" && wheelsFocused ? "wheels-focus" : ""}`}>
+    <main className="shell">
       <aside className="sidebar">
         <h1>Agents</h1>
-        <button
-          className={`cafe-button ${activeSurface === "cafe" ? "active" : ""}`}
-          onClick={() => setActiveSurface("cafe")}
-          type="button"
-        >
-          <strong>Cafe</strong>
-          <br />
-          <span>shared room</span>
-        </button>
-        <button
-          className={`cafe-button ${activeSurface === "bar" ? "active" : ""}`}
-          onClick={() => {
-            setActiveSurface("bar");
-            void loadBar();
-          }}
-          type="button"
-        >
-          <strong>BAR</strong>
-          <br />
-          <span>{barActivePresenceCount} here</span>
-        </button>
-        <button
-          className={`cafe-button ${activeSurface === "eyes" ? "active" : ""}`}
-          onClick={() => {
-            setActiveSurface("eyes");
-            void loadEyes();
-          }}
-          type="button"
-        >
-          <strong>EYES</strong>
-          <br />
-          <span>{eyesActivePresenceCount} here</span>
-        </button>
-        <button
-          className={`cafe-button ${activeSurface === "wheels" ? "active" : ""}`}
-          onClick={() => {
-            setActiveSurface("wheels");
-            void loadWheelsRoom();
-          }}
-          type="button"
-        >
-          <strong>WHEELS</strong>
-          <br />
-          <span>{wheelsReadiness?.wheel.driver ? `with ${wheelsReadiness.wheel.driver}` : "parked"}</span>
-        </button>
-        <button
-          className={`cafe-button ${activeSurface === "inbox" ? "active" : ""}`}
-          onClick={() => {
-            setActiveSurface("inbox");
-            void loadOperatorInbox();
-          }}
-          type="button"
-        >
-          <strong>Inbox</strong>
-          <br />
-          <span>{operatorInboxCount} item{operatorInboxCount === 1 ? "" : "s"}</span>
-        </button>
-        <div className="agent-list">
-          {agents.map((agent) => (
-            <button
-              className={`agent-button ${
-                activeSurface === "chat" && agent.name === selectedAgent ? "active" : ""
-              }`}
-              disabled={sending}
-              key={agent.name}
-              onClick={() => {
-                setSelectedAgent(agent.name);
+        <label className="room-switcher" htmlFor="operator-destination">
+          <span>Open</span>
+          <select
+            id="operator-destination"
+            onChange={(event) => {
+              const destination = event.target.value;
+
+              if (destination.startsWith("chat:")) {
+                setSelectedAgent(destination.slice("chat:".length) as AgentName);
                 setActiveSurface("chat");
-              }}
-              type="button"
-            >
-              <strong>{agent.display_name ?? agent.name}</strong>
-              <br />
-              <span>{agent.status ?? "active"}</span>
-            </button>
-          ))}
+                return;
+              }
+
+              const surface = destination as Exclude<ActiveSurface, "chat">;
+              setActiveSurface(surface);
+
+              if (surface === "bar") {
+                void loadBar();
+              } else if (surface === "eyes") {
+                void loadEyes();
+              } else if (surface === "wheels") {
+                setWheelsFocused(false);
+                void loadWheelsRoom();
+              } else if (surface === "inbox") {
+                void loadOperatorInbox();
+              }
+            }}
+            value={activeSurface === "chat" ? `chat:${selectedAgent}` : activeSurface}
+          >
+            <optgroup label="Rooms">
+              <option value="cafe">Cafe</option>
+              <option value="bar">BAR</option>
+              <option value="eyes">EYES</option>
+              <option value="wheels">WHEELS</option>
+              <option value="inbox">Inbox</option>
+            </optgroup>
+            <optgroup label="Agent chats">
+              {agents.map((agent) => (
+                <option key={agent.name} value={`chat:${agent.name}`}>
+                  {agent.display_name ?? agent.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </label>
+        <div className="room-navigation">
+          <button
+            className={`cafe-button ${activeSurface === "cafe" ? "active" : ""}`}
+            onClick={() => setActiveSurface("cafe")}
+            type="button"
+          >
+            <strong>Cafe</strong>
+            <br />
+            <span>shared room</span>
+          </button>
+          <button
+            className={`cafe-button ${activeSurface === "bar" ? "active" : ""}`}
+            onClick={() => {
+              setActiveSurface("bar");
+              void loadBar();
+            }}
+            type="button"
+          >
+            <strong>BAR</strong>
+            <br />
+            <span>{barActivePresenceCount} here</span>
+          </button>
+          <button
+            className={`cafe-button ${activeSurface === "eyes" ? "active" : ""}`}
+            onClick={() => {
+              setActiveSurface("eyes");
+              void loadEyes();
+            }}
+            type="button"
+          >
+            <strong>EYES</strong>
+            <br />
+            <span>{eyesActivePresenceCount} here</span>
+          </button>
+          <button
+            className={`cafe-button ${activeSurface === "wheels" ? "active" : ""}`}
+            onClick={() => {
+              setActiveSurface("wheels");
+              setWheelsFocused(false);
+              void loadWheelsRoom();
+            }}
+            type="button"
+          >
+            <strong>WHEELS</strong>
+            <br />
+            <span>{wheelsReadiness?.wheel.driver ? `with ${wheelsReadiness.wheel.driver}` : "parked"}</span>
+          </button>
+          <button
+            className={`cafe-button ${activeSurface === "inbox" ? "active" : ""}`}
+            onClick={() => {
+              setActiveSurface("inbox");
+              void loadOperatorInbox();
+            }}
+            type="button"
+          >
+            <strong>Inbox</strong>
+            <br />
+            <span>{operatorInboxCount} item{operatorInboxCount === 1 ? "" : "s"}</span>
+          </button>
+          <div className="agent-list">
+            {agents.map((agent) => (
+              <button
+                className={`agent-button ${
+                  activeSurface === "chat" && agent.name === selectedAgent ? "active" : ""
+                }`}
+                disabled={sending}
+                key={agent.name}
+                onClick={() => {
+                  setSelectedAgent(agent.name);
+                  setActiveSurface("chat");
+                }}
+                type="button"
+              >
+                <strong>{agent.display_name ?? agent.name}</strong>
+                <br />
+                <span>{agent.status ?? "active"}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
+        <details className="system-details">
+          <summary>
+            <span>System &amp; feature details</span>
+            <span aria-hidden="true">Open</span>
+          </summary>
+          <div className="system-details-panels">
         <RuntimeHealthPanel
           activeHealth={activeHealth}
           compactionError={compactionError}
@@ -3317,6 +3557,8 @@ export default function Home() {
           selectedAgent={selectedAgent}
           status={workPacketSignals}
         />
+          </div>
+        </details>
       </aside>
 
       {activeSurface === "cafe" ? (
@@ -3362,11 +3604,12 @@ export default function Home() {
           sending={eyesSending}
         />
       ) : activeSurface === "wheels" ? (
+        <>
         <WheelsRoomView
           cameraRevision={wheelsCameraRevision}
           error={wheelsRoomError}
           loading={wheelsRoomLoading}
-          focused={wheelsFocused}
+          focused={false}
           message={wheelsMessage}
           messageError={wheelsMessageError}
           messageSending={wheelsMessageSending}
@@ -3385,7 +3628,17 @@ export default function Home() {
           controlError={wheelsControlError}
           controlSending={wheelsControlSending}
           onControl={(action) => {
-            void runWheelsControl(action);
+            if (action === "nudge_forward") {
+              void runWheelsControl("drive", { angle: 0, direction: "forward", speed: 20, duration: 0.2, continuous: false });
+            } else if (action === "nudge_backward") {
+              void runWheelsControl("drive", { angle: 0, direction: "backward", speed: 20, duration: 0.2, continuous: false });
+            } else if (action === "nudge_left") {
+              void runWheelsControl("drive", { angle: -12, direction: "forward", speed: 20, duration: 0.2, continuous: false });
+            } else if (action === "nudge_right") {
+              void runWheelsControl("drive", { angle: 12, direction: "forward", speed: 20, duration: 0.2, continuous: false });
+            } else {
+              void runWheelsControl(action);
+            }
           }}
           onSupervisionChange={setWheelsSupervisionConfirmed}
           supervisionConfirmed={wheelsSupervisionConfirmed}
@@ -3397,9 +3650,39 @@ export default function Home() {
           }}
           onMessageChange={setWheelsMessage}
           onMessageSubmit={sendWheelsMessage}
-          onToggleFocus={() => setWheelsFocused((current) => !current)}
+          onToggleFocus={() => {
+            wheelsPullOverRequestedRef.current = false;
+            wheelsMotionReleaseRequestedRef.current = false;
+            setWheelsDriveMinimized(false);
+            setWheelsFocused(true);
+          }}
           room={wheelsRoom}
         />
+        {wheelsFocused ? (
+          <DriveDrawer
+            controlError={wheelsControlError}
+            controlSending={wheelsControlSending}
+            minimized={wheelsDriveMinimized}
+            motionActive={wheelsMotionActive}
+            onPullOver={() => {
+              void pullOverWheels();
+            }}
+            onStartMotion={(direction, angle) => {
+              void startWheelsMotion(direction, angle);
+            }}
+            onStopMotion={() => {
+              void stopWheelsMotion();
+            }}
+            onTakeWheel={() => {
+              void runWheelsControl("take_wheel");
+            }}
+            onToggleMinimized={() => setWheelsDriveMinimized((current) => !current)}
+            onSpeedChange={setWheelsDriveSpeed}
+            readiness={wheelsRoom?.readiness ?? null}
+            speed={wheelsDriveSpeed}
+          />
+        ) : null}
+        </>
       ) : activeSurface === "inbox" ? (
         <OperatorInboxView
           actionInProgress={operatorInboxActionInProgress}
@@ -3829,22 +4112,22 @@ function BarView({
   return (
     <section className="main bar-main">
       <header className="header cafe-header bar-header">
-        <h2 className="visually-hidden">{bar?.room.title ?? "BAR"}</h2>
-        <div className="cafe-participants" aria-label="BAR participants">
-          {presence.length ? (
-            presence.map((receipt) => (
-              <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
-                <strong>{receipt.display_name}</strong>
-                <small>{presenceStateLabel(receipt.state)}</small>
-              </span>
-            ))
-          ) : (
-            <span className="participant-chip muted">No participants loaded</span>
-          )}
+        <h2>{bar?.room.title ?? "BAR"}</h2>
+        <div>
+          <p className="room-presence-label">Present</p>
+          <div className="cafe-participants" aria-label="BAR participants">
+            {presence.length ? (
+              presence.map((receipt) => (
+                <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
+                  <strong>{receipt.display_name}</strong>
+                  <small>{presenceStateLabel(receipt.state)}</small>
+                </span>
+              ))
+            ) : (
+              <span className="participant-chip muted">No participants loaded</span>
+            )}
+          </div>
         </div>
-        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
-          Refresh
-        </button>
       </header>
 
       <form
@@ -3917,6 +4200,12 @@ function BarView({
           </div>
         ) : null}
       </form>
+
+      <div className="room-utility">
+        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
+          Refresh BAR
+        </button>
+      </div>
 
       <div className="transcript cafe-transcript bar-transcript">
         {loading ? <p className="empty">Loading BAR...</p> : null}
@@ -4025,15 +4314,164 @@ function WheelsRoomView({
   const cameraLabel = !readiness
     ? "unknown"
     : readiness.camera.state === "live"
-      ? `live · ${readiness.camera.age_seconds ?? 0}s ago`
+      ? `live · auto-updating · ${readiness.camera.age_seconds ?? 0}s ago`
       : readiness.camera.state;
+
+  if (!focused) {
+    return (
+      <section className="main wheels-main wheels-room-main">
+        <header className="header bar-header">
+          <h2>WHEELS</h2>
+        </header>
+
+        <div className="operator-room-layout wheels-room-layout">
+          <section className="wheels-room-viewfinder" aria-label="PiCar camera">
+            <div className="wheels-camera-frame">
+              <img
+                alt="Current view from the PiCar camera"
+                key={cameraRevision}
+                src={`/api/wheels/camera?revision=${cameraRevision}`}
+              />
+            </div>
+            <div className="wheels-camera-meta">
+              <span>Camera {cameraLabel}</span>
+              <button onClick={onRefreshCamera} type="button">Refresh now</button>
+            </div>
+          </section>
+
+          <div className="operator-room-conversation wheels-room-conversation">
+            <form className="composer cafe-composer bar-composer wheels-composer wheels-room-composer" onSubmit={onMessageSubmit}>
+              <label className="visually-hidden" htmlFor="wheels-message">Post to the WHEELS room</label>
+              <div className="composer-row">
+                <textarea
+                  disabled={messageSending}
+                  id="wheels-message"
+                  maxLength={800}
+                  onChange={(event) => onMessageChange(event.target.value)}
+                  placeholder="Share a direction or observation…"
+                  value={message}
+                />
+                <div className="composer-actions">
+                  <button className="send" disabled={messageSending || !message.trim()} type="submit">
+                    {messageSending ? "Posting" : "Post"}
+                  </button>
+                </div>
+              </div>
+              <div className="wheels-composer-note">
+                <span>Posts as Chris · Operator</span>
+                <span>Records coordination only; it does not move or speak through the car.</span>
+              </div>
+              {messageError ? <p className="error">{messageError}</p> : null}
+            </form>
+
+            <div className="room-utility wheels-utility">
+          <div>
+            <p className="room-presence-label">Present</p>
+            <div className="cafe-participants" aria-label="WHEELS participants">
+              {passengers.length ? (
+                passengers.map((passenger) => (
+                  <span className="participant-chip" key={passenger.name}>
+                    <strong>{passenger.name}</strong>
+                    <small>present</small>
+                  </span>
+                ))
+              ) : (
+                <span className="participant-chip muted">No one in the room</span>
+              )}
+            </div>
+            {queue.length ? <p className="wheels-queue">Queue: {queue.map((entry) => entry.name).join(" → ")}</p> : null}
+          </div>
+          <div className="wheels-room-actions">
+            <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">
+              {loading ? "Reading" : "Refresh WHEELS"}
+            </button>
+            <button className="quiet-action wheels-drive-entry" onClick={onToggleFocus} type="button">
+              Drive
+            </button>
+          </div>
+            </div>
+
+            <details className="wheels-session-details">
+          <summary>Invite to WHEELS</summary>
+          <section className="wheels-invite" aria-label="Invite to WHEELS live session">
+            <div className="wheels-card-heading">
+              <div>
+                <p className="wheels-eyebrow">Live session</p>
+                <h3>Invite to the room</h3>
+              </div>
+              <span>room only</span>
+            </div>
+            <label>
+              <span className="visually-hidden">Invitation prompt</span>
+              <textarea
+                disabled={inviteSending}
+                maxLength={600}
+                onChange={(event) => onInviteMessageChange(event.target.value)}
+                value={inviteMessage}
+              />
+            </label>
+            <div className="wheels-invitees" aria-label="Invitees">
+              {(Object.keys(invitees) as LiveSessionAgent[]).map((agent) => (
+                <label key={agent}>
+                  <input
+                    checked={invitees[agent]}
+                    disabled={inviteSending}
+                    onChange={(event) => onInviteeChange(agent, event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>{displayAgentName(agent)}</span>
+                </label>
+              ))}
+            </div>
+            <div className="wheels-invite-actions">
+              <button
+                className="send"
+                disabled={inviteSending || !inviteMessage.trim() || !Object.values(invitees).some(Boolean)}
+                onClick={onInvite}
+                type="button"
+              >
+                {inviteSending ? "Inviting" : "Invite to session"}
+              </button>
+              <span>Session presence only — no passenger entry, wheel claim, or motion.</span>
+            </div>
+            {inviteError ? <p className="error">{inviteError}</p> : null}
+          </section>
+            </details>
+
+            <div className="transcript wheels-transcript" aria-label="WHEELS room messages">
+          {!messages.length ? <p className="empty">No WHEELS messages yet.</p> : null}
+          {messages.slice(-12).reverse().map((entry, index) => {
+            const author = entry.author.trim() || "Unknown";
+            const isOperator = author.toLowerCase() === "chris" || author.toLowerCase() === "operator";
+            const createdAt = entry.ts ? new Date(entry.ts * 1000).toISOString() : undefined;
+
+            return (
+              <article
+                className={`message ${isOperator ? "user" : "assistant"}`}
+                key={`${author}-${entry.ts ?? index}-${entry.message}`}
+              >
+                <div className="message-meta">
+                  <span>{isOperator ? "Chris · Operator" : author}</span>
+                  {createdAt ? <time dateTime={createdAt}>{formatMessageTime(createdAt)}</time> : null}
+                </div>
+                <div>{entry.message}</div>
+              </article>
+            );
+          })}
+            </div>
+            {error ? <p className="error wheels-room-error">{error}</p> : null}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="main wheels-main">
       <header className="header wheels-header">
         <div>
-          <p className="wheels-eyebrow">Operator room</p>
-          <h2>WHEELS</h2>
+          <p className="wheels-eyebrow">Operator controls</p>
+          <h2>DRIVE</h2>
           <p>
             {readiness?.wheel.driver
               ? `${readiness.wheel.driver} holds the wheel.`
@@ -4042,7 +4480,7 @@ function WheelsRoomView({
         </div>
         <div className="wheels-header-actions">
           <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">
-            {loading ? "Reading" : "Refresh room"}
+            {loading ? "Reading" : "Refresh DRIVE"}
           </button>
           <button
             aria-pressed={focused}
@@ -4050,7 +4488,7 @@ function WheelsRoomView({
             onClick={onToggleFocus}
             type="button"
           >
-            {focused ? "Show home" : "Focus WHEELS"}
+            Return to WHEELS
           </button>
         </div>
       </header>
@@ -4068,7 +4506,7 @@ function WheelsRoomView({
           </div>
           <div className="wheels-camera-meta">
             <span>Camera {cameraLabel}</span>
-            <button onClick={onRefreshCamera} type="button">Refresh camera</button>
+            <button onClick={onRefreshCamera} type="button">Refresh now</button>
           </div>
           </section>
 
@@ -4263,6 +4701,127 @@ function WheelsRoomView({
   );
 }
 
+function DriveDrawer({
+  controlError,
+  controlSending,
+  minimized,
+  motionActive,
+  onPullOver,
+  onSpeedChange,
+  onStartMotion,
+  onStopMotion,
+  onTakeWheel,
+  onToggleMinimized,
+  readiness,
+  speed
+}: {
+  controlError: string;
+  controlSending: boolean;
+  minimized: boolean;
+  motionActive: boolean;
+  onPullOver: () => void;
+  onSpeedChange: (speed: number) => void;
+  onStartMotion: (direction: "forward" | "backward", angle: number) => void;
+  onStopMotion: () => void;
+  onTakeWheel: () => void;
+  onToggleMinimized: () => void;
+  readiness: WheelsReadiness | null;
+  speed: number;
+}) {
+  const driver = readiness?.wheel.driver ?? null;
+  const ChrisHasWheel = driver === "Chris";
+  const anotherDriverHasWheel = Boolean(driver && !ChrisHasWheel);
+
+  function directionHandlers(direction: "forward" | "backward", angle: number) {
+    return {
+      onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        onStartMotion(direction, angle);
+      },
+      onPointerUp: onStopMotion,
+      onPointerCancel: onStopMotion,
+      onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+        if ((event.key === "Enter" || event.key === " ") && !event.repeat) {
+          event.preventDefault();
+          onStartMotion(direction, angle);
+        }
+      },
+      onKeyUp: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onStopMotion();
+        }
+      }
+    };
+  }
+
+  return (
+    <aside className={`wheels-drive-drawer ${minimized ? "minimized" : ""}`} aria-label="DRIVE controls">
+      <div className="wheels-drive-drawer-bar">
+        <div>
+          <p className="wheels-eyebrow">Operator controls</p>
+          <h2>DRIVE</h2>
+          <p>{ChrisHasWheel ? "Chris holds the wheel." : driver ? `${driver} holds the wheel.` : "Wheel unassigned."}</p>
+        </div>
+        <button
+          aria-expanded={!minimized}
+          className="quiet-action wheels-drawer-minimize"
+          onClick={onToggleMinimized}
+          type="button"
+        >
+          {minimized ? "Open controls" : "Minimize"}
+        </button>
+      </div>
+
+      {!minimized ? (
+        <div className="wheels-drive-drawer-content">
+          {!ChrisHasWheel ? (
+            <section className="wheels-drive-claim">
+              <p>The WHEELS room stays open underneath while you drive.</p>
+              <button
+                className="send"
+                disabled={controlSending || anotherDriverHasWheel}
+                onClick={onTakeWheel}
+                type="button"
+              >
+                {anotherDriverHasWheel ? `Wheel held by ${driver}` : "Take wheel"}
+              </button>
+            </section>
+          ) : (
+            <section className="wheels-drive-controls" aria-label="Continuous drive controls">
+              <div className="wheels-direction-pad">
+                <button aria-label="Drive forward" disabled={controlSending} type="button" {...directionHandlers("forward", 0)}>↑</button>
+                <button aria-label="Drive forward left" disabled={controlSending} type="button" {...directionHandlers("forward", -35)}>←</button>
+                <button aria-label="Drive forward right" disabled={controlSending} type="button" {...directionHandlers("forward", 35)}>→</button>
+                <button aria-label="Drive backward" disabled={controlSending} type="button" {...directionHandlers("backward", 0)}>↓</button>
+              </div>
+              <label className="wheels-speed-control">
+                <span>Speed <strong>{speed}</strong></span>
+                <input
+                  aria-label="Drive speed"
+                  disabled={controlSending || motionActive}
+                  max="50"
+                  min="1"
+                  onChange={(event) => onSpeedChange(Number(event.target.value))}
+                  type="range"
+                  value={speed}
+                />
+                <small>Hold a direction to drive; releasing stops the car.</small>
+              </label>
+            </section>
+          )}
+
+          {controlError ? <p className="error">{controlError}</p> : null}
+        </div>
+      ) : null}
+
+      <button className="wheels-pull-over" onClick={onPullOver} type="button">
+        Pull Over
+      </button>
+    </aside>
+  );
+}
+
 function EyesView({
   error,
   eyes,
@@ -4295,7 +4854,6 @@ function EyesView({
   const [cameraState, setCameraState] = useState<"idle" | "starting" | "live" | "unavailable">("idle");
   const presence = eyes?.presence ?? [];
   const messages = eyes?.messages ?? [];
-  const frames = eyes?.frames ?? [];
 
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -4366,26 +4924,12 @@ function EyesView({
 
   return (
     <section className="main bar-main eyes-main">
-      <header className="header cafe-header bar-header">
-        <h2 className="visually-hidden">{eyes?.room.title ?? "EYES"}</h2>
-        <div className="cafe-participants" aria-label="EYES participants">
-          {presence.length ? (
-            presence.map((receipt) => (
-              <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
-                <strong>{receipt.display_name}</strong>
-                <small>{presenceStateLabel(receipt.state)}</small>
-              </span>
-            ))
-          ) : (
-            <span className="participant-chip muted">No observers loaded</span>
-          )}
-        </div>
-        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
-          Refresh
-        </button>
+      <header className="header eyes-header">
+        <h2>{eyes?.room.title ?? "EYES"}</h2>
       </header>
 
-      <div className="eyes-viewfinder">
+      <div className="operator-room-layout eyes-room-layout">
+        <div className="eyes-viewfinder">
         <div className={`eyes-camera-frame ${cameraState}`}>
           <video autoPlay muted playsInline ref={videoRef} />
           {cameraState === "idle" ? <span>Camera idle</span> : null}
@@ -4394,9 +4938,17 @@ function EyesView({
         </div>
         <canvas ref={canvasRef} />
         <div className="eyes-controls">
-          <button disabled={sending || cameraState === "starting"} onClick={startCamera} type="button">
-            {cameraState === "live" ? "Camera live" : "Start camera"}
-          </button>
+          {cameraState === "idle" ? (
+            <button disabled={sending} onClick={startCamera} type="button">
+              Start camera
+            </button>
+          ) : null}
+          {cameraState === "starting" ? <p className="eyes-camera-status">Starting camera…</p> : null}
+          {cameraState === "unavailable" ? (
+            <button disabled={sending} onClick={startCamera} type="button">
+              Retry camera
+            </button>
+          ) : null}
           <button disabled={sending || cameraState !== "live"} onClick={captureFrame} type="button">
             Capture frame
           </button>
@@ -4404,20 +4956,10 @@ function EyesView({
             Attach frame
           </button>
         </div>
-        {frames.length ? (
-          <div className="eyes-latest" aria-label="Latest EYES frames">
-            <strong>Latest frames</strong>
-            {frames.map((frame) => (
-              <span key={`${frame.id}-${frame.sequence}`}>
-                {frame.title}
-                <small>{formatMessageTime(frame.captured_at)}</small>
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
+        </div>
 
-      <form
+        <div className="operator-room-conversation eyes-room-conversation">
+          <form
         className="composer cafe-composer bar-composer eyes-composer"
         onDragOver={(event) => {
           event.preventDefault();
@@ -4479,9 +5021,30 @@ function EyesView({
             ))}
           </div>
         ) : null}
-      </form>
+          </form>
 
-      <div className="transcript cafe-transcript bar-transcript">
+          <div className="room-utility eyes-utility">
+        <div>
+          <p className="room-presence-label">Present</p>
+          <div className="cafe-participants" aria-label="EYES participants">
+            {presence.length ? (
+              presence.map((receipt) => (
+                <span className={`participant-chip ${receipt.state}`} key={receipt.id}>
+                  <strong>{receipt.display_name}</strong>
+                  <small>{presenceStateLabel(receipt.state)}</small>
+                </span>
+              ))
+            ) : (
+              <span className="participant-chip muted">No observers loaded</span>
+            )}
+          </div>
+        </div>
+        <button className="quiet-action" disabled={loading || sending} onClick={onRefresh} type="button">
+          Refresh EYES
+        </button>
+          </div>
+
+          <div className="transcript cafe-transcript bar-transcript">
         {loading ? <p className="empty">Loading EYES...</p> : null}
         {!loading && !messages.length ? (
           <p className="empty">No EYES observations yet.</p>
@@ -4500,20 +5063,28 @@ function EyesView({
               </div>
               <div>{eyesMessage.content}</div>
               {messageFrames.length > 0 ? (
-                <div className="message-attachments" aria-label="EYES message frames">
+                <div className="eyes-message-frames" aria-label="EYES message frames">
                   {messageFrames.map((frame) => (
-                    <span className="message-attachment" key={frame.id}>
-                      {frame.title}
-                      <small>
-                        {frame.material_type} · {formatBytes(frame.size_bytes)}
-                      </small>
-                    </span>
+                    <figure className="eyes-message-frame" key={frame.id}>
+                      <img
+                        alt={frame.title}
+                        decoding="async"
+                        loading="lazy"
+                        src={`/api/eyes/frames/${encodeURIComponent(frame.id)}`}
+                      />
+                      <figcaption>
+                        {frame.title}
+                        <small>{formatMessageTime(eyesMessage.created_at)}</small>
+                      </figcaption>
+                    </figure>
                   ))}
                 </div>
               ) : null}
             </article>
           );
         })}
+          </div>
+        </div>
       </div>
     </section>
   );
