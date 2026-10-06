@@ -17,7 +17,7 @@ type BridgeAdapterResult = {
 };
 
 const BRIDGE_AGENTS: BridgeAgentName[] = ["julian", "cael"];
-const DEFAULT_CODEX_CLI = "/Applications/ChatGPT.app/Contents/Resources/codex";
+const DEFAULT_CODEX_CLI = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex";
 
 export async function deliverPendingLiveSessionBridgeDeliveries(sessionId?: string) {
   const results: BridgeAdapterResult[] = [];
