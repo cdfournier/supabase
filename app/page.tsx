@@ -15,7 +15,9 @@ type OperatorNoteFilter = "active" | "needs_operator" | "waiting_agent" | "settl
 type ActiveSurface = "chat" | "cafe" | "bar" | "eyes" | "wheels" | "inbox";
 
 const OPERATOR_NOTE_RECIPIENTS: OperatorNoteAgent[] = ["soren", "varro", "julian", "cael"];
-const WHEELS_LIVE_CAMERA_REFRESH_MS = 1000;
+// The Pi's own console captures a fresh frame every five seconds. Matching
+// that cadence avoids piling competing camera captures onto its locked path.
+const WHEELS_LIVE_CAMERA_REFRESH_MS = 5000;
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
