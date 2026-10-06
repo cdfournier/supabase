@@ -299,6 +299,23 @@ export async function lookWheels(agent: AgentName, input: unknown): Promise<Tool
   ];
 }
 
+/**
+ * Confirms custody with the Pi itself. This is deliberately stricter than a
+ * local runtime claim: an agent may continue an uncapped driving turn only
+ * while the car still names that agent as its current driver.
+ */
+export async function isCurrentWheelsDriver(agent: AgentName) {
+  try {
+    const state = await readJson(picarBaseUrl(), "/car_state");
+
+    return isRecord(state) && normalizedText(state.driver) === displayName(agent);
+  } catch {
+    // If we cannot confirm custody with the physical authority, retain the
+    // ordinary runtime limit rather than treating a failed check as permission.
+    return false;
+  }
+}
+
 function picarBaseUrl() {
   return (process.env.PICAR_BASE_URL || DEFAULT_PICAR_BASE_URL).replace(/\/+$/, "");
 }
