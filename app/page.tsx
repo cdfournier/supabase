@@ -18,6 +18,9 @@ const OPERATOR_NOTE_RECIPIENTS: OperatorNoteAgent[] = ["soren", "varro", "julian
 // The Pi's own console captures a fresh frame every five seconds. Matching
 // that cadence avoids piling competing camera captures onto its locked path.
 const WHEELS_LIVE_CAMERA_REFRESH_MS = 5000;
+// The room carries coordination state (passengers, driver, queue, and ride
+// log), so it needs a lighter, more responsive cadence than agent turns.
+const WHEELS_LIVE_ROOM_REFRESH_MS = 3000;
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
@@ -1462,9 +1465,11 @@ export default function Home() {
     }
   }, []);
 
-  const loadWheelsRoom = useCallback(async () => {
-    setWheelsRoomLoading(true);
-    setWheelsRoomError("");
+  const loadWheelsRoom = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
+    if (!background) {
+      setWheelsRoomLoading(true);
+      setWheelsRoomError("");
+    }
 
     try {
       const response = await fetch("/api/wheels/room", { cache: "no-store" });
@@ -1477,11 +1482,17 @@ export default function Home() {
       const room = data as WheelsRoomState;
       setWheelsRoom(room);
       setWheelsReadiness(room.readiness);
+      setWheelsRoomError("");
     } catch (roomError) {
-      setWheelsRoom(null);
       setWheelsRoomError(roomError instanceof Error ? roomError.message : "Could not load the WHEELS room.");
+
+      if (!background) {
+        setWheelsRoom(null);
+      }
     } finally {
-      setWheelsRoomLoading(false);
+      if (!background) {
+        setWheelsRoomLoading(false);
+      }
     }
   }, []);
 
@@ -1839,6 +1850,21 @@ export default function Home() {
 
     return () => window.clearInterval(interval);
   }, [activeSurface, wheelsRoom?.readiness.camera.state]);
+
+  useEffect(() => {
+    if (activeSurface !== "wheels") {
+      return;
+    }
+
+    const refreshRoom = () => {
+      if (!document.hidden) {
+        void loadWheelsRoom({ background: true });
+      }
+    };
+    const interval = window.setInterval(refreshRoom, WHEELS_LIVE_ROOM_REFRESH_MS);
+
+    return () => window.clearInterval(interval);
+  }, [activeSurface, loadWheelsRoom]);
 
   useEffect(() => {
     void loadOperatorInbox();
