@@ -601,6 +601,7 @@ export async function previewLiveSessionAgentAsync(input: {
 
   return {
     session_id: session.id,
+    surface: session.surface,
     agent: input.agent,
     pending_events: messages,
     prompt: messages.length ? liveSessionPrompt(session, input.agent, messages) : null
@@ -629,6 +630,7 @@ export async function previewLiveSessionBridgeAgent(input: {
 
   return {
     session_id: session.id,
+    surface: session.surface,
     agent: input.agent,
     participant: { ...participant },
     attendant: { ...attendant },
@@ -1138,7 +1140,7 @@ function bridgeDeliveryTarget(agent: BridgeAgentName): LiveSessionBridgeDelivery
     status: "configured",
     metadata: {
       mode: "pull_http",
-      script: "bar_live.py or eyes_live.py",
+      script: "bar_live.py, eyes_live.py, or wheels_live.py",
       autodelivery_supported: false
     }
   };

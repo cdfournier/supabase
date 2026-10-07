@@ -279,6 +279,7 @@ test("Live Session Host surfaces Cael pull bridge work without queueing a delive
     sessionId: session.id,
     agent: "cael"
   });
+  assert.equal(preview.surface, "bar");
   assert.equal(preview.pending_events.length, 1);
 
   const acked = await acknowledgeLiveSessionBridgeAgent({
