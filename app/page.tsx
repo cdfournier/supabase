@@ -4364,19 +4364,19 @@ function WheelsRoomView({
               {messageError ? <p className="error">{messageError}</p> : null}
             </form>
 
-            <div className="room-utility wheels-utility">
+          <div className="room-utility wheels-utility">
           <div>
-            <p className="room-presence-label">Present</p>
-            <div className="cafe-participants" aria-label="WHEELS participants">
+            <p className="room-presence-label">In the car</p>
+            <div className="cafe-participants" aria-label="PiCar passengers">
               {passengers.length ? (
                 passengers.map((passenger) => (
                   <span className="participant-chip" key={passenger.name}>
                     <strong>{passenger.name}</strong>
-                    <small>present</small>
+                    <small>{readiness?.wheel.driver === passenger.name ? "driving" : "riding"}</small>
                   </span>
                 ))
               ) : (
-                <span className="participant-chip muted">No one in the room</span>
+                <span className="participant-chip muted">No passengers in the car</span>
               )}
             </div>
             {queue.length ? <p className="wheels-queue">Queue: {queue.map((entry) => entry.name).join(" → ")}</p> : null}
@@ -4583,9 +4583,9 @@ function WheelsRoomView({
           <div className="wheels-card-heading">
             <div>
               <p className="wheels-eyebrow">Ride log</p>
-              <h3>In the room</h3>
+              <h3>In the car</h3>
             </div>
-            <span className="wheels-quiet-count">{passengers.length} present</span>
+            <span className="wheels-quiet-count">{passengers.length} riding</span>
           </div>
           {passengers.length ? (
             <div className="wheels-passengers">
@@ -4597,7 +4597,7 @@ function WheelsRoomView({
               ))}
             </div>
           ) : (
-            <p className="health-empty">No passengers declared.</p>
+            <p className="health-empty">No passengers in the car.</p>
           )}
           {queue.length ? (
             <p className="wheels-queue">Queue: {queue.map((entry) => entry.name).join(" → ")}</p>
