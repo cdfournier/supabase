@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 const DEFAULT_PICAR_BASE_URL = "https://picar.blackcoffeeshoppe.com";
 const OPERATOR_DRIVER = "Chris";
 
-type ControlAction = "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive" | "renew_drive";
+type ControlAction = "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive" | "renew_drive" | "pass_turn";
 
 /**
  * A narrow, operator-only control proxy. This is not a general vehicle API:
@@ -64,6 +64,17 @@ export async function POST(request: Request) {
       });
     }
 
+    if (action === "pass_turn") {
+      const name = stringValue(body.name);
+      if (!name) {
+        return NextResponse.json({ error: "name is required to pass a queued turn." }, { status: 400 });
+      }
+      return NextResponse.json({
+        action,
+        ...(await postJson(baseUrl, "/queue", { action: "pass", name }))
+      });
+    }
+
     if (action !== "drive") {
       return NextResponse.json(
         { error: "Choose a supported WHEELS control action." },
@@ -118,7 +129,8 @@ function controlAction(value: unknown): ControlAction | null {
     value === "stop" ||
     value === "pull_over" ||
     value === "drive" ||
-    value === "renew_drive"
+    value === "renew_drive" ||
+    value === "pass_turn"
     ? value
     : null;
 }

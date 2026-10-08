@@ -6,6 +6,7 @@ import type { ToolResultContentBlock } from "@/lib/tools/types";
 
 const DEFAULT_PICAR_BASE_URL = "https://picar.blackcoffeeshoppe.com";
 const MAX_MESSAGE_LENGTH = 800;
+const MAX_SPEECH_LENGTH = 360;
 const MAX_QUEUE_INTENTION_LENGTH = 240;
 const MAX_AGENT_SPEED = 40;
 const MAX_AGENT_DURATION_SECONDS = 3;
@@ -91,6 +92,32 @@ export async function postWheelsRoomMessage(agent: AgentName, input: unknown) {
   });
 }
 
+export async function speakWheels(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("wheels_speak requires an object input.");
+  }
+
+  const text = String(input.text ?? "").trim();
+
+  if (!text) {
+    throw new Error("wheels_speak requires text.");
+  }
+
+  if (text.length > MAX_SPEECH_LENGTH) {
+    throw new Error(`wheels_speak text must be ${MAX_SPEECH_LENGTH} characters or fewer.`);
+  }
+
+  const speaker = displayName(agent);
+  const result = await postPiJson("/speak", { text, voice: speaker, author: speaker });
+
+  return stringifyPayload({
+    note: "Spoke aloud through the PiCar using this agent's assigned voice. The utterance is also recorded in the WHEELS ride log for remote passengers. Speech does not change passenger status, wheel custody, or motion.",
+    speaker,
+    text,
+    state: result
+  });
+}
+
 export async function joinWheelsRide(agent: AgentName, input: unknown) {
   requireEmptyObject(input, "wheels_join_ride");
 
@@ -163,6 +190,22 @@ export async function withdrawWheelsTurn(agent: AgentName, input: unknown) {
   return stringifyPayload({
     note: "Withdrew the pending WHEELS request. No passenger, wheel, or motion state changed.",
     requester: displayName(agent),
+    queue: result
+  });
+}
+
+export async function passWheelsTurn(agent: AgentName, input: unknown) {
+  requireEmptyObject(input, "wheels_pass_turn");
+
+  const requester = displayName(agent);
+  const result = await postPiJson("/queue", {
+    action: "pass",
+    name: requester
+  });
+
+  return stringifyPayload({
+    note: "Passed this WHEELS turn and moved to the back of the queue. This keeps the request active; it does not leave the car, withdraw from future turns, change custody, or move the PiCar.",
+    requester,
     queue: result
   });
 }

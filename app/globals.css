@@ -1741,6 +1741,22 @@ button {
   gap: 8px;
 }
 
+.wheels-queue-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.wheels-queue-actions .wheels-queue {
+  flex: 1 1 280px;
+  margin: 0;
+}
+
+.wheels-queue-actions .quiet-action {
+  white-space: nowrap;
+}
+
 .wheels-passengers strong,
 .wheels-queue strong {
   font-size: 12px;

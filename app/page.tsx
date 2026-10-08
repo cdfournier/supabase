@@ -1615,8 +1615,8 @@ export default function Home() {
   ]);
 
   const runWheelsControl = useCallback(async (
-    action: "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive" | "renew_drive",
-    command?: { angle: number; direction: "forward" | "backward"; speed: number; continuous: boolean; duration: number; motionId?: string; }
+    action: "take_wheel" | "release_wheel" | "stop" | "pull_over" | "drive" | "renew_drive" | "pass_turn",
+    command?: { angle?: number; direction?: "forward" | "backward"; speed?: number; continuous?: boolean; duration?: number; motionId?: string; name?: string; }
   ) => {
     if (wheelsControlSending && action !== "stop" && action !== "pull_over") {
       return false;
@@ -3666,6 +3666,9 @@ export default function Home() {
               void runWheelsControl(action);
             }
           }}
+          onPassQueueTurn={(name) => {
+            void runWheelsControl("pass_turn", { name });
+          }}
           onSupervisionChange={setWheelsSupervisionConfirmed}
           supervisionConfirmed={wheelsSupervisionConfirmed}
           onRefresh={() => {
@@ -4287,6 +4290,7 @@ function WheelsRoomView({
   controlError,
   controlSending,
   onControl,
+  onPassQueueTurn,
   onSupervisionChange,
   supervisionConfirmed,
   onInvite,
@@ -4313,6 +4317,7 @@ function WheelsRoomView({
   controlError: string;
   controlSending: boolean;
   onControl: (action: "take_wheel" | "release_wheel" | "stop" | "nudge_forward" | "nudge_backward" | "nudge_left" | "nudge_right") => void;
+  onPassQueueTurn: (name: string) => void;
   onSupervisionChange: (confirmed: boolean) => void;
   supervisionConfirmed: boolean;
   onInvite: () => void;
@@ -4329,6 +4334,7 @@ function WheelsRoomView({
   const passengers = room?.passengers.passengers ?? [];
   const messages = room?.observe.log ?? [];
   const queue = room?.queue.queue ?? [];
+  const claimExpires = room?.queue.claim_expires ?? null;
   const distance = readiness?.distance;
   const distanceLabel = !distance
     ? "unknown"
@@ -4405,7 +4411,22 @@ function WheelsRoomView({
                 <span className="participant-chip muted">No passengers in the car</span>
               )}
             </div>
-            {queue.length ? <p className="wheels-queue">Queue: {queue.map((entry) => entry.name).join(" → ")}</p> : null}
+            {queue.length ? (
+              <div className="wheels-queue-actions">
+                <p className="wheels-queue">
+                  Queue: {queue.map((entry) => entry.name).join(" → ")}
+                  {claimExpires !== null && !readiness?.wheel.driver ? ` · ${claimExpires}s for ${queue[0]?.name}` : ""}
+                </p>
+                <button
+                  className="quiet-action"
+                  disabled={controlSending}
+                  onClick={() => onPassQueueTurn(queue[0]!.name)}
+                  type="button"
+                >
+                  Pass {queue[0]?.name} to back
+                </button>
+              </div>
+            ) : null}
           </div>
           <div className="wheels-room-actions">
             <button className="quiet-action" disabled={loading} onClick={onRefresh} type="button">

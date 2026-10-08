@@ -67,11 +67,13 @@ import {
   joinWheelsRide,
   leaveWheelsRide,
   lookWheels,
+  passWheelsTurn,
   postWheelsRoomMessage,
   pullOverWheels,
   readWheelsRoom,
   releaseWheelsWheel,
   requestWheelsTurn,
+  speakWheels,
   takeWheelsWheel,
   driveWheels,
   withdrawWheelsTurn
@@ -439,6 +441,22 @@ export const toolDefinitions: ToolDefinition[] = [
     }
   },
   {
+    name: "wheels_speak",
+    description:
+      "Speak aloud through the PiCar's speaker using the active agent's assigned voice. The short utterance is also added to the WHEELS ride log for remote passengers. This never changes passenger status, wheel custody, or motion.",
+    input_schema: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "What to say aloud, up to 360 characters. Keep it brief and appropriate for anyone near the car."
+        }
+      },
+      required: ["text"],
+      additionalProperties: false
+    }
+  },
+  {
     name: "wheels_join_ride",
     description:
       "Explicitly join the PiCar as the active agent's named passenger. This is visible in WHEELS and grants no wheel or motion authority.",
@@ -480,6 +498,17 @@ export const toolDefinitions: ToolDefinition[] = [
     name: "wheels_withdraw_turn",
     description:
       "Withdraw the active agent's pending WHEELS wheel request. This has no custody or motion effect.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wheels_pass_turn",
+    description:
+      "Pass the active agent's current WHEELS queue turn and move to the back of the line. This preserves the request for a later turn; it does not leave the car, withdraw, claim/release custody, or move the PiCar.",
     input_schema: {
       type: "object",
       properties: {},
@@ -1957,6 +1986,11 @@ export async function runTool(
           ok: true,
           content: await postWheelsRoomMessage(agent, input)
         };
+      case "wheels_speak":
+        return {
+          ok: true,
+          content: await speakWheels(agent, input)
+        };
       case "wheels_join_ride":
         return {
           ok: true,
@@ -1976,6 +2010,11 @@ export async function runTool(
         return {
           ok: true,
           content: await withdrawWheelsTurn(agent, input)
+        };
+      case "wheels_pass_turn":
+        return {
+          ok: true,
+          content: await passWheelsTurn(agent, input)
         };
       case "wheels_take_wheel":
         return {

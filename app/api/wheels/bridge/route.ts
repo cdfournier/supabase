@@ -9,14 +9,17 @@ const DEFAULT_PICAR_BASE_URL = "https://picar.blackcoffeeshoppe.com";
 const CAEL_PARTICIPANT = "agent:cael";
 const CAEL_NAME = "Cael";
 const MAX_MESSAGE_LENGTH = 800;
+const MAX_SPEECH_LENGTH = 360;
 const MAX_QUEUE_INTENTION_LENGTH = 240;
 
 type WheelsAction =
   | "post"
+  | "speak"
   | "join"
   | "leave"
   | "request_turn"
   | "withdraw_turn"
+  | "pass_turn"
   | "take_wheel"
   | "drive"
   | "release_wheel"
@@ -91,6 +94,19 @@ export async function POST(request: Request) {
       });
     }
 
+    if (action === "speak") {
+      await requireCaelWheelsPermission();
+      const textToSpeak = text(body.text);
+      if (!textToSpeak) return NextResponse.json({ error: "text is required." }, { status: 400 });
+      if (textToSpeak.length > MAX_SPEECH_LENGTH) {
+        return NextResponse.json({ error: `text must be ${MAX_SPEECH_LENGTH} characters or fewer.` }, { status: 400 });
+      }
+      return NextResponse.json({
+        action,
+        ...(await postJson(baseUrl, "/speak", { text: textToSpeak, voice: CAEL_NAME, author: CAEL_NAME }))
+      });
+    }
+
     await requireCaelWheelsPermission();
 
     if (action === "join") {
@@ -119,6 +135,10 @@ export async function POST(request: Request) {
 
     if (action === "withdraw_turn") {
       return NextResponse.json({ action, ...(await postJson(baseUrl, "/queue", { action: "leave", name: CAEL_NAME })) });
+    }
+
+    if (action === "pass_turn") {
+      return NextResponse.json({ action, ...(await postJson(baseUrl, "/queue", { action: "pass", name: CAEL_NAME })) });
     }
 
     if (action === "take_wheel") {
@@ -247,8 +267,8 @@ async function postJson(baseUrl: string, path: string, payload: object) {
 }
 
 function wheelsAction(value: unknown): WheelsAction | null {
-  return value === "post" || value === "join" || value === "leave" || value === "request_turn" ||
-    value === "withdraw_turn" || value === "take_wheel" || value === "drive" ||
+  return value === "post" || value === "speak" || value === "join" || value === "leave" || value === "request_turn" ||
+    value === "withdraw_turn" || value === "pass_turn" || value === "take_wheel" || value === "drive" ||
     value === "release_wheel" || value === "pull_over"
     ? value
     : null;

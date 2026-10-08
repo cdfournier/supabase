@@ -6,8 +6,10 @@ import {
   leaveWheelsRide,
   driveWheels,
   lookWheels,
+  passWheelsTurn,
   pullOverWheels,
   requestWheelsTurn,
+  speakWheels,
   takeWheelsWheel,
   withdrawWheelsTurn
 } from "../lib/tools/wheels.ts";
@@ -83,6 +85,37 @@ test("WHEELS queue actions express a request but never motion", async (t) => {
     assert.match(withdrawn, /No passenger, wheel, or motion state changed/);
     assert.deepEqual(body(calls[1]!), { action: "leave", name: "Varro" });
   });
+});
+
+test("WHEELS lets a queued agent pass to the back without withdrawing", async (t) => {
+  await withPiFetch(t, async (calls) => {
+    const passed = await passWheelsTurn("varro", {});
+
+    assert.match(passed, /moved to the back of the queue/);
+    assert.deepEqual(calls.map((call) => call.url), ["http://picar.test/queue"]);
+    assert.deepEqual(body(calls[0]!), { action: "pass", name: "Varro" });
+  });
+});
+
+test("WHEELS speech uses the assigned voice and records a remote-friendly receipt", async (t) => {
+  await withPiFetch(t, async (calls) => {
+    const spoken = await speakWheels("varro", { text: "Hello from the car." });
+
+    assert.match(spoken, /Spoke aloud through the PiCar/);
+    assert.deepEqual(calls.map((call) => call.url), ["http://picar.test/speak"]);
+    assert.deepEqual(body(calls[0]!), {
+      text: "Hello from the car.",
+      voice: "Varro",
+      author: "Varro"
+    });
+  });
+});
+
+test("WHEELS speech keeps physical audio brief", async () => {
+  await assert.rejects(
+    () => speakWheels("soren", { text: "x".repeat(361) }),
+    /text must be 360 characters or fewer/
+  );
 });
 
 test("WHEELS queue action requires a concise intention", async () => {
