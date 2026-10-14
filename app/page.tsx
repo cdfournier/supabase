@@ -2854,7 +2854,9 @@ export default function Home() {
       await new Promise<void>((resolve) => window.setTimeout(resolve, chatTurnPollMs));
 
       try {
-        const response = await fetch(`/api/chat?turn_id=${encodeURIComponent(turnId)}`);
+        const response = await fetch(`/api/chat?turn_id=${encodeURIComponent(turnId)}`, {
+          cache: "no-store"
+        });
         const turn = await readJsonResponse<ChatTurnResponse>(response);
 
         if (!response.ok) {

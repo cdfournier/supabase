@@ -6,6 +6,11 @@ type AttachmentInput = {
   id: string;
 };
 
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, max-age=0",
+  Pragma: "no-cache"
+};
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -61,7 +66,9 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json(turn);
+  // A turn changes from running to completed asynchronously. Never let a
+  // browser or intermediary reuse an earlier running snapshot.
+  return NextResponse.json(turn, { headers: NO_STORE_HEADERS });
 }
 
 function normalizeAttachments(value: unknown): AttachmentInput[] {
