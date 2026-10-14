@@ -931,6 +931,13 @@ Before exposing the runtime through a tunnel, hosted URL, or home-server route:
 The token gate is a first bridge guardrail. Keep Supabase service-role keys,
 Anthropic keys, Outpost tokens, and storage operations server-side.
 
+Chat turns use an asynchronous handoff: `/api/chat` acknowledges a turn with
+`202 Accepted` and a `turn_id`, then the operator UI polls that id until the
+turn completes or fails. The agent turn continues on the local runtime after
+the browser request has returned, so a long tool sequence cannot be cut short
+by Cloudflare's proxied-response window. A runtime restart still interrupts an
+in-process turn; refresh the transcript afterward to see any completed result.
+
 Current remote-access topology:
 
 ```text

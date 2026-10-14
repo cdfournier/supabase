@@ -82,6 +82,13 @@ type ChatResponse = {
   tool_events?: ToolEvent[];
 };
 
+type ChatTurnResponse = {
+  error?: string;
+  turn_id: string;
+  status: "running" | "completed" | "failed";
+  result?: ChatResponse;
+};
+
 type CafeParticipant = {
   id: string;
   room_id: string;
@@ -837,6 +844,7 @@ const defaultAgent: AgentName = "soren";
 const freeTimePollMs = 30_000;
 const workPacketSignalsPollMs = 15_000;
 const liveTranscriptLimit = 120;
+const chatTurnPollMs = 1500;
 const expandedControlPanels: ControlPanelState = {
   runtime: true,
   wheels: true,
@@ -2795,6 +2803,8 @@ export default function Home() {
     setError("");
     setMessage("");
 
+    let acceptedTurn = false;
+
     try {
       const uploadedAttachments = await uploadQueuedAttachments();
       const response = await fetch("/api/chat", {
@@ -2808,11 +2818,15 @@ export default function Home() {
           attachments: uploadedAttachments.map((attachment) => ({ id: attachment.id }))
         })
       });
-      const data = await readJsonResponse<ChatResponse>(response);
+      const startedTurn = await readJsonResponse<ChatTurnResponse>(response);
 
       if (!response.ok) {
-        throw new Error(data.error || "Message failed.");
+        throw new Error(startedTurn.error || "Message failed.");
       }
+
+      acceptedTurn = true;
+      setPendingAttachments([]);
+      const data = await waitForChatTurn(startedTurn.turn_id);
 
       setTranscripts((current) => ({
         ...current,
@@ -2825,12 +2839,42 @@ export default function Home() {
         ...current,
         [selectedAgent]: [...(current[selectedAgent] ?? []), ...(data.tool_events ?? [])]
       }));
-      setPendingAttachments([]);
     } catch (sendError) {
-      setMessage(trimmed);
+      if (!acceptedTurn) {
+        setMessage(trimmed);
+      }
       setError(sendError instanceof Error ? sendError.message : "Message failed.");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function waitForChatTurn(turnId: string): Promise<ChatResponse> {
+    for (;;) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, chatTurnPollMs));
+
+      try {
+        const response = await fetch(`/api/chat?turn_id=${encodeURIComponent(turnId)}`);
+        const turn = await readJsonResponse<ChatTurnResponse>(response);
+
+        if (!response.ok) {
+          throw new Error(turn.error || "Could not read chat turn status.");
+        }
+
+        if (turn.status === "completed") {
+          return turn.result ?? {};
+        }
+
+        if (turn.status === "failed") {
+          throw new Error(turn.error || "Agent turn failed.");
+        }
+      } catch (pollError) {
+        // The accepted turn continues independently of this browser poll. A
+        // short proxy blip must not invite a duplicate operator message.
+        if (pollError instanceof Error && !pollError.message.includes("transient runtime/proxy error")) {
+          throw pollError;
+        }
+      }
     }
   }
 
@@ -3791,7 +3835,7 @@ export default function Home() {
                 disabled={loading || sending || (!message.trim() && pendingAttachments.length === 0)}
                 type="submit"
               >
-                {sending ? "Sending" : "Send"}
+                {sending ? "Working" : "Send"}
               </button>
             </div>
           </div>

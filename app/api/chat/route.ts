@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAgentName } from "@/lib/agent-context";
-import { EmptyAssistantResponseError, sendAgentMessage } from "@/lib/chat-runtime";
+import { getChatTurn, startChatTurn } from "@/lib/chat-turns";
 
 type AttachmentInput = {
   id: string;
@@ -21,13 +21,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Message is required." }, { status: 400 });
     }
 
-    return NextResponse.json(await sendAgentMessage(agent, message, { attachments }));
+    const { turn, started } = startChatTurn({ agent, message, attachments });
+
+    if (!started) {
+      return NextResponse.json(
+        {
+          error: `${agent} already has a turn in progress.`,
+          turn_id: turn.turn_id,
+          status: turn.status
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(turn, { status: 202 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: error instanceof EmptyAssistantResponseError ? 502 : 500 }
+      { status: 500 }
     );
   }
+}
+
+export async function GET(request: Request) {
+  const turnId = new URL(request.url).searchParams.get("turn_id")?.trim();
+
+  if (!turnId) {
+    return NextResponse.json({ error: "turn_id is required." }, { status: 400 });
+  }
+
+  const turn = getChatTurn(turnId);
+
+  if (!turn) {
+    return NextResponse.json(
+      {
+        error: "That turn is no longer in the active runtime. Refresh the conversation to check whether it completed."
+      },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json(turn);
 }
 
 function normalizeAttachments(value: unknown): AttachmentInput[] {
