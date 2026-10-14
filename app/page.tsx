@@ -3936,6 +3936,10 @@ export default function Home() {
                 ? toolEventsByTurn.get(chatMessage.turn_id) ?? []
                 : [];
             const messageAttachments = attachmentsFromContent(chatMessage.content);
+            const failedToolEventCount = messageToolEvents.filter((toolEvent) => !toolEvent.ok).length;
+            const toolActivitySummary = failedToolEventCount
+              ? `${messageToolEvents.length} calls · ${failedToolEventCount} ${failedToolEventCount === 1 ? "issue" : "issues"}`
+              : `${messageToolEvents.length} ${messageToolEvents.length === 1 ? "call" : "calls"} · complete`;
 
             return (
               <article
@@ -3967,23 +3971,30 @@ export default function Home() {
                   </div>
                 ) : null}
                 {messageToolEvents.length > 0 ? (
-                  <div className="tool-audit" aria-label="Tool calls for this turn">
-                    <span>Tools</span>
-                    {messageToolEvents.map((event, index) => (
-                      <span
-                        className={`tool-pill ${event.ok ? "ok" : "error"}`}
-                        key={
-                          event.id ??
-                          `${event.turn_id}-${event.round}-${event.tool_name}-${index}`
-                        }
-                        title={event.result_preview ?? undefined}
-                      >
-                        {event.tool_name}
-                        {event.ok ? "" : " failed"}
-                        {event.result_chars ? ` · ${event.result_chars.toLocaleString()} chars` : ""}
-                      </span>
-                    ))}
-                  </div>
+                  <details className="tool-audit">
+                    <summary>
+                      <span>Tool activity</span>
+                      <span className={failedToolEventCount ? "error" : ""}>{toolActivitySummary}</span>
+                    </summary>
+                    <ol aria-label="Tool calls for this turn">
+                      {messageToolEvents.map((event, index) => (
+                        <li
+                          className={event.ok ? "ok" : "error"}
+                          key={
+                            event.id ??
+                            `${event.turn_id}-${event.round}-${event.tool_name}-${index}`
+                          }
+                        >
+                          <div className="tool-call-meta">
+                            <strong>{event.tool_name}</strong>
+                            <span>{event.ok ? "Completed" : "Needs attention"}</span>
+                            {event.result_chars ? <span>{event.result_chars.toLocaleString()} chars returned</span> : null}
+                          </div>
+                          {event.result_preview ? <p>{event.result_preview}</p> : null}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
                 ) : null}
               </article>
             );
