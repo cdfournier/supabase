@@ -1001,7 +1001,10 @@ Current posture:
 - Agents can inspect their own Room Review, but they cannot refresh the room themselves through that tool.
 - Anthropic prompt caching is enabled by default to reduce repeated prefix processing. Set `ANTHROPIC_PROMPT_CACHE=false` to disable it.
 - Free Moments is local, in-process, and restores from durable runtime settings on status load after a server restart. It wakes Soren and Varro using their existing main conversations. Scheduled turns default to paired mode at a 180-minute cadence, waking both sequentially in one scheduled cycle. Round-robin mode remains available as an explicit override for tests. A quiet response, short response, or nothing-useful-to-report response is success.
-- If a Free Moment reaches `ANTHROPIC_MAX_TOOL_ROUNDS`, the runtime makes one
+- `ANTHROPIC_MAX_TOOL_ROUNDS` accepts a non-negative integer or the explicit
+  value `none`. `none` disables the tool-round cap; an absent or invalid value
+  remains safely bounded at the default of 6.
+- If a bounded Free Moment reaches `ANTHROPIC_MAX_TOOL_ROUNDS`, the runtime makes one
   final no-tools settlement call before failing the turn. That call asks the
   agent to answer from already-gathered context, or to pass quietly. Raising the
   round cap should be treated as extra oxygen, not the primary fix for unsettled

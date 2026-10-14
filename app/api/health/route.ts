@@ -23,6 +23,7 @@ import { loadUsageTotals } from "@/lib/model-usage";
 import { statusWithSettings as freeMomentsStatusWithSettings } from "@/lib/free-time";
 import { statusWithSettings as operatorNoteWakeStatusWithSettings } from "@/lib/operator-note-wakes";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { toolRoundLimitFromEnv } from "@/lib/tool-round-limit";
 import { toolDefinitions } from "@/lib/tools/registry";
 import { statusWithSettings as workPacketSignalsStatusWithSettings } from "@/lib/work-packet-signals";
 
@@ -74,7 +75,7 @@ export async function GET() {
         max_tokens: numberEnv("ANTHROPIC_MAX_TOKENS", 1200),
         history_messages: numberEnv("ANTHROPIC_HISTORY_MESSAGES", 10),
         history_message_chars: numberEnv("ANTHROPIC_HISTORY_MESSAGE_CHARS", 3000),
-        max_tool_rounds: numberEnv("ANTHROPIC_MAX_TOOL_ROUNDS", 6),
+        max_tool_rounds: toolRoundLimitFromEnv(process.env.ANTHROPIC_MAX_TOOL_ROUNDS),
         prompt_cache: anthropicPromptCacheEnabled(),
         prompt_cache_ttl: anthropicPromptCacheEnabled() ? ANTHROPIC_PROMPT_CACHE_TTL : "off",
         free_moments_enabled: freeMomentsStatus?.durable_enabled === true,

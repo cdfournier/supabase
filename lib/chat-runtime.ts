@@ -24,6 +24,12 @@ import { latestCompactionCheckpoint, messagesAfterCheckpoint } from "@/lib/compa
 import { recordModelUsage } from "@/lib/model-usage";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
+  shouldSettleAfterToolUse,
+  shouldSettleBeforeToolCall,
+  toolRoundLimitFromEnv,
+  type ToolRoundLimit
+} from "@/lib/tool-round-limit";
+import {
   type AttachmentInput,
   recordMessageAttachments,
   resolveAttachmentReferences
@@ -72,6 +78,7 @@ type ToolLoopResult = {
   data: AnthropicResponse;
   toolEvents: RuntimeToolEvent[];
   settledAfterToolLimit: boolean;
+  settledToolRoundLimit: number | null;
 };
 
 type ContextPostureReceipt = {
@@ -177,7 +184,7 @@ export async function sendAgentMessage(
       : modelMessage
   });
 
-  const { data, toolEvents, settledAfterToolLimit } = await runAnthropicToolLoop({
+  const { data, toolEvents, settledAfterToolLimit, settledToolRoundLimit } = await runAnthropicToolLoop({
     apiKey,
     agent,
     conversationId,
@@ -197,8 +204,8 @@ export async function sendAgentMessage(
   let assistantReply = stoppedAtTokenLimit
     ? withTokenLimitNote(assistantText, maxTokens)
     : assistantText;
-  if (settledAfterToolLimit) {
-    assistantReply = withToolLimitSettlementNote(assistantReply, maxToolRounds());
+  if (settledAfterToolLimit && settledToolRoundLimit !== null) {
+    assistantReply = withToolLimitSettlementNote(assistantReply, settledToolRoundLimit);
   }
 
   const position = await nextMessagePosition(supabase, conversationId);
@@ -295,7 +302,11 @@ async function runAnthropicToolLoop({
     const activeWheelsDriveSession =
       hasWheelsDrivePermission && (await isCurrentWheelsDriver(agent));
 
-    if (round > configuredMaxToolRounds && !activeWheelsDriveSession) {
+    if (
+      configuredMaxToolRounds !== null &&
+      shouldSettleBeforeToolCall(configuredMaxToolRounds, round) &&
+      !activeWheelsDriveSession
+    ) {
       return settleAfterToolLimit({
         apiKey,
         model,
@@ -342,10 +353,19 @@ async function runAnthropicToolLoop({
     const toolUses = toolUseBlocks(data);
 
     if (!toolUses.length) {
-      return { data, toolEvents, settledAfterToolLimit: false };
+      return {
+        data,
+        toolEvents,
+        settledAfterToolLimit: false,
+        settledToolRoundLimit: null
+      };
     }
 
-    if (round === configuredMaxToolRounds && !activeWheelsDriveSession) {
+    if (
+      configuredMaxToolRounds !== null &&
+      shouldSettleAfterToolUse(configuredMaxToolRounds, round) &&
+      !activeWheelsDriveSession
+    ) {
       return settleAfterToolLimit({
         apiKey,
         model,
@@ -467,7 +487,12 @@ async function settleAfterToolLimit({
     );
   }
 
-  return { data: settlementData, toolEvents, settledAfterToolLimit: true };
+  return {
+    data: settlementData,
+    toolEvents,
+    settledAfterToolLimit: true,
+    settledToolRoundLimit: maxRounds
+  };
 }
 
 function previewToolContent(content: unknown) {
@@ -853,10 +878,8 @@ function maxResponseTokens() {
   return Number.isFinite(value) && value > 0 ? value : 1200;
 }
 
-function maxToolRounds() {
-  const value = Number(process.env.ANTHROPIC_MAX_TOOL_ROUNDS);
-
-  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 6;
+function maxToolRounds(): ToolRoundLimit {
+  return toolRoundLimitFromEnv(process.env.ANTHROPIC_MAX_TOOL_ROUNDS);
 }
 
 function withTokenLimitNote(text: string, maxTokens: number) {

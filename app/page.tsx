@@ -416,7 +416,7 @@ type Health = {
     max_tokens: number;
     history_messages: number;
     history_message_chars: number;
-    max_tool_rounds: number;
+    max_tool_rounds: number | null;
     prompt_cache: boolean;
     prompt_cache_ttl: string;
   };
@@ -7051,7 +7051,7 @@ function RuntimeHealthPanel({
             </div>
             <div>
               <dt>Rounds</dt>
-              <dd>{health?.runtime.max_tool_rounds ?? "?"}</dd>
+              <dd>{health?.runtime.max_tool_rounds === null ? "none" : health?.runtime.max_tool_rounds ?? "?"}</dd>
             </div>
             <div>
               <dt>Cache</dt>
