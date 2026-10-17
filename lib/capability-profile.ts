@@ -367,6 +367,7 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   web_fetch_url: { surface: "web", action: "read" },
   web_read_url: { surface: "web", action: "read" },
   web_extract_links: { surface: "web", action: "read" },
+  web_extract_images: { surface: "web", action: "read" },
   web_fetch_many: { surface: "web", action: "read" },
   web_search: { surface: "web", action: "read" },
   source_list_materials: { surface: "source_materials", action: "read" },

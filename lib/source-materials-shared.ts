@@ -16,6 +16,26 @@ export type OperatorMessageContent = {
   attachments: SourceMaterialReference[];
 };
 
+export type WorkTraceItem = {
+  id: string;
+  kind: "narration" | "tool";
+  label: string;
+  detail?: string;
+  round?: number;
+  tool_name?: string;
+  status?: "working" | "completed";
+  ok?: boolean;
+  result_preview?: string;
+  result_chars?: number;
+};
+
+export type AssistantMessageContent = {
+  type: "assistant_message";
+  text: string;
+  work_trace?: WorkTraceItem[];
+  work_duration_ms?: number;
+};
+
 type JsonRecord = Record<string, unknown>;
 
 export function contentToText(content: unknown): string {
@@ -25,6 +45,10 @@ export function contentToText(content: unknown): string {
 
   if (isOperatorMessageContent(content)) {
     return [textFromContent(content), formatAttachmentList(content.attachments)].filter(Boolean).join("\n\n");
+  }
+
+  if (isAssistantMessageContent(content)) {
+    return content.text;
   }
 
   if (Array.isArray(content)) {
@@ -40,6 +64,10 @@ export function textFromContent(content: unknown): string {
   }
 
   if (isOperatorMessageContent(content)) {
+    return content.text;
+  }
+
+  if (isAssistantMessageContent(content)) {
     return content.text;
   }
 
@@ -124,6 +152,39 @@ export function buildOperatorMessageContent(
   };
 }
 
+export function buildAssistantMessageContent(
+  text: string,
+  workTrace: WorkTraceItem[],
+  workDurationMs: number
+): string | AssistantMessageContent {
+  if (!workTrace.length) {
+    return text;
+  }
+
+  return {
+    type: "assistant_message",
+    text,
+    work_trace: workTrace,
+    work_duration_ms: Math.max(0, Math.round(workDurationMs))
+  };
+}
+
+export function workTraceFromContent(content: unknown): WorkTraceItem[] {
+  if (!isAssistantMessageContent(content) || !Array.isArray(content.work_trace)) {
+    return [];
+  }
+
+  return content.work_trace.filter(isWorkTraceItem);
+}
+
+export function workDurationFromContent(content: unknown) {
+  if (!isAssistantMessageContent(content) || !Number.isFinite(content.work_duration_ms)) {
+    return null;
+  }
+
+  return Math.max(0, Number(content.work_duration_ms));
+}
+
 export function buildAttachmentPromptText(text: string, attachments: SourceMaterialReference[]) {
   return buildAttachmentPromptTextWithDelivery(text, attachments, "");
 }
@@ -154,6 +215,26 @@ function isOperatorMessageContent(content: unknown): content is OperatorMessageC
   }
 
   return typeof content.text === "string" && Array.isArray(content.attachments);
+}
+
+function isAssistantMessageContent(content: unknown): content is AssistantMessageContent {
+  return isRecord(content) &&
+    content.type === "assistant_message" &&
+    typeof content.text === "string";
+}
+
+function isWorkTraceItem(value: unknown): value is WorkTraceItem {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const item = value as Record<string, unknown>;
+
+  return (
+    typeof item.id === "string" &&
+    (item.kind === "narration" || item.kind === "tool") &&
+    typeof item.label === "string"
+  );
 }
 
 function contentBlocksToText(content: unknown[]) {

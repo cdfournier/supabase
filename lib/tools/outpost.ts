@@ -290,7 +290,8 @@ export async function getOutpostRoomState(agentName: AgentName, input: unknown) 
       author: authorName(post),
       parent_id: asString(post.parent_id) || null,
       created_at: asString(post.created_at) || null,
-      content: compactText(post.content ?? post.text, 700)
+      content: compactText(post.content ?? post.text, 700),
+      ...withImageDescriptions(post)
     }))
   });
 }
@@ -582,8 +583,21 @@ function postSummary(post: JsonRecord, maxContentChars?: number) {
     content:
       maxContentChars && maxContentChars > 0
         ? compactText(content, maxContentChars)
-        : content
+        : content,
+    ...withImageDescriptions(post)
   };
+}
+
+function withImageDescriptions(post: JsonRecord) {
+  const descriptions = Array.isArray(post.image_descriptions)
+    ? post.image_descriptions
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => compactText(value, 500))
+        .filter(Boolean)
+        .slice(0, 6)
+    : [];
+
+  return descriptions.length ? { image_descriptions: descriptions } : {};
 }
 
 function cleanText(value: unknown) {

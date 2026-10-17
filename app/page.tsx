@@ -5,7 +5,10 @@ import {
   type SourceMaterialReference,
   attachmentsFromContent,
   formatBytes,
-  textFromContent
+  textFromContent,
+  workDurationFromContent,
+  workTraceFromContent,
+  type WorkTraceItem
 } from "@/lib/source-materials-shared";
 
 type AgentName = "soren" | "varro";
@@ -86,6 +89,7 @@ type ChatTurnResponse = {
   error?: string;
   turn_id: string;
   status: "running" | "completed" | "failed";
+  activity?: LiveToolActivity[];
   result?: ChatResponse;
 };
 
@@ -400,6 +404,8 @@ type ToolEvent = {
   result_chars?: number;
   created_at?: string;
 };
+
+type LiveToolActivity = WorkTraceItem;
 
 type UploadedAttachment = SourceMaterialReference & {
   original_filename?: string;
@@ -984,6 +990,7 @@ export default function Home() {
   const [wheelsReadinessError, setWheelsReadinessError] = useState("");
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
   const [toolEvents, setToolEvents] = useState<Record<string, ToolEvent[]>>({});
+  const [liveToolActivity, setLiveToolActivity] = useState<LiveToolActivity[]>([]);
   const [freeTimeLoading, setFreeTimeLoading] = useState(true);
   const [freeTimeRequestInProgress, setFreeTimeRequestInProgress] = useState(false);
   const [freeTimeError, setFreeTimeError] = useState("");
@@ -1077,6 +1084,15 @@ export default function Home() {
 
     return eventsByTurn;
   }, [activeToolEvents]);
+  const currentLiveToolActivity = useMemo(() => {
+    const latestByActivity = new Map<string, LiveToolActivity>();
+
+    for (const activity of liveToolActivity) {
+      latestByActivity.set(activity.id, activity);
+    }
+
+    return [...latestByActivity.values()];
+  }, [liveToolActivity]);
 
   useEffect(() => {
     if (window.matchMedia("(max-width: 720px)").matches) {
@@ -2825,8 +2841,11 @@ export default function Home() {
       }
 
       acceptedTurn = true;
+      setLiveToolActivity(startedTurn.activity ?? []);
       setPendingAttachments([]);
-      const data = await waitForChatTurn(startedTurn.turn_id);
+      const data = await waitForChatTurn(startedTurn.turn_id, (activity) => {
+        setLiveToolActivity(activity);
+      });
 
       setTranscripts((current) => ({
         ...current,
@@ -2846,10 +2865,14 @@ export default function Home() {
       setError(sendError instanceof Error ? sendError.message : "Message failed.");
     } finally {
       setSending(false);
+      setLiveToolActivity([]);
     }
   }
 
-  async function waitForChatTurn(turnId: string): Promise<ChatResponse> {
+  async function waitForChatTurn(
+    turnId: string,
+    onActivity: (activity: LiveToolActivity[]) => void
+  ): Promise<ChatResponse> {
     for (;;) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, chatTurnPollMs));
 
@@ -2862,6 +2885,8 @@ export default function Home() {
         if (!response.ok) {
           throw new Error(turn.error || "Could not read chat turn status.");
         }
+
+        onActivity(turn.activity ?? []);
 
         if (turn.status === "completed") {
           return turn.result ?? {};
@@ -3841,6 +3866,54 @@ export default function Home() {
               </button>
             </div>
           </div>
+          {sending ? (
+            <details className="live-tool-activity" open>
+              <summary>
+                <span>Working</span>
+                <span>
+                  {currentLiveToolActivity.length
+                    ? `${currentLiveToolActivity.length} ${currentLiveToolActivity.length === 1 ? "update" : "updates"}`
+                    : "Preparing response"}
+                </span>
+              </summary>
+              {currentLiveToolActivity.length ? (
+                <ol aria-label="Live work trace">
+                  {currentLiveToolActivity.map((activity) => (
+                    <li
+                      className={`${activity.kind === "narration" ? "narration" : ""} ${activity.ok === false ? "error" : ""}`}
+                      key={activity.id}
+                    >
+                      {activity.kind === "narration" ? (
+                        <p>{activity.label}</p>
+                      ) : (
+                        <>
+                          <div className="tool-call-meta">
+                            <strong>{activity.label}</strong>
+                            <span>
+                              {activity.status === "working"
+                                ? "Working"
+                                : activity.ok === false
+                                  ? "Needs attention"
+                                  : "Completed"}
+                            </span>
+                          </div>
+                          {activity.detail ? <p>{activity.detail}</p> : null}
+                          {activity.status === "completed" && activity.result_preview ? (
+                            <details className="live-tool-detail">
+                              <summary>View result</summary>
+                              <p>{activity.result_preview}</p>
+                            </details>
+                          ) : null}
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p>Agent is preparing the next response.</p>
+              )}
+            </details>
+          ) : null}
           {pendingAttachments.length ? (
             <div className="attachment-tray" aria-label="Pending attachments">
               {pendingAttachments.map((attachment) => (
@@ -3936,6 +4009,8 @@ export default function Home() {
                 ? toolEventsByTurn.get(chatMessage.turn_id) ?? []
                 : [];
             const messageAttachments = attachmentsFromContent(chatMessage.content);
+            const messageWorkTrace = workTraceFromContent(chatMessage.content);
+            const messageWorkDuration = workDurationFromContent(chatMessage.content);
             const failedToolEventCount = messageToolEvents.filter((toolEvent) => !toolEvent.ok).length;
             const toolActivitySummary = failedToolEventCount
               ? `${messageToolEvents.length} calls · ${failedToolEventCount} ${failedToolEventCount === 1 ? "issue" : "issues"}`
@@ -3969,6 +4044,33 @@ export default function Home() {
                       </span>
                     ))}
                   </div>
+                ) : null}
+                {messageWorkTrace.length > 0 ? (
+                  <details className="tool-audit work-trace-audit">
+                    <summary>
+                      <span>Worked</span>
+                      <span>{formatWorkDuration(messageWorkDuration)}</span>
+                    </summary>
+                    <ol aria-label="Work trace for this turn">
+                      {messageWorkTrace.map((item) => (
+                        <li className={`${item.kind === "narration" ? "narration" : ""} ${item.ok === false ? "error" : ""}`} key={item.id}>
+                          {item.kind === "narration" ? (
+                            <p>{item.label}</p>
+                          ) : (
+                            <>
+                              <div className="tool-call-meta">
+                                <strong>{item.label}</strong>
+                                <span>{item.ok === false ? "Needs attention" : "Completed"}</span>
+                                {item.result_chars ? <span>{item.result_chars.toLocaleString()} chars returned</span> : null}
+                              </div>
+                              {item.detail ? <p>{item.detail}</p> : null}
+                              {item.result_preview ? <p>{item.result_preview}</p> : null}
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
                 ) : null}
                 {messageToolEvents.length > 0 ? (
                   <details className="tool-audit">
@@ -4004,6 +4106,22 @@ export default function Home() {
       )}
     </main>
   );
+}
+
+function formatWorkDuration(durationMs: number | null) {
+  if (!durationMs || durationMs < 1000) {
+    return "Worked briefly";
+  }
+
+  const totalSeconds = Math.round(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (!minutes) {
+    return `Worked for ${seconds}s`;
+  }
+
+  return `Worked for ${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 }
 
 function CafeView({

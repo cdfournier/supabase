@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 
 export type ChatTurnStatus = "running" | "completed" | "failed";
 
-export type ChatTurnSnapshot<Agent extends string, Result> = {
+export type ChatTurnSnapshot<Agent extends string, Result, Activity = unknown> = {
   turn_id: string;
   agent: Agent;
   status: ChatTurnStatus;
   started_at: string;
   finished_at: string | null;
+  activity: Activity[];
   result?: Result;
   error?: string;
 };
@@ -19,11 +20,11 @@ const COMPLETED_TURN_RETENTION_MS = 30 * 60 * 1000;
  * survives the browser request, while per-agent serialization keeps two
  * operator messages from racing for the same conversation position.
  */
-export class ChatTurnStore<Agent extends string, Result> {
-  private readonly turns = new Map<string, ChatTurnSnapshot<Agent, Result>>();
+export class ChatTurnStore<Agent extends string, Result, Activity = unknown> {
+  private readonly turns = new Map<string, ChatTurnSnapshot<Agent, Result, Activity>>();
   private readonly activeTurnByAgent = new Map<Agent, string>();
 
-  start(agent: Agent, run: () => Promise<Result>) {
+  start(agent: Agent, run: (reportActivity: (activity: Activity) => void) => Promise<Result>) {
     this.pruneCompletedTurns();
 
     const activeTurnId = this.activeTurnByAgent.get(agent);
@@ -35,19 +36,24 @@ export class ChatTurnStore<Agent extends string, Result> {
       this.activeTurnByAgent.delete(agent);
     }
 
-    const turn: ChatTurnSnapshot<Agent, Result> = {
+    const turn: ChatTurnSnapshot<Agent, Result, Activity> = {
       turn_id: randomUUID(),
       agent,
       status: "running",
       started_at: new Date().toISOString(),
-      finished_at: null
+      finished_at: null,
+      activity: []
     };
 
     this.turns.set(turn.turn_id, turn);
     this.activeTurnByAgent.set(agent, turn.turn_id);
 
     void Promise.resolve()
-      .then(run)
+      .then(() =>
+        run((activity) => {
+          turn.activity.push(activity);
+        })
+      )
       .then((result) => {
         turn.status = "completed";
         turn.finished_at = new Date().toISOString();

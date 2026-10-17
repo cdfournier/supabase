@@ -2653,6 +2653,109 @@ button {
   overflow-wrap: anywhere;
 }
 
+.live-tool-activity {
+  background: rgba(233, 242, 237, 0.42);
+  border: 1px solid rgba(34, 87, 122, 0.22);
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.live-tool-activity summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  list-style: none;
+}
+
+.live-tool-activity summary::-webkit-details-marker {
+  display: none;
+}
+
+.live-tool-activity summary span:first-child {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.live-tool-activity summary span:last-child,
+.live-tool-activity li span,
+.live-tool-activity p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.live-tool-activity ol {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 9px 0 0;
+  padding: 0;
+}
+
+.live-tool-activity li {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.6);
+  border-left: 3px solid rgba(47, 125, 79, 0.6);
+  border-radius: 5px;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 7px 8px;
+}
+
+.live-tool-activity li.error {
+  border-left-color: var(--error);
+}
+
+.live-tool-activity li.narration,
+.work-trace-audit li.narration {
+  border-left-color: rgba(34, 87, 122, 0.45);
+}
+
+.live-tool-activity li.narration p,
+.work-trace-audit li.narration p {
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.live-tool-activity li strong {
+  font-size: 12px;
+}
+
+.live-tool-activity p {
+  margin: 8px 0 0;
+}
+
+.live-tool-detail {
+  margin-top: 7px;
+}
+
+.live-tool-detail summary {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.live-tool-detail p {
+  background: rgba(255, 255, 255, 0.48);
+  border-radius: 4px;
+  margin-top: 6px;
+  padding: 6px 7px;
+  white-space: pre-wrap;
+}
+
+.work-trace-audit {
+  margin-top: 10px;
+}
+
 .composer {
   border-bottom: 1px solid var(--line);
   background: var(--panel);
