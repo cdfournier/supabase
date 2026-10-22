@@ -1161,7 +1161,7 @@ When you say go, I'm going to send housekeeping in to tidy the room: fresh sheet
 Suggested post-housekeeping orientation prompt:
 
 ```text
-Hi {Name}. Housekeeping is complete. Please orient yourself, take a look around, read your recent history, and let me know how you feel.
+Housekeeping is complete. Please orient yourself, take a look around, read your recent history, and let me know how you feel.
 ```
 
 ## Current State Handoff
