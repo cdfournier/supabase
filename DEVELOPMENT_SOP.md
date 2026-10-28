@@ -79,6 +79,57 @@ Schema changes should be repeatable, reviewable, and environment-aware.
   file upload, access grants, or chat use. SQL is setup and migration machinery,
   not the normal operator interface.
 
+### Data API grants
+
+This runtime uses `supabase-js` server-side, which means its database reads and
+writes travel through Supabase's Data API as `service_role`. Starting October
+30, 2026, new `public` tables are not reachable through that API until a
+migration grants access explicitly. Do not rely on project default privileges.
+
+Default posture for a new runtime table:
+
+1. Enable RLS.
+2. Give `anon` and `authenticated` no table privileges unless a reviewed
+   browser-facing feature specifically requires them.
+3. Grant only the operations the server runtime needs to `service_role`.
+4. When a runtime insert uses a serial or identity sequence, grant the needed
+   sequence privileges to `service_role` too.
+
+For a typical server-only table, include this after its `create table` and RLS
+statement (substitute the real table name):
+
+```sql
+revoke all on table public.example_table from anon, authenticated, service_role;
+grant select, insert, update, delete on table public.example_table to service_role;
+```
+
+For a serial or identity sequence the runtime writes through, add the matching
+explicit sequence grant:
+
+```sql
+revoke all on sequence public.example_table_id_seq from anon, authenticated, service_role;
+grant usage, select on sequence public.example_table_id_seq to service_role;
+```
+
+RLS and grants are separate controls: grants decide whether a role can reach a
+table through the Data API; RLS decides which rows a non-service role may use.
+The service-role key remains server-only and is never a substitute for a public
+policy. If a future browser feature needs direct Supabase access, its migration
+must add the smallest role-specific grant and a reviewed RLS policy in the same
+change.
+
+Run this read-only audit in the Supabase SQL Editor before or after a privilege
+change; record its result in the rollout note rather than assuming dashboard
+defaults:
+
+```sql
+select table_name, grantee, privilege_type
+from information_schema.role_table_grants
+where table_schema = 'public'
+  and grantee in ('anon', 'authenticated', 'service_role')
+order by table_name, grantee, privilege_type;
+```
+
 ## Release Flow
 
 Normal flow:

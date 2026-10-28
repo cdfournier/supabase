@@ -617,3 +617,25 @@ alter table public.cafe_messages enable row level security;
 alter table public.work_packets enable row level security;
 alter table public.work_packet_events enable row level security;
 alter table public.work_packet_wake_receipts enable row level security;
+
+-- Data API posture: the runtime accesses public tables server-side as
+-- service_role. Browser roles receive no implicit table or sequence access;
+-- any future browser-facing feature must add its own least-privilege grant and
+-- reviewed RLS policy in the same migration.
+revoke all privileges on all tables in schema public
+  from anon, authenticated, service_role;
+
+grant select, insert, update, delete on all tables in schema public
+  to service_role;
+
+revoke all privileges on all sequences in schema public
+  from anon, authenticated, service_role;
+
+grant usage, select on all sequences in schema public
+  to service_role;
+
+alter default privileges for role postgres in schema public
+  revoke all on tables from anon, authenticated, service_role;
+
+alter default privileges for role postgres in schema public
+  revoke all on sequences from anon, authenticated, service_role;
