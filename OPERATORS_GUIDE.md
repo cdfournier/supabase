@@ -128,6 +128,12 @@ server-only receipt tables with explicit `service_role` Data API grants. After a
 process restart, any receipt left in an active state is marked `interrupted`,
 not completed.
 
+Preview validation — October 30, 2026: `free-moment-cancel-smoke` accepted the
+migration; both tables reported RLS enabled and only `service_role` grants. A
+transaction-local synthetic receipt reached `cancelled` / `finished` with one
+event, then rolled back cleanly. No runtime agent, model, World action, Cafe
+message, or durable synthetic row was created.
+
 ## Stored Messages, Prompt Context, And Cost
 
 The chat window and Supabase transcript can be much larger than the prompt sent
