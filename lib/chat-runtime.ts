@@ -115,7 +115,26 @@ export type SendAgentMessageOptions = {
   source?: string;
   attachments?: AttachmentInput[];
   onToolActivity?: (activity: RuntimeToolActivity) => void;
+  cancellation?: RuntimeTurnCancellation;
 };
+
+export type RuntimeTurnCancellation = {
+  signal?: AbortSignal;
+  isCancellationRequested?: () => boolean;
+  onPhaseChange?: (phase: "model" | "tool" | "wrap_up") => void;
+};
+
+export class RuntimeTurnForceStoppedError extends Error {
+  constructor() {
+    super("This runtime turn was force-stopped before its current activity could finish.");
+    this.name = "RuntimeTurnForceStoppedError";
+  }
+}
+
+export function isRuntimeTurnForceStoppedError(error: unknown) {
+  return error instanceof RuntimeTurnForceStoppedError ||
+    (error instanceof Error && error.name === "AbortError");
+}
 
 export async function sendAgentMessage(
   agent: AgentName,
@@ -199,7 +218,8 @@ export async function sendAgentMessage(
     messages,
     turnId,
     source,
-    onToolActivity: options.onToolActivity
+    onToolActivity: options.onToolActivity,
+    cancellation: options.cancellation
   });
 
   const assistantText = extractAssistantText(data);
@@ -283,7 +303,8 @@ async function runAnthropicToolLoop({
   messages,
   turnId,
   source,
-  onToolActivity
+  onToolActivity,
+  cancellation
 }: {
   apiKey: string;
   agent: AgentName;
@@ -293,6 +314,7 @@ async function runAnthropicToolLoop({
   turnId: string;
   source: string;
   onToolActivity?: (activity: RuntimeToolActivity) => void;
+  cancellation?: RuntimeTurnCancellation;
 }): Promise<ToolLoopResult> {
   const model = modelForAgent(agent);
   const maxTokens = maxResponseTokens();
@@ -311,6 +333,25 @@ async function runAnthropicToolLoop({
   const hasWheelsDrivePermission = isSurfaceAllowed(profile, "wheels", "write");
 
   for (let round = 0; ; round += 1) {
+    throwIfForceStopped(cancellation);
+
+    if (isCancellationRequested(cancellation)) {
+      return settleAfterCancellation({
+        apiKey,
+        model,
+        maxTokens,
+        system,
+        messages,
+        agent,
+        conversationId,
+        turnId,
+        source,
+        toolEvents,
+        workTrace,
+        cancellation
+      });
+    }
+
     // Ordinary conversations are bounded. A WHEELS driver is the explicit
     // exception: the Pi must still name this authorized agent as driver on
     // every loop, so custody can end immediately when anyone pulls over or
@@ -337,18 +378,21 @@ async function runAnthropicToolLoop({
         round,
         toolEvents,
         workTrace,
-        onToolActivity
+        onToolActivity,
+        cancellation
       });
     }
 
     const messageCount = messages.length;
+    cancellation?.onPhaseChange?.("model");
     const data = await callAnthropic({
       apiKey,
       model,
       maxTokens,
       system,
       messages,
-      tools
+      tools,
+      signal: cancellation?.signal
     });
     await recordModelUsage(getSupabaseAdmin(), {
       provider: "anthropic",
@@ -369,6 +413,33 @@ async function runAnthropicToolLoop({
       }
     });
     const toolUses = toolUseBlocks(data);
+
+    if (isCancellationRequested(cancellation)) {
+      messages.push({
+        role: "assistant",
+        content: data.content ?? []
+      });
+      if (toolUses.length) {
+        messages.push({
+          role: "user",
+          content: cancelledToolResults(toolUses)
+        });
+      }
+      return settleAfterCancellation({
+        apiKey,
+        model,
+        maxTokens,
+        system,
+        messages,
+        agent,
+        conversationId,
+        turnId,
+        source,
+        toolEvents,
+        workTrace,
+        cancellation
+      });
+    }
 
     if (!toolUses.length) {
       return {
@@ -410,6 +481,7 @@ async function runAnthropicToolLoop({
         toolEvents,
         workTrace,
         onToolActivity,
+        cancellation,
         blockedToolNames: toolUses.map((toolUse) => String(toolUse.name ?? "unknown_tool"))
       });
     }
@@ -420,54 +492,289 @@ async function runAnthropicToolLoop({
     });
     messages.push({
       role: "user",
-      content: await Promise.all(
-        toolUses.map(async (toolUse, index) => {
-          const toolUseId = String(toolUse.id ?? "");
-          const toolName = String(toolUse.name);
-          const activityId = `tool-${toolUseId || `${round}-${index}`}`;
-          const activityBase = {
-            id: activityId,
-            kind: "tool" as const,
-            round,
-            tool_name: toolName,
-            label: describeToolActivity(toolName),
-            detail: describeToolInput(toolUse.input)
-          };
-          reportWorkTrace({ ...activityBase, status: "working" });
-          const result = await runTool(agent, toolName, toolUse.input);
-          const resultText = previewToolContent(result.content);
-          const event: RuntimeToolEvent = {
-            turn_id: turnId,
-            round,
-            tool_use_id: toolUseId,
-            tool_name: toolName,
-            tool_input: toolUse.input,
-            ok: result.ok,
-            result_preview: clampHistoryText(resultText, 2000),
-            result_chars: resultText.length
-          };
+      content: await (cancellation ? runToolUsesSequentially({
+        agent,
+        toolUses,
+        round,
+        turnId,
+        conversationId,
+        toolEvents,
+        reportWorkTrace,
+        cancellation
+      }) : runToolUsesConcurrently({
+        agent,
+        toolUses,
+        round,
+        turnId,
+        conversationId,
+        toolEvents,
+        reportWorkTrace
+      }))
+    });
+  }
+}
 
-          toolEvents.push(event);
-          await recordToolEvent(agent, conversationId, event);
-          reportWorkTrace({
-            ...activityBase,
-            status: "completed",
-            ok: result.ok,
-            result_preview: clampWorkTraceText(resultText),
-            result_chars: resultText.length
-          });
+async function runToolUsesConcurrently({
+  agent,
+  toolUses,
+  round,
+  turnId,
+  conversationId,
+  toolEvents,
+  reportWorkTrace
+}: {
+  agent: AgentName;
+  toolUses: AnthropicContentBlock[];
+  round: number;
+  turnId: string;
+  conversationId: string;
+  toolEvents: RuntimeToolEvent[];
+  reportWorkTrace: (item: WorkTraceItem) => void;
+}) {
+  return Promise.all(
+    toolUses.map(async (toolUse, index) => {
+      const toolUseId = String(toolUse.id ?? "");
+      const toolName = String(toolUse.name);
+      const activityId = `tool-${toolUseId || `${round}-${index}`}`;
+      const activityBase = {
+        id: activityId,
+        kind: "tool" as const,
+        round,
+        tool_name: toolName,
+        label: describeToolActivity(toolName),
+        detail: describeToolInput(toolUse.input)
+      };
 
-          return {
-            type: "tool_result",
-            tool_use_id: toolUse.id,
-            content: result.content,
-            is_error: !result.ok
-          };
-        })
-      )
+      reportWorkTrace({ ...activityBase, status: "working" });
+      const result = await runTool(agent, toolName, toolUse.input);
+      const resultText = previewToolContent(result.content);
+      const event: RuntimeToolEvent = {
+        turn_id: turnId,
+        round,
+        tool_use_id: toolUseId,
+        tool_name: toolName,
+        tool_input: toolUse.input,
+        ok: result.ok,
+        result_preview: clampHistoryText(resultText, 2000),
+        result_chars: resultText.length
+      };
+
+      toolEvents.push(event);
+      await recordToolEvent(agent, conversationId, event);
+      reportWorkTrace({
+        ...activityBase,
+        status: "completed",
+        ok: result.ok,
+        result_preview: clampWorkTraceText(resultText),
+        result_chars: resultText.length
+      });
+
+      return {
+        type: "tool_result" as const,
+        tool_use_id: toolUse.id,
+        content: result.content,
+        is_error: !result.ok
+      };
+    })
+  );
+}
+
+async function runToolUsesSequentially({
+  agent,
+  toolUses,
+  round,
+  turnId,
+  conversationId,
+  toolEvents,
+  reportWorkTrace,
+  cancellation
+}: {
+  agent: AgentName;
+  toolUses: AnthropicContentBlock[];
+  round: number;
+  turnId: string;
+  conversationId: string;
+  toolEvents: RuntimeToolEvent[];
+  reportWorkTrace: (item: WorkTraceItem) => void;
+  cancellation?: RuntimeTurnCancellation;
+}) {
+  const results: Array<{ type: "tool_result"; tool_use_id: unknown; content: unknown; is_error: boolean }> = [];
+
+  for (const [index, toolUse] of toolUses.entries()) {
+    // A tool that was already dispatched cannot be revoked here, but force
+    // stop must prevent every later tool in this same model response.
+    throwIfForceStopped(cancellation);
+    const toolUseId = String(toolUse.id ?? "");
+    const toolName = String(toolUse.name);
+    const activityId = `tool-${toolUseId || `${round}-${index}`}`;
+    const activityBase = {
+      id: activityId,
+      kind: "tool" as const,
+      round,
+      tool_name: toolName,
+      label: describeToolActivity(toolName),
+      detail: describeToolInput(toolUse.input)
+    };
+
+    if (isCancellationRequested(cancellation)) {
+      const cancelled = cancelledToolResult(toolUse);
+      reportWorkTrace({
+        ...activityBase,
+        status: "completed",
+        ok: false,
+        result_preview: "Free Moment ended before this tool started.",
+        result_chars: 45
+      });
+      results.push(cancelled);
+      continue;
+    }
+
+    cancellation?.onPhaseChange?.("tool");
+    reportWorkTrace({ ...activityBase, status: "working" });
+    const result = await runTool(agent, toolName, toolUse.input);
+    const resultText = previewToolContent(result.content);
+    const event: RuntimeToolEvent = {
+      turn_id: turnId,
+      round,
+      tool_use_id: toolUseId,
+      tool_name: toolName,
+      tool_input: toolUse.input,
+      ok: result.ok,
+      result_preview: clampHistoryText(resultText, 2000),
+      result_chars: resultText.length
+    };
+
+    toolEvents.push(event);
+    await recordToolEvent(agent, conversationId, event);
+    reportWorkTrace({
+      ...activityBase,
+      status: "completed",
+      ok: result.ok,
+      result_preview: clampWorkTraceText(resultText),
+      result_chars: resultText.length
+    });
+
+    results.push({
+      type: "tool_result",
+      tool_use_id: toolUse.id,
+      content: result.content,
+      is_error: !result.ok
     });
   }
 
+  return results;
+}
+
+function isCancellationRequested(cancellation?: RuntimeTurnCancellation) {
+  return Boolean(cancellation?.isCancellationRequested?.());
+}
+
+function throwIfForceStopped(cancellation?: RuntimeTurnCancellation) {
+  if (cancellation?.signal?.aborted) {
+    throw new RuntimeTurnForceStoppedError();
+  }
+}
+
+function cancelledToolResult(toolUse: AnthropicContentBlock) {
+  return {
+    type: "tool_result" as const,
+    tool_use_id: toolUse.id,
+    content: [
+      {
+        type: "text",
+        text: "The Free Moment is ending at the Operator's request. This tool was not started."
+      }
+    ],
+    is_error: true
+  };
+}
+
+function cancelledToolResults(toolUses: AnthropicContentBlock[]) {
+  return toolUses.map(cancelledToolResult);
+}
+
+async function settleAfterCancellation({
+  apiKey,
+  model,
+  maxTokens,
+  system,
+  messages,
+  agent,
+  conversationId,
+  turnId,
+  source,
+  toolEvents,
+  workTrace,
+  cancellation
+}: {
+  apiKey: string;
+  model: string;
+  maxTokens: number;
+  system: string;
+  messages: AnthropicMessage[];
+  agent: AgentName;
+  conversationId: string;
+  turnId: string;
+  source: string;
+  toolEvents: RuntimeToolEvent[];
+  workTrace: Map<string, WorkTraceItem>;
+  cancellation?: RuntimeTurnCancellation;
+}): Promise<ToolLoopResult> {
+  throwIfForceStopped(cancellation);
+  cancellation?.onPhaseChange?.("wrap_up");
+
+  const settlementMessages: AnthropicMessage[] = [
+    ...messages,
+    {
+      role: "user",
+      content: [
+        "The Operator has asked for this Free Moment to end.",
+        "Do not call any tools or begin another activity.",
+        "Leave one concise, honest closing note about where you stopped.",
+        "Future Free Moments remain enabled unless the Operator changes them separately."
+      ].join(" ")
+    }
+  ];
+  const settlementData = await callAnthropic({
+    apiKey,
+    model,
+    maxTokens,
+    system,
+    messages: settlementMessages,
+    tools: [],
+    signal: cancellation?.signal
+  });
+
+  await recordModelUsage(getSupabaseAdmin(), {
+    provider: "anthropic",
+    model: settlementData.model || model,
+    agent,
+    conversationId,
+    turnId,
+    source,
+    operation: "chat_tool_loop_cancel_close",
+    round: null,
+    providerRequestId: settlementData.id ?? null,
+    stopReason: settlementData.stop_reason ?? null,
+    usage: settlementData.usage,
+    request: {
+      maxTokens,
+      messageCount: settlementMessages.length,
+      toolCount: 0
+    }
+  });
+
+  if (toolUseBlocks(settlementData).length) {
+    throw new Error("Free Moment closing response unexpectedly requested a tool.");
+  }
+
+  return {
+    data: settlementData,
+    toolEvents,
+    workTrace: [...workTrace.values()],
+    settledAfterToolLimit: false,
+    settledToolRoundLimit: null
+  };
 }
 
 async function settleAfterToolLimit({
@@ -485,6 +792,7 @@ async function settleAfterToolLimit({
   toolEvents,
   workTrace,
   onToolActivity,
+  cancellation,
   blockedToolNames = []
 }: {
   apiKey: string;
@@ -501,20 +809,41 @@ async function settleAfterToolLimit({
   toolEvents: RuntimeToolEvent[];
   workTrace: Map<string, WorkTraceItem>;
   onToolActivity?: (activity: RuntimeToolActivity) => void;
+  cancellation?: RuntimeTurnCancellation;
   blockedToolNames?: string[];
 }): Promise<ToolLoopResult> {
+  throwIfForceStopped(cancellation);
+  if (isCancellationRequested(cancellation)) {
+    return settleAfterCancellation({
+      apiKey,
+      model,
+      maxTokens,
+      system,
+      messages,
+      agent,
+      conversationId,
+      turnId,
+      source,
+      toolEvents,
+      workTrace,
+      cancellation
+    });
+  }
+
   const settlementMessages = withToolLimitSettlementPrompt(
     messages,
     maxRounds,
     blockedToolNames
   );
+  cancellation?.onPhaseChange?.("model");
   const settlementData = await callAnthropic({
     apiKey,
     model,
     maxTokens,
     system,
     messages: settlementMessages,
-    tools: []
+    tools: [],
+    signal: cancellation?.signal
   });
   await recordModelUsage(getSupabaseAdmin(), {
     provider: "anthropic",
@@ -534,6 +863,26 @@ async function settleAfterToolLimit({
       toolCount: 0
     }
   });
+
+  if (isCancellationRequested(cancellation)) {
+    return settleAfterCancellation({
+      apiKey,
+      model,
+      maxTokens,
+      system,
+      messages: [
+        ...settlementMessages,
+        { role: "assistant", content: settlementData.content ?? [] }
+      ],
+      agent,
+      conversationId,
+      turnId,
+      source,
+      toolEvents,
+      workTrace,
+      cancellation
+    });
+  }
 
   if (toolUseBlocks(settlementData).length) {
     throw new Error(
@@ -891,7 +1240,8 @@ async function callAnthropic({
   maxTokens,
   system,
   messages,
-  tools
+  tools,
+  signal
 }: {
   apiKey: string;
   model: string;
@@ -899,6 +1249,7 @@ async function callAnthropic({
   system: string;
   messages: AnthropicMessage[];
   tools: typeof toolDefinitions;
+  signal?: AbortSignal;
 }) {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -914,7 +1265,8 @@ async function callAnthropic({
       system,
       messages,
       tools
-    })
+    }),
+    signal
   });
 
   const data = await readAnthropicResponse(response);

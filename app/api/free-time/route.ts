@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import {
+  cancelCurrent as cancelCurrentFreeMoment,
+  forceStopCurrent as forceStopCurrentFreeMoment,
   start as startFreeTime,
   previewPrompt as previewFreeTimePrompt,
   statusWithSettings as freeTimeStatus,
@@ -29,6 +31,14 @@ export async function POST(request: Request) {
       return NextResponse.json(await stopFreeTime());
     }
 
+    if (action === "cancel_current") {
+      return NextResponse.json(await cancelCurrentFreeMoment(optionalReason(body.reason)));
+    }
+
+    if (action === "force_stop_current") {
+      return NextResponse.json(await forceStopCurrentFreeMoment(optionalReason(body.reason)));
+    }
+
     if (action === "tick") {
       return NextResponse.json(await tickFreeTime(optionalAgent(body.agent)));
     }
@@ -38,7 +48,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { error: 'Choose action "start", "stop", "tick", or "preview_prompt".' },
+      { error: 'Choose action "start", "stop", "cancel_current", "force_stop_current", "tick", or "preview_prompt".' },
       { status: 400 }
     );
   } catch (error) {
@@ -93,4 +103,13 @@ function optionalScheduleMode(value: unknown) {
   }
 
   return scheduleMode;
+}
+
+function optionalReason(value: unknown) {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  const reason = String(value).trim();
+  return reason ? reason.slice(0, 500) : undefined;
 }

@@ -103,6 +103,31 @@ The compaction pressure is approximate. It uses saved conversation character cou
 
 The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stops a response at that cap, the runtime appends a transcript-visible note so the agent and operator know the message may be incomplete. Raise this value in `.env.local` during long-form testing, then restart the server.
 
+## Free Moment Stop And Receipts
+
+An active Free Moment now appears in the chat surface's expanded **Tool activity**
+area rather than in the cadence controls. The normal **Stop** flow asks for
+confirmation, lets the already-dispatched activity finish, prevents further
+tools, and asks the agent for one short closing note. It does not turn future
+Free Moments off.
+
+If a requested stop has not settled after `FREE_TIME_CANCEL_GRACE_SECONDS`
+(60 seconds by default), the audit panel reveals **Force stop**. Force stop
+aborts the current model request and prevents later tools in the same response.
+It cannot undo an external tool call that was already sent; the resulting
+receipt records the actual stopping point rather than claiming a clean finish.
+
+Before deploying this feature, apply:
+
+```text
+sql/2026-10-30-free-moment-run-receipts.sql
+```
+
+to dev first, then deliberately to the live project. The migration creates
+server-only receipt tables with explicit `service_role` Data API grants. After a
+process restart, any receipt left in an active state is marked `interrupted`,
+not completed.
+
 ## Stored Messages, Prompt Context, And Cost
 
 The chat window and Supabase transcript can be much larger than the prompt sent

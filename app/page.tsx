@@ -555,6 +555,19 @@ type FreeTimeEvent = {
   message: string;
 };
 
+type ActiveFreeMomentRun = {
+  id: string;
+  agent: AgentName;
+  status: "running" | "cancellation_requested" | "force_stopping";
+  phase: "preparing" | "model" | "tool" | "wrap_up" | "finished";
+  started_at: string;
+  cancellation_requested_at: string | null;
+  cancellation_mode: "graceful" | "force" | null;
+  last_activity: Record<string, unknown>;
+  force_stop_available: boolean;
+  grace_deadline_at: string | null;
+};
+
 type FreeTimeStatus = {
   running: boolean;
   durable_enabled?: boolean | null;
@@ -569,6 +582,7 @@ type FreeTimeStatus = {
   next_turn_at: string | null;
   last_error: string | null;
   recent_events: FreeTimeEvent[];
+  active_run?: ActiveFreeMomentRun | null;
 };
 
 type WorkPacketSignalPreview = {
@@ -2231,7 +2245,7 @@ export default function Home() {
     }
   }
 
-  async function runFreeTimeAction(action: "start" | "stop" | "tick") {
+  async function runFreeTimeAction(action: "start" | "stop" | "tick" | "cancel_current" | "force_stop_current") {
     if (freeTimeRequestInProgress) {
       return;
     }
@@ -3986,6 +4000,12 @@ export default function Home() {
           </section>
         ) : null}
 
+        <FreeMomentActivityAudit
+          requestInProgress={freeTimeRequestInProgress}
+          status={freeTime}
+          onAction={runFreeTimeAction}
+        />
+
         <div className="transcript" ref={transcriptRef}>
           {loading ? <p className="empty">Loading seeded context...</p> : null}
 
@@ -4122,6 +4142,135 @@ function formatWorkDuration(durationMs: number | null) {
   }
 
   return `Worked for ${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+}
+
+function FreeMomentActivityAudit({
+  onAction,
+  requestInProgress,
+  status
+}: {
+  onAction: (action: "cancel_current" | "force_stop_current") => void;
+  requestInProgress: boolean;
+  status: FreeTimeStatus | null;
+}) {
+  const [confirmingStop, setConfirmingStop] = useState(false);
+  const activeRun = status?.active_run;
+
+  if (!activeRun) {
+    return null;
+  }
+
+  const agentName = activeRun.agent[0].toUpperCase() + activeRun.agent.slice(1);
+  const elapsed = formatElapsedDuration(activeRun.started_at);
+  const activity = activeRun.last_activity;
+  const activityLabel = typeof activity.label === "string"
+    ? activity.label
+    : typeof activity.message === "string"
+      ? activity.message
+      : "Working";
+  const activityDetail = typeof activity.detail === "string" ? activity.detail : null;
+  const cancellationPending = activeRun.status === "cancellation_requested";
+  const forceStopping = activeRun.status === "force_stopping";
+
+  return (
+    <>
+      <details className="tool-audit free-moment-audit" open>
+        <summary>
+          <span>Tool activity</span>
+          <span>{`${agentName}'s Free Moment active · ${elapsed}`}</span>
+        </summary>
+        <div className="free-moment-audit-body">
+          <div className="tool-call-meta">
+            <strong>{activityLabel}</strong>
+            <span>
+              {forceStopping
+                ? "Force stopping"
+                : cancellationPending
+                  ? "Stopping after current activity"
+                  : activeRun.phase === "wrap_up"
+                    ? "Closing note"
+                    : activeRun.phase === "tool"
+                      ? "Working"
+                      : "Active"}
+            </span>
+          </div>
+          {activityDetail ? <p>{activityDetail}</p> : null}
+          {forceStopping ? (
+            <p>The runtime has aborted its current request. The receipt will say exactly where it stopped.</p>
+          ) : cancellationPending ? (
+            <p>Stopping after current activity…</p>
+          ) : (
+            <button
+              className="quiet-action free-moment-stop"
+              disabled={requestInProgress}
+              onClick={() => setConfirmingStop(true)}
+              type="button"
+            >
+              Stop
+            </button>
+          )}
+          {cancellationPending && activeRun.force_stop_available ? (
+            <button
+              className="danger-action free-moment-force-stop"
+              disabled={requestInProgress}
+              onClick={() => onAction("force_stop_current")}
+              type="button"
+            >
+              Force stop
+            </button>
+          ) : null}
+        </div>
+      </details>
+
+      {confirmingStop ? (
+        <div className="free-moment-modal-backdrop" role="presentation">
+          <section
+            aria-describedby="free-moment-stop-description"
+            aria-labelledby="free-moment-stop-title"
+            aria-modal="true"
+            className="free-moment-modal"
+            role="dialog"
+          >
+            <h2 id="free-moment-stop-title">Stop this Free Moment?</h2>
+            <p id="free-moment-stop-description">
+              This stops further actions after the current activity and asks for one concise closing note.
+              Future Free Moments remain on.
+            </p>
+            <div className="free-moment-modal-actions">
+              <button
+                className="quiet-action"
+                disabled={requestInProgress}
+                onClick={() => setConfirmingStop(false)}
+                type="button"
+              >
+                Keep going
+              </button>
+              <button
+                className="danger-action"
+                disabled={requestInProgress}
+                onClick={() => {
+                  setConfirmingStop(false);
+                  onAction("cancel_current");
+                }}
+                type="button"
+              >
+                Stop
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function formatElapsedDuration(startedAt: string) {
+  const milliseconds = Math.max(0, Date.now() - Date.parse(startedAt));
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function CafeView({

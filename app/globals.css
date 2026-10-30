@@ -2653,6 +2653,111 @@ button {
   overflow-wrap: anywhere;
 }
 
+.free-moment-audit {
+  background: rgba(233, 242, 237, 0.42);
+  border: 1px solid rgba(34, 87, 122, 0.22);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 9px 10px;
+}
+
+.free-moment-audit summary {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.free-moment-audit-body {
+  border-top: 1px solid rgba(34, 87, 122, 0.16);
+  margin-top: 9px;
+  padding-top: 9px;
+}
+
+.free-moment-audit-body > p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 6px 0 0;
+}
+
+.free-moment-stop,
+.free-moment-force-stop {
+  max-width: 112px;
+}
+
+.danger-action {
+  align-items: center;
+  background: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 8px;
+  color: white;
+  display: inline-flex;
+  font-size: 12px;
+  justify-content: center;
+  line-height: 1.15;
+  min-height: 34px;
+  padding: 8px 10px;
+}
+
+.danger-action:hover {
+  filter: brightness(0.92);
+}
+
+.danger-action:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.free-moment-force-stop {
+  margin-top: 8px;
+}
+
+.free-moment-modal-backdrop {
+  align-items: center;
+  background: rgba(24, 34, 40, 0.48);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 20;
+}
+
+.free-moment-modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(20, 31, 39, 0.26);
+  max-width: 410px;
+  padding: 18px;
+  width: min(100%, 410px);
+}
+
+.free-moment-modal h2 {
+  font-size: 17px;
+  margin: 0;
+}
+
+.free-moment-modal p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 10px 0 0;
+}
+
+.free-moment-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.free-moment-modal-actions .quiet-action,
+.free-moment-modal-actions .danger-action {
+  margin: 0;
+  width: auto;
+}
+
 .live-tool-activity {
   background: rgba(233, 242, 237, 0.42);
   border: 1px solid rgba(34, 87, 122, 0.22);
