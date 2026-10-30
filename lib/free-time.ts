@@ -19,6 +19,7 @@ import {
   type FreeMomentRunPhase,
   type FreeMomentRunReceipt
 } from "@/lib/free-moment-runs";
+import { FreeMomentCancelController } from "@/lib/free-moment-cancel-controller";
 import { countUnreadOperatorNotesForAgent } from "@/lib/operator-notes";
 import {
   readFreeMomentsEnabled,
@@ -74,14 +75,9 @@ type FreeTimeScheduleMode = "round_robin" | "paired";
 
 type ActiveFreeMomentRun = {
   receipt: FreeMomentRunReceipt;
-  controller: AbortController;
+  cancellation: FreeMomentCancelController;
   phase: FreeMomentRunPhase;
   lastActivity: Record<string, unknown>;
-  cancellationRequestedAt: string | null;
-  cancellationMode: "graceful" | "force" | null;
-  forceStopRequested: boolean;
-  forceStopAvailable: boolean;
-  graceTimer: ReturnType<typeof setTimeout> | null;
 };
 
 type FreeMomentRunOutcome = "completed" | "cancelled" | "forced_stop" | "skipped" | "failed";
@@ -189,20 +185,24 @@ export async function cancelCurrent(reason?: string) {
     throw new Error("There is no active Free Moment to stop.");
   }
 
-  if (activeRun.forceStopRequested) {
+  if (activeRun.cancellation.forceStopRequested) {
     return status();
   }
 
-  if (!activeRun.cancellationRequestedAt) {
-    activeRun.cancellationRequestedAt = new Date().toISOString();
-    activeRun.cancellationMode = "graceful";
-    await markFreeMomentRunCancellation(activeRun.receipt.id, "graceful", reason);
+  if (!activeRun.cancellation.cancellationRequestedAt) {
+    activeRun.cancellation.requestGracefulStop(freeMomentCancelGraceMs(), () => {
+      addEvent(
+        "turn_cancellation_requested",
+        "Grace period elapsed; Force stop is now available if the Free Moment does not settle.",
+        activeRun.receipt.agent
+      );
+    });
     addEvent(
       "turn_cancellation_requested",
       "Free Moment will stop after its current activity.",
       activeRun.receipt.agent
     );
-    scheduleForceStopAvailability(activeRun);
+    await markFreeMomentRunCancellation(activeRun.receipt.id, "graceful", reason);
   }
 
   return status();
@@ -219,27 +219,20 @@ export async function forceStopCurrent(reason?: string) {
     throw new Error("There is no active Free Moment to force-stop.");
   }
 
-  if (activeRun.forceStopRequested) {
+  if (activeRun.cancellation.forceStopRequested) {
     return status();
   }
 
-  activeRun.forceStopRequested = true;
-  activeRun.cancellationRequestedAt ??= new Date().toISOString();
-  activeRun.cancellationMode = "force";
-  clearRunGraceTimer(activeRun);
+  activeRun.cancellation.requestForceStop();
 
-  try {
-    await markFreeMomentRunCancellation(activeRun.receipt.id, "force", reason);
-    addEvent(
-      "turn_force_stopped",
-      "Free Moment force stop requested; the current network request has been aborted.",
-      activeRun.receipt.agent
-    );
-  } finally {
-    // The emergency action must not depend on receipt persistence succeeding.
-    // The turn finalizer will make a second best-effort receipt update.
-    activeRun.controller.abort();
-  }
+  // The controller has already aborted the active provider request. Receipt
+  // persistence follows rather than gates that emergency action.
+  await markFreeMomentRunCancellation(activeRun.receipt.id, "force", reason);
+  addEvent(
+    "turn_force_stopped",
+    "Free Moment force stop requested; the current network request has been aborted.",
+    activeRun.receipt.agent
+  );
 
   return status();
 }
@@ -429,14 +422,9 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
 
   const activeRun: ActiveFreeMomentRun = {
     receipt,
-    controller: new AbortController(),
+    cancellation: new FreeMomentCancelController(),
     phase: "preparing",
-    lastActivity: { phase: "preparing", message: "Preparing Free Moment context." },
-    cancellationRequestedAt: null,
-    cancellationMode: null,
-    forceStopRequested: false,
-    forceStopAvailable: false,
-    graceTimer: null
+    lastActivity: { phase: "preparing", message: "Preparing Free Moment context." }
   };
   state.activeRun = activeRun;
   let outcome: FreeMomentRunOutcome = "failed";
@@ -446,9 +434,9 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
     await sendAgentMessage(agent, promptWithTriggerDigest(triggerContext.digest), {
       source: "free_time",
       cancellation: {
-        signal: activeRun.controller.signal,
+        signal: activeRun.cancellation.abortController.signal,
         isCancellationRequested: () =>
-          Boolean(activeRun.cancellationRequestedAt) && !activeRun.forceStopRequested,
+          activeRun.cancellation.gracefulStopRequested,
         onPhaseChange: (phase) => {
           activeRun.phase = phase;
           const activity = {
@@ -466,7 +454,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
       onToolActivity: (activity) => recordRunToolActivity(activeRun, activity)
     });
 
-    if (activeRun.forceStopRequested) {
+    if (activeRun.cancellation.forceStopRequested) {
       await finishFreeMomentRun(activeRun.receipt.id, "forced_stop", {
         message: "Free Moment was force-stopped at the Operator's request.",
         lastActivity: activeRun.lastActivity,
@@ -474,7 +462,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
       });
       outcome = "forced_stop";
       addEvent("turn_force_stopped", "Free Moment was force-stopped.", agent);
-    } else if (activeRun.cancellationRequestedAt) {
+    } else if (activeRun.cancellation.cancellationRequestedAt) {
       await finishFreeMomentRun(activeRun.receipt.id, "cancelled", {
         message: "Free Moment ended gracefully at the Operator's request.",
         lastActivity: activeRun.lastActivity,
@@ -493,7 +481,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
     state.lastError = null;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Free Moments error.";
-    if (activeRun.forceStopRequested || isRuntimeTurnForceStoppedError(error)) {
+    if (activeRun.cancellation.forceStopRequested || isRuntimeTurnForceStoppedError(error)) {
       await finishFreeMomentRun(activeRun.receipt.id, "forced_stop", {
         message: "Free Moment was force-stopped at the Operator's request.",
         lastActivity: activeRun.lastActivity,
@@ -513,7 +501,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
       addEvent("turn_failed", message, agent);
     }
   } finally {
-    clearRunGraceTimer(activeRun);
+    activeRun.cancellation.clear();
     if (state.activeRun?.receipt.id === activeRun.receipt.id) {
       state.activeRun = null;
     }
@@ -735,46 +723,21 @@ function activeRunStatus() {
   return {
     id: activeRun.receipt.id,
     agent: activeRun.receipt.agent,
-    status: activeRun.forceStopRequested
+    status: activeRun.cancellation.forceStopRequested
       ? "force_stopping"
-      : activeRun.cancellationRequestedAt
+      : activeRun.cancellation.cancellationRequestedAt
         ? "cancellation_requested"
         : "running",
     phase: activeRun.phase,
     started_at: activeRun.receipt.started_at,
-    cancellation_requested_at: activeRun.cancellationRequestedAt,
-    cancellation_mode: activeRun.cancellationMode,
+    cancellation_requested_at: activeRun.cancellation.cancellationRequestedAt,
+    cancellation_mode: activeRun.cancellation.cancellationMode,
     last_activity: activeRun.lastActivity,
-    force_stop_available: activeRun.forceStopAvailable,
-    grace_deadline_at: activeRun.cancellationRequestedAt && !activeRun.forceStopRequested
-      ? new Date(Date.parse(activeRun.cancellationRequestedAt) + freeMomentCancelGraceMs()).toISOString()
+    force_stop_available: activeRun.cancellation.forceStopAvailable,
+    grace_deadline_at: activeRun.cancellation.cancellationRequestedAt && !activeRun.cancellation.forceStopRequested
+      ? new Date(Date.parse(activeRun.cancellation.cancellationRequestedAt) + freeMomentCancelGraceMs()).toISOString()
       : null
   };
-}
-
-function scheduleForceStopAvailability(activeRun: ActiveFreeMomentRun) {
-  clearRunGraceTimer(activeRun);
-  const runId = activeRun.receipt.id;
-
-  activeRun.graceTimer = setTimeout(() => {
-    if (state.activeRun?.receipt.id !== runId || !activeRun.cancellationRequestedAt) {
-      return;
-    }
-
-    activeRun.forceStopAvailable = true;
-    addEvent(
-      "turn_cancellation_requested",
-      "Grace period elapsed; Force stop is now available if the Free Moment does not settle.",
-      activeRun.receipt.agent
-    );
-  }, freeMomentCancelGraceMs());
-}
-
-function clearRunGraceTimer(activeRun: ActiveFreeMomentRun) {
-  if (activeRun.graceTimer) {
-    clearTimeout(activeRun.graceTimer);
-    activeRun.graceTimer = null;
-  }
 }
 
 function recordRunToolActivity(activeRun: ActiveFreeMomentRun, activity: RuntimeToolActivity) {
