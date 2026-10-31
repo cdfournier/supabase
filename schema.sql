@@ -92,6 +92,20 @@ create table if not exists public.free_moment_run_events (
 create index if not exists free_moment_run_events_by_run
   on public.free_moment_run_events (run_id, created_at asc);
 
+-- Scheduler-level history survives a runtime restart. Run receipts describe
+-- one agent turn; these events describe the scheduler's choices around it.
+create table if not exists public.free_moment_scheduler_events (
+  id uuid primary key default gen_random_uuid(),
+  event_type text not null,
+  agent text references public.agents(name),
+  message text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists free_moment_scheduler_events_by_created
+  on public.free_moment_scheduler_events (created_at desc);
+
 insert into public.runtime_settings (key, value)
 values ('free_moments', '{"enabled": false}'::jsonb)
 on conflict (key) do nothing;
@@ -652,6 +666,7 @@ alter table public.conversation_message_attachments enable row level security;
 alter table public.runtime_settings enable row level security;
 alter table public.free_moment_runs enable row level security;
 alter table public.free_moment_run_events enable row level security;
+alter table public.free_moment_scheduler_events enable row level security;
 alter table public.agent_capabilities enable row level security;
 alter table public.cafe_rooms enable row level security;
 alter table public.cafe_participants enable row level security;

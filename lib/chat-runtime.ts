@@ -441,7 +441,8 @@ async function runAnthropicToolLoop({
       system,
       messages,
       tools,
-      signal: cancellation?.signal
+      signal: cancellation?.signal,
+      source
     });
     await recordModelUsage(getSupabaseAdmin(), {
       provider: "anthropic",
@@ -826,7 +827,8 @@ async function settleAfterCancellation({
     system,
     messages: settlementMessages,
     tools: [],
-    signal: cancellation?.signal
+    signal: cancellation?.signal,
+    source
   });
 
   await recordModelUsage(getSupabaseAdmin(), {
@@ -938,7 +940,8 @@ async function settleAfterToolLimit({
     system,
     messages: settlementMessages,
     tools: [],
-    signal: cancellation?.signal
+    signal: cancellation?.signal,
+    source
   });
   await recordModelUsage(getSupabaseAdmin(), {
     provider: "anthropic",
@@ -1341,7 +1344,8 @@ async function callAnthropic({
   system,
   messages,
   tools,
-  signal
+  signal,
+  source
 }: {
   apiKey: string;
   model: string;
@@ -1350,34 +1354,142 @@ async function callAnthropic({
   messages: AnthropicMessage[];
   tools: typeof toolDefinitions;
   signal?: AbortSignal;
+  source?: string;
 }) {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      ...anthropicCacheControl(),
-      system,
-      messages,
-      tools
-    }),
-    signal
-  });
+  // Free Moments are the only autonomous delivery surface. Give those calls
+  // one bounded recovery attempt so a transient provider/network failure does
+  // not become a silent missed moment; ordinary chat retains its existing
+  // one-request behavior and user-controlled cancellation always wins.
+  const freeMomentDelivery = source === "free_time";
+  const timeoutMs = freeMomentDelivery
+    ? configuredPositiveInteger("FREE_MOMENT_ANTHROPIC_TIMEOUT_MS", 120_000)
+    : null;
+  const maxAttempts = freeMomentDelivery ? 2 : 1;
+  let lastError: Error | null = null;
 
-  const data = await readAnthropicResponse(response);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const requestAbort = timeoutMs === null
+      ? null
+      : createTimedRequestAbortSignal(signal, timeoutMs);
 
-  if (!response.ok) {
-    const errorMessage =
-      data?.error?.message || data?.message || `Anthropic request failed: ${response.status}`;
-    throw new Error(errorMessage);
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: maxTokens,
+          ...anthropicCacheControl(),
+          system,
+          messages,
+          tools
+        }),
+        signal: requestAbort?.signal ?? signal
+      });
+
+      const data = await readAnthropicResponse(response);
+
+      if (response.ok) {
+        return data;
+      }
+
+      const errorMessage =
+        data?.error?.message || data?.message || `Anthropic request failed: ${response.status}`;
+      const error = new AnthropicResponseError(response.status, errorMessage);
+      if (attempt < maxAttempts && isRetryableAnthropicFailure(error)) {
+        lastError = error;
+        continue;
+      }
+      throw error;
+    } catch (error) {
+      // An Operator force stop uses the caller's signal. It is never retried.
+      if (signal?.aborted) {
+        throw error;
+      }
+
+      const normalized = requestAbort?.timedOut()
+        ? new FreeMomentRequestTimeoutError(timeoutMs ?? 0)
+        : asError(error);
+      if (attempt < maxAttempts && isRetryableAnthropicFailure(normalized)) {
+        lastError = normalized;
+        continue;
+      }
+
+      if (freeMomentDelivery && lastError) {
+        throw new Error(`Free Moment provider delivery failed after ${maxAttempts} attempts: ${normalized.message}`);
+      }
+      throw normalized;
+    } finally {
+      requestAbort?.cleanup();
+    }
   }
 
-  return data;
+  // The loop always returns or throws. This satisfies TypeScript and keeps a
+  // provider failure legible if that invariant ever changes.
+  throw lastError ?? new Error("Free Moment provider delivery did not settle.");
+}
+
+class AnthropicResponseError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = "AnthropicResponseError";
+  }
+}
+
+class FreeMomentRequestTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Free Moment provider request timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`);
+    this.name = "FreeMomentRequestTimeoutError";
+  }
+}
+
+function isRetryableAnthropicFailure(error: Error) {
+  if (error instanceof FreeMomentRequestTimeoutError) {
+    return true;
+  }
+
+  if (error instanceof AnthropicResponseError) {
+    return error.status === 408 || error.status === 409 || error.status === 429 || error.status >= 500;
+  }
+
+  // fetch throws TypeError for ordinary transient network failures. Deliberate
+  // application errors, malformed requests, and cancellation are not retried.
+  return error.name === "TypeError";
+}
+
+function createTimedRequestAbortSignal(parentSignal: AbortSignal | undefined, timeoutMs: number) {
+  const controller = new AbortController();
+  let didTimeout = false;
+  const onParentAbort = () => controller.abort();
+  const timeout = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs);
+
+  if (parentSignal) {
+    if (parentSignal.aborted) {
+      controller.abort();
+    } else {
+      parentSignal.addEventListener("abort", onParentAbort, { once: true });
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    timedOut: () => didTimeout,
+    cleanup: () => {
+      clearTimeout(timeout);
+      parentSignal?.removeEventListener("abort", onParentAbort);
+    }
+  };
+}
+
+function asError(error: unknown) {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 async function readAnthropicResponse(response: Response): Promise<AnthropicResponse> {

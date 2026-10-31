@@ -22,6 +22,12 @@ import {
   type FreeMomentRunReceipt
 } from "@/lib/free-moment-runs";
 import { FreeMomentCancelController } from "@/lib/free-moment-cancel-controller";
+import {
+  loadRecentFreeMomentSchedulerEvents,
+  recordFreeMomentSchedulerEvent,
+  type FreeMomentSchedulerEvent,
+  type FreeMomentSchedulerEventType
+} from "@/lib/free-moment-scheduler-events";
 import { countUnreadOperatorNotesForAgent } from "@/lib/operator-notes";
 import {
   readFreeMomentsEnabled,
@@ -51,28 +57,8 @@ If you describe current Outpost, web, Supabase memory/profile/journal, peer note
 
 Passing is a valid outcome. So is one quiet action. So is several. If you respond, make it an honest note about what you chose, not a performance report.`;
 
-type FreeTimeEventType =
-  | "started"
-  | "stopped"
-  | "scheduled"
-  | "tick_skipped"
-  | "tick_blocked"
-  | "turn_started"
-  | "turn_context_failed"
-  | "turn_completed"
-  | "turn_bounded"
-  | "turn_failed"
-  | "turn_cancellation_requested"
-  | "turn_wrapping_up"
-  | "turn_cancelled"
-  | "turn_force_stopped";
-
-type FreeTimeEvent = {
-  at: string;
-  type: FreeTimeEventType;
-  agent?: AgentName;
-  message: string;
-};
+type FreeTimeEventType = FreeMomentSchedulerEventType;
+type FreeTimeEvent = FreeMomentSchedulerEvent;
 
 type FreeTimeScheduleMode = "round_robin" | "paired";
 
@@ -166,10 +152,14 @@ export async function statusWithSettings() {
     const settings = await readFreeMomentsSettings();
     await restoreFromSettings(settings);
 
-    const actionLimits = await readFreeMomentActionLimits();
+    const [actionLimits, durableEvents] = await Promise.all([
+      readFreeMomentActionLimits(),
+      loadRecentFreeMomentSchedulerEvents(EVENT_LIMIT)
+    ]);
 
     return {
       ...status(),
+      ...(durableEvents ? { recent_events: durableEvents } : {}),
       durable_enabled: settings.enabled,
       durable_error: null,
       action_limits: actionLimits
@@ -202,7 +192,7 @@ export async function setActionLimit(agent: AgentName, limit: number | null) {
     "free_moments",
     limit
   );
-  addEvent(
+  await addEvent(
     "scheduled",
     savedLimit === null
       ? "Free Moment action budget set to no cap."
@@ -227,13 +217,13 @@ export async function cancelCurrent(reason?: string) {
 
   if (!activeRun.cancellation.cancellationRequestedAt) {
     activeRun.cancellation.requestGracefulStop(freeMomentCancelGraceMs(), () => {
-      addEvent(
+      void addEvent(
         "turn_cancellation_requested",
         "Grace period elapsed; Force stop is now available if the Free Moment does not settle.",
         activeRun.receipt.agent
       );
     });
-    addEvent(
+    await addEvent(
       "turn_cancellation_requested",
       "Free Moment will stop after its current activity.",
       activeRun.receipt.agent
@@ -264,7 +254,7 @@ export async function forceStopCurrent(reason?: string) {
   // The controller has already aborted the active provider request. Receipt
   // persistence follows rather than gates that emergency action.
   await markFreeMomentRunCancellation(activeRun.receipt.id, "force", reason);
-  addEvent(
+  await addEvent(
     "turn_force_stopped",
     "Free Moment force stop requested; the current network request has been aborted.",
     activeRun.receipt.agent
@@ -277,7 +267,7 @@ export async function start(intervalMinutes?: number, scheduleMode?: FreeTimeSch
   state.intervalMinutes = normalizeIntervalMinutes(intervalMinutes);
   state.scheduleMode = normalizeScheduleMode(scheduleMode);
   state.running = true;
-  addEvent("started", `Free Moments started at ${state.intervalMinutes} minute cadence in ${state.scheduleMode} mode.`);
+  await addEvent("started", `Free Moments started at ${state.intervalMinutes} minute cadence in ${state.scheduleMode} mode.`);
   await scheduleNextTurn();
 
   return {
@@ -291,7 +281,7 @@ export async function stop() {
   clearScheduledTurn();
   state.running = false;
   state.nextTurnAt = null;
-  addEvent("stopped", "Free Moments stopped.");
+  await addEvent("stopped", "Free Moments stopped.");
 
   try {
     await writeFreeMomentsSettings({
@@ -310,7 +300,7 @@ export async function stop() {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not update durable Free Moments setting.";
     state.lastError = message;
-    addEvent("turn_failed", message);
+    await addEvent("turn_failed", message);
     return {
       ...status(),
       durable_enabled: null,
@@ -321,7 +311,7 @@ export async function stop() {
 
 export async function tick(targetAgent?: AgentName, options: { scheduled?: boolean } = {}) {
   if (state.turnInProgress) {
-    addEvent("tick_skipped", "Free Moments tick skipped because a turn is already in progress.");
+    await addEvent("tick_skipped", "Free Moments tick skipped because a turn is already in progress.");
     return status();
   }
 
@@ -332,7 +322,7 @@ export async function tick(targetAgent?: AgentName, options: { scheduled?: boole
       if (!(await readFreeMomentsEnabled())) {
         state.running = false;
         state.nextTurnAt = null;
-        addEvent("tick_blocked", "Scheduled Free Moment blocked because runtime setting is disabled.");
+        await addEvent("tick_blocked", "Scheduled Free Moment blocked because runtime setting is disabled.");
         return status();
       }
     } catch (error) {
@@ -340,7 +330,7 @@ export async function tick(targetAgent?: AgentName, options: { scheduled?: boole
       state.running = false;
       state.nextTurnAt = null;
       state.lastError = message;
-      addEvent("tick_blocked", `Scheduled Free Moment blocked: ${message}`);
+      await addEvent("tick_blocked", `Scheduled Free Moment blocked: ${message}`);
       return status();
     }
   }
@@ -412,7 +402,7 @@ async function restoreFromSettings(settings: Awaited<ReturnType<typeof readFreeM
       clearScheduledTurn();
       state.running = false;
       state.nextTurnAt = null;
-      addEvent("stopped", "Free Moments restored as stopped from durable setting.");
+      await addEvent("stopped", "Free Moments restored as stopped from durable setting.");
     }
 
     return;
@@ -427,7 +417,7 @@ async function restoreFromSettings(settings: Awaited<ReturnType<typeof readFreeM
   }
 
   state.running = true;
-  addEvent(
+  await addEvent(
     "started",
     `Free Moments restored at ${state.intervalMinutes} minute cadence in ${state.scheduleMode} mode.`
   );
@@ -438,13 +428,13 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
   const capabilityProfile = await loadAgentCapabilityProfile(getSupabaseAdmin(), agent);
 
   if (!isSurfaceAllowed(capabilityProfile, "free_moments", "write")) {
-    addEvent("tick_blocked", `Free Moment blocked for ${agent} by Agent Capability Profile.`, agent);
+    await addEvent("tick_blocked", `Free Moment blocked for ${agent} by Agent Capability Profile.`, agent);
     return "skipped";
   }
 
   const actionLimit = actionLimitForSurface(capabilityProfile, "free_moments");
 
-  addEvent("turn_started", `Free Moment turn started for ${agent}.`, agent);
+  await addEvent("turn_started", `Free Moment turn started for ${agent}.`, agent);
   let receipt: FreeMomentRunReceipt;
 
   try {
@@ -454,7 +444,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
     state.lastError = message;
     state.lastAgent = agent;
     state.lastTurnAt = new Date().toISOString();
-    addEvent("turn_failed", message, agent);
+    await addEvent("turn_failed", message, agent);
     return "failed";
   }
 
@@ -486,7 +476,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
           void updateFreeMomentRunActivity(activeRun.receipt.id, phase, activity).catch(() => undefined);
           if (phase === "wrap_up") {
             void markFreeMomentRunWrappingUp(activeRun.receipt.id).catch(() => undefined);
-            addEvent("turn_wrapping_up", "Free Moment is writing its closing note.", agent);
+            void addEvent("turn_wrapping_up", "Free Moment is writing its closing note.", agent);
           }
         }
       },
@@ -500,7 +490,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
         metadata: { last_activity: activeRun.lastActivity }
       });
       outcome = "forced_stop";
-      addEvent("turn_force_stopped", "Free Moment was force-stopped.", agent);
+      await addEvent("turn_force_stopped", "Free Moment was force-stopped.", agent);
     } else if (activeRun.cancellation.cancellationRequestedAt) {
       await finishFreeMomentRun(activeRun.receipt.id, "cancelled", {
         message: "Free Moment ended gracefully at the Operator's request.",
@@ -508,7 +498,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
         metadata: { last_activity: activeRun.lastActivity }
       });
       outcome = "cancelled";
-      addEvent("turn_cancelled", "Free Moment ended after its current activity.", agent);
+      await addEvent("turn_cancelled", "Free Moment ended after its current activity.", agent);
     } else if (turn.free_moment_bound?.reached) {
       const actionsUsed = turn.free_moment_bound.actions_used;
       await finishFreeMomentRun(activeRun.receipt.id, "bounded", {
@@ -521,14 +511,14 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
         }
       });
       outcome = "bounded";
-      addEvent("turn_bounded", `Free Moment settled at its action bound after ${actionsUsed} tool action${actionsUsed === 1 ? "" : "s"}.`, agent);
+      await addEvent("turn_bounded", `Free Moment settled at its action bound after ${actionsUsed} tool action${actionsUsed === 1 ? "" : "s"}.`, agent);
     } else {
       await finishFreeMomentRun(activeRun.receipt.id, "completed", {
         lastActivity: activeRun.lastActivity,
         metadata: { last_activity: activeRun.lastActivity }
       });
       outcome = "completed";
-      addEvent("turn_completed", `Free Moment turn completed for ${agent}.`, agent);
+      await addEvent("turn_completed", `Free Moment turn completed for ${agent}.`, agent);
     }
     state.lastError = null;
   } catch (error) {
@@ -541,7 +531,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
       });
       outcome = "forced_stop";
       state.lastError = null;
-      addEvent("turn_force_stopped", "Free Moment was force-stopped.", agent);
+      await addEvent("turn_force_stopped", "Free Moment was force-stopped.", agent);
     } else {
       await finishFreeMomentRun(activeRun.receipt.id, "failed", {
         error: message,
@@ -550,7 +540,7 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
       });
       outcome = "failed";
       state.lastError = message;
-      addEvent("turn_failed", message, agent);
+      await addEvent("turn_failed", message, agent);
     }
   } finally {
     activeRun.cancellation.clear();
@@ -628,7 +618,7 @@ async function buildWorkPacketSignalContext(
     const message = error instanceof Error ? error.message : "Could not refresh Work Packet Signals.";
 
     if (recordFailureEvent) {
-      addEvent("turn_context_failed", `Could not add Work Packet Signals context for ${agent}: ${message}`, agent);
+      await addEvent("turn_context_failed", `Could not add Work Packet Signals context for ${agent}: ${message}`, agent);
     }
 
     return {
@@ -663,7 +653,7 @@ async function buildOperatorNoteContext(
     const message = error instanceof Error ? error.message : "Could not check Operator Notes.";
 
     if (recordFailureEvent) {
-      addEvent("turn_context_failed", `Could not add Operator Notes context for ${agent}: ${message}`, agent);
+      await addEvent("turn_context_failed", `Could not add Operator Notes context for ${agent}: ${message}`, agent);
     }
 
     return {
@@ -737,6 +727,7 @@ async function scheduleNextTurn(restoredNextTurnAt?: string | null) {
 
   const now = Date.now();
   const restoredAt = parseScheduledTime(restoredNextTurnAt);
+  const restoredDelayMs = restoredAt === null ? null : now - restoredAt;
   const delayMs = restoredAt === null
     ? state.intervalMinutes * 60 * 1000
     : Math.max(0, restoredAt - now);
@@ -747,7 +738,18 @@ async function scheduleNextTurn(restoredNextTurnAt?: string | null) {
     state.nextTurnAt = null;
     void tick(undefined, { scheduled: true });
   }, delayMs);
-  addEvent("scheduled", `Next Free Moment scheduled for ${nextTurnAt}.`);
+  if (restoredAt !== null && restoredDelayMs !== null && restoredDelayMs > 0) {
+    await addEvent(
+      "turn_delayed",
+      `A delayed Free Moment wake was restored and will run now (late by ${Math.ceil(restoredDelayMs / 1000)} seconds).`,
+      undefined,
+      { scheduled_for: new Date(restoredAt).toISOString(), delayed_ms: restoredDelayMs }
+    );
+  }
+  await addEvent("scheduled", `Next Free Moment scheduled for ${nextTurnAt}.`, undefined, {
+    scheduled_for: nextTurnAt,
+    restored_from: restoredAt === null ? null : new Date(restoredAt).toISOString()
+  });
   await persistSchedule();
 }
 
@@ -764,7 +766,7 @@ async function persistSchedule() {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not persist Free Moments schedule.";
     state.lastError = message;
-    addEvent("turn_failed", message);
+    await addEvent("turn_failed", message);
   }
 }
 
@@ -829,18 +831,44 @@ async function reconcileFreeMomentReceipts() {
   // The runtime cannot know whether an in-flight turn survived a process loss.
   // Marking it interrupted is deliberately more honest than manufacturing a
   // completion receipt on the next status poll.
-  await reconcileInterruptedFreeMomentRuns();
+  const interruptedCount = await reconcileInterruptedFreeMomentRuns();
+  if (interruptedCount > 0) {
+    await addEvent(
+      "turn_interrupted",
+      `${interruptedCount} Free Moment ${interruptedCount === 1 ? "receipt was" : "receipts were"} marked interrupted after runtime recovery.`,
+      undefined,
+      { interrupted_count: interruptedCount }
+    );
+  }
   state.receiptsReconciled = true;
 }
 
-function addEvent(type: FreeTimeEventType, message: string, agent?: AgentName) {
-  state.recentEvents.push({
+async function addEvent(
+  type: FreeTimeEventType,
+  message: string,
+  agent?: AgentName,
+  metadata: Record<string, unknown> = {}
+) {
+  const event: FreeTimeEvent = {
     at: new Date().toISOString(),
     type,
-    agent,
-    message
-  });
+    ...(agent ? { agent } : {}),
+    message,
+    metadata
+  };
+  state.recentEvents.push(event);
   state.recentEvents = state.recentEvents.slice(-EVENT_LIMIT);
+
+  try {
+    await recordFreeMomentSchedulerEvent(event);
+  } catch (error) {
+    // The scheduler itself remains usable if the audit lane is unavailable;
+    // retain the local event and make the failed write visible in server logs.
+    console.error(
+      `Could not persist Free Moment scheduler event ${type}:`,
+      error instanceof Error ? error.message : error
+    );
+  }
 }
 
 function normalizeIntervalMinutes(value?: number) {
