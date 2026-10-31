@@ -9,6 +9,7 @@ export type FreeMomentRunStatus =
   | "cancellation_requested"
   | "wrapping_up"
   | "completed"
+  | "bounded"
   | "cancelled"
   | "forced_stop"
   | "failed"
@@ -171,7 +172,7 @@ export async function updateFreeMomentRunActivity(
 
 export async function finishFreeMomentRun(
   runId: string,
-  status: Extract<FreeMomentRunStatus, "completed" | "cancelled" | "forced_stop" | "failed" | "interrupted">,
+  status: Extract<FreeMomentRunStatus, "completed" | "bounded" | "cancelled" | "forced_stop" | "failed" | "interrupted">,
   options: {
     error?: string;
     message?: string;
@@ -292,6 +293,7 @@ function sanitizeRecord(value: Record<string, unknown>) {
 function defaultFinishMessage(status: FreeMomentRunStatus) {
   const messages: Record<string, string> = {
     completed: "Free Moment completed normally.",
+    bounded: "Free Moment settled at its configured action bound.",
     cancelled: "Free Moment ended at the Operator's request.",
     forced_stop: "Free Moment was force-stopped at the Operator's request.",
     failed: "Free Moment failed before completion.",

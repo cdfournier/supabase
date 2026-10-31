@@ -67,7 +67,7 @@ create table if not exists public.free_moment_runs (
   error text,
   metadata jsonb not null default '{}'::jsonb,
   constraint free_moment_runs_status_check
-    check (status in ('running', 'cancellation_requested', 'wrapping_up', 'completed', 'cancelled', 'forced_stop', 'failed', 'interrupted')),
+    check (status in ('running', 'cancellation_requested', 'wrapping_up', 'completed', 'bounded', 'cancelled', 'forced_stop', 'failed', 'interrupted')),
   constraint free_moment_runs_phase_check
     check (phase in ('preparing', 'model', 'tool', 'wrap_up', 'finished')),
   constraint free_moment_runs_cancellation_mode_check

@@ -4,6 +4,7 @@ import {
   forceStopCurrent as forceStopCurrentFreeMoment,
   start as startFreeTime,
   previewPrompt as previewFreeTimePrompt,
+  setActionLimit as setFreeMomentActionLimit,
   statusWithSettings as freeTimeStatus,
   stop as stopFreeTime,
   tick as tickFreeTime
@@ -43,12 +44,18 @@ export async function POST(request: Request) {
       return NextResponse.json(await tickFreeTime(optionalAgent(body.agent)));
     }
 
+    if (action === "set_action_limit") {
+      return NextResponse.json(
+        await setFreeMomentActionLimit(requiredAgent(body.agent), optionalActionLimit(body.actionLimit))
+      );
+    }
+
     if (action === "preview_prompt") {
       return NextResponse.json(await previewFreeTimePrompt(requiredAgent(body.agent)));
     }
 
     return NextResponse.json(
-      { error: 'Choose action "start", "stop", "cancel_current", "force_stop_current", "tick", or "preview_prompt".' },
+      { error: 'Choose action "start", "stop", "cancel_current", "force_stop_current", "tick", "set_action_limit", or "preview_prompt".' },
       { status: 400 }
     );
   } catch (error) {
@@ -57,6 +64,20 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+function optionalActionLimit(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 1_000) {
+    throw new Error("Free Moments action limit must be a whole number from 0 to 1000, or no cap.");
+  }
+
+  return parsed;
 }
 
 function optionalNumber(value: unknown) {

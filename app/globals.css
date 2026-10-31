@@ -532,6 +532,50 @@ button {
   padding: 7px 8px;
 }
 
+.free-time-budgets {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.free-time-budgets > div > p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 4px 0 10px;
+}
+
+.free-time-budget-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(52px, 0.7fr) minmax(72px, 1fr) minmax(78px, 1fr) auto;
+  margin-top: 8px;
+}
+
+.free-time-budget-row input[type="number"] {
+  min-width: 0;
+}
+
+.free-time-budget-name {
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.free-time-no-cap {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 12px;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.free-time-budget-row .quiet-action {
+  margin: 0;
+  padding: 7px 8px;
+}
+
 .free-time-events {
   border-top: 1px solid var(--line);
   margin-top: 12px;

@@ -428,7 +428,7 @@ export function formatCapabilityProfileForPrompt(profile: CapabilityProfile) {
     const flags = [
       capability.requires_operator_approval ? "operator approval" : "",
       capability.quiet_mode ? "quiet mode" : "",
-      capability.max_actions_per_moment ? `max ${capability.max_actions_per_moment}/moment` : ""
+      capability.max_actions_per_moment !== null ? `max ${capability.max_actions_per_moment}/moment` : ""
     ].filter(Boolean);
     const posture = [
       capability.access_level,
@@ -483,6 +483,64 @@ export function isSurfaceAllowed(
   action: CapabilityAction
 ) {
   return canUse(profile, surface, action);
+}
+
+/**
+ * `null` means the Operator intentionally left this surface uncapped for the
+ * active moment. The caller decides how that budget is applied.
+ */
+export function actionLimitForSurface(profile: CapabilityProfile, surface: CapabilitySurface) {
+  const value = capabilityFor(profile, surface).max_actions_per_moment;
+
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : null;
+}
+
+/**
+ * Updates one durable capability setting without inventing a second policy
+ * store for Free Moments. The caller is responsible for validating its UI
+ * input; null is the deliberate "No cap" choice.
+ */
+export async function writeActionLimitForSurface(
+  supabase: SupabaseClient,
+  agent: AgentName,
+  surface: CapabilitySurface,
+  limit: number | null
+) {
+  const profile = await loadAgentCapabilityProfile(supabase, agent);
+  const capability = capabilityFor(profile, surface);
+  const normalizedLimit = typeof limit === "number" && Number.isFinite(limit) && limit >= 0
+    ? Math.floor(limit)
+    : null;
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("agent_capabilities")
+    .upsert(
+      {
+        agent,
+        surface,
+        access_level: capability.access_level,
+        default_bias: capability.default_bias,
+        requires_operator_approval: capability.requires_operator_approval,
+        notify_operator: capability.notify_operator,
+        max_actions_per_moment: normalizedLimit,
+        quiet_mode: capability.quiet_mode,
+        notes: capability.notes,
+        updated_at: now
+      },
+      { onConflict: "agent,surface" }
+    )
+    .select("max_actions_per_moment")
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Could not save ${surface} action limit for ${agent}: ${error?.message ?? "no row returned"}`);
+  }
+
+  return typeof data.max_actions_per_moment === "number"
+    ? Math.floor(data.max_actions_per_moment)
+    : null;
 }
 
 export function fallbackProfile(agent: AgentName): CapabilityProfile {

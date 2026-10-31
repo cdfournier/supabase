@@ -974,6 +974,13 @@ They are loaded into each agent's system prompt and used by the runtime to
 filter or block tools by surface/action. Free Moments also checks the profile
 before waking an agent.
 
+For `free_moments`, `max_actions_per_moment` is the per-agent Free Moment
+budget. The Operator control offers a whole-number action count or **No cap**;
+`null` means intentionally uncapped, not an implicit fallback number. The
+budget is read when a Free Moment begins, so changing it never interrupts a
+moment already underway. Reaching a budget writes a normal `bounded` run
+receipt rather than a failure or cancellation.
+
 Current surfaces:
 
 - `runtime`

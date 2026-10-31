@@ -20,6 +20,12 @@ import {
   isSurfaceAllowed,
   loadAgentCapabilityProfile
 } from "@/lib/capability-profile";
+import {
+  freeMomentActionLimit,
+  freeMomentActionLimitLabel,
+  wouldExceedFreeMomentActionLimit,
+  type FreeMomentActionLimit
+} from "@/lib/free-moment-action-budget";
 import { latestCompactionCheckpoint, messagesAfterCheckpoint } from "@/lib/compaction";
 import { recordModelUsage } from "@/lib/model-usage";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -84,6 +90,9 @@ type ToolLoopResult = {
   workTrace: WorkTraceItem[];
   settledAfterToolLimit: boolean;
   settledToolRoundLimit: number | null;
+  settledAfterActionLimit: boolean;
+  settledToolActionLimit: FreeMomentActionLimit;
+  toolActionsUsed: number;
 };
 
 type ContextPostureReceipt = {
@@ -116,6 +125,11 @@ export type SendAgentMessageOptions = {
   attachments?: AttachmentInput[];
   onToolActivity?: (activity: RuntimeToolActivity) => void;
   cancellation?: RuntimeTurnCancellation;
+  /**
+   * Free Moment-only bound, counted per requested tool action. `null` means
+   * the Operator selected No cap. Omit for ordinary chat and other sources.
+   */
+  freeMomentActionLimit?: FreeMomentActionLimit;
 };
 
 export type RuntimeTurnCancellation = {
@@ -210,7 +224,16 @@ export async function sendAgentMessage(
       : modelMessage
   });
 
-  const { data, toolEvents, workTrace, settledAfterToolLimit, settledToolRoundLimit } = await runAnthropicToolLoop({
+  const {
+    data,
+    toolEvents,
+    workTrace,
+    settledAfterToolLimit,
+    settledToolRoundLimit,
+    settledAfterActionLimit,
+    settledToolActionLimit,
+    toolActionsUsed
+  } = await runAnthropicToolLoop({
     apiKey,
     agent,
     conversationId,
@@ -219,7 +242,8 @@ export async function sendAgentMessage(
     turnId,
     source,
     onToolActivity: options.onToolActivity,
-    cancellation: options.cancellation
+    cancellation: options.cancellation,
+    freeMomentActionLimit: options.freeMomentActionLimit
   });
 
   const assistantText = extractAssistantText(data);
@@ -234,6 +258,13 @@ export async function sendAgentMessage(
     : assistantText;
   if (settledAfterToolLimit && settledToolRoundLimit !== null) {
     assistantReply = withToolLimitSettlementNote(assistantReply, settledToolRoundLimit);
+  }
+  if (settledAfterActionLimit && settledToolActionLimit !== null) {
+    assistantReply = withFreeMomentActionLimitSettlementNote(
+      assistantReply,
+      settledToolActionLimit,
+      toolActionsUsed
+    );
   }
 
   const position = await nextMessagePosition(supabase, conversationId);
@@ -283,6 +314,13 @@ export async function sendAgentMessage(
     work_trace: workTrace,
     context_receipt: contextReceipt,
     reply: assistantReply,
+    free_moment_bound: settledAfterActionLimit
+      ? {
+          reached: true,
+          action_limit: settledToolActionLimit,
+          actions_used: toolActionsUsed
+        }
+      : null,
     warning: stoppedAtTokenLimit
       ? `Anthropic stopped this response at ANTHROPIC_MAX_TOKENS=${maxTokens}.`
       : null
@@ -304,7 +342,8 @@ async function runAnthropicToolLoop({
   turnId,
   source,
   onToolActivity,
-  cancellation
+  cancellation,
+  freeMomentActionLimit: requestedFreeMomentActionLimit
 }: {
   apiKey: string;
   agent: AgentName;
@@ -315,10 +354,20 @@ async function runAnthropicToolLoop({
   source: string;
   onToolActivity?: (activity: RuntimeToolActivity) => void;
   cancellation?: RuntimeTurnCancellation;
+  freeMomentActionLimit?: FreeMomentActionLimit;
 }): Promise<ToolLoopResult> {
   const model = modelForAgent(agent);
   const maxTokens = maxResponseTokens();
-  const configuredMaxToolRounds = maxToolRounds();
+  // A Free Moment's explicit action policy replaces the global round cap. A
+  // round can carry several tool calls; its blunt global ceiling was the
+  // wrong unit for protecting against accidental sprints.
+  const configuredMaxToolRounds = requestedFreeMomentActionLimit === undefined
+    ? maxToolRounds()
+    : null;
+  const configuredFreeMomentActionLimit = requestedFreeMomentActionLimit === undefined
+    ? undefined
+    : freeMomentActionLimit(requestedFreeMomentActionLimit);
+  let toolActionsUsed = 0;
   const toolEvents: RuntimeToolEvent[] = [];
   const workTrace = new Map<string, WorkTraceItem>();
   const reportWorkTrace = (item: WorkTraceItem) => {
@@ -447,7 +496,10 @@ async function runAnthropicToolLoop({
         toolEvents,
         workTrace: [...workTrace.values()],
         settledAfterToolLimit: false,
-        settledToolRoundLimit: null
+        settledToolRoundLimit: null,
+        settledAfterActionLimit: false,
+        settledToolActionLimit: null,
+        toolActionsUsed
       };
     }
 
@@ -486,30 +538,62 @@ async function runAnthropicToolLoop({
       });
     }
 
+    if (
+      configuredFreeMomentActionLimit !== undefined &&
+      wouldExceedFreeMomentActionLimit(
+        configuredFreeMomentActionLimit,
+        toolActionsUsed,
+        toolUses.length
+      )
+    ) {
+      return settleAfterToolLimit({
+        apiKey,
+        model,
+        maxTokens,
+        system,
+        messages,
+        agent,
+        conversationId,
+        turnId,
+        source,
+        maxRounds: null,
+        round,
+        toolEvents,
+        workTrace,
+        onToolActivity,
+        cancellation,
+        blockedToolNames: toolUses.map((toolUse) => String(toolUse.name ?? "unknown_tool")),
+        freeMomentActionLimit: configuredFreeMomentActionLimit,
+        toolActionsUsed
+      });
+    }
+
     messages.push({
       role: "assistant",
       content: data.content ?? []
     });
+    const toolResults = await (cancellation ? runToolUsesSequentially({
+      agent,
+      toolUses,
+      round,
+      turnId,
+      conversationId,
+      toolEvents,
+      reportWorkTrace,
+      cancellation
+    }) : runToolUsesConcurrently({
+      agent,
+      toolUses,
+      round,
+      turnId,
+      conversationId,
+      toolEvents,
+      reportWorkTrace
+    }));
+    toolActionsUsed += toolUses.length;
     messages.push({
       role: "user",
-      content: await (cancellation ? runToolUsesSequentially({
-        agent,
-        toolUses,
-        round,
-        turnId,
-        conversationId,
-        toolEvents,
-        reportWorkTrace,
-        cancellation
-      }) : runToolUsesConcurrently({
-        agent,
-        toolUses,
-        round,
-        turnId,
-        conversationId,
-        toolEvents,
-        reportWorkTrace
-      }))
+      content: toolResults
     });
   }
 }
@@ -773,7 +857,10 @@ async function settleAfterCancellation({
     toolEvents,
     workTrace: [...workTrace.values()],
     settledAfterToolLimit: false,
-    settledToolRoundLimit: null
+    settledToolRoundLimit: null,
+    settledAfterActionLimit: false,
+    settledToolActionLimit: null,
+    toolActionsUsed: toolEvents.length
   };
 }
 
@@ -793,7 +880,9 @@ async function settleAfterToolLimit({
   workTrace,
   onToolActivity,
   cancellation,
-  blockedToolNames = []
+  blockedToolNames = [],
+  freeMomentActionLimit: boundedFreeMomentActionLimit,
+  toolActionsUsed = 0
 }: {
   apiKey: string;
   model: string;
@@ -804,13 +893,15 @@ async function settleAfterToolLimit({
   conversationId: string;
   turnId: string;
   source: string;
-  maxRounds: number;
+  maxRounds: number | null;
   round: number;
   toolEvents: RuntimeToolEvent[];
   workTrace: Map<string, WorkTraceItem>;
   onToolActivity?: (activity: RuntimeToolActivity) => void;
   cancellation?: RuntimeTurnCancellation;
   blockedToolNames?: string[];
+  freeMomentActionLimit?: FreeMomentActionLimit;
+  toolActionsUsed?: number;
 }): Promise<ToolLoopResult> {
   throwIfForceStopped(cancellation);
   if (isCancellationRequested(cancellation)) {
@@ -830,11 +921,15 @@ async function settleAfterToolLimit({
     });
   }
 
-  const settlementMessages = withToolLimitSettlementPrompt(
-    messages,
-    maxRounds,
-    blockedToolNames
-  );
+  const settledAtActionLimit = typeof boundedFreeMomentActionLimit === "number";
+  const settlementMessages = settledAtActionLimit
+    ? withFreeMomentActionLimitSettlementPrompt(
+        messages,
+        boundedFreeMomentActionLimit,
+        toolActionsUsed,
+        blockedToolNames
+      )
+    : withToolLimitSettlementPrompt(messages, maxRounds ?? 0, blockedToolNames);
   cancellation?.onPhaseChange?.("model");
   const settlementData = await callAnthropic({
     apiKey,
@@ -886,7 +981,9 @@ async function settleAfterToolLimit({
 
   if (toolUseBlocks(settlementData).length) {
     throw new Error(
-      `Tool use did not settle after ${maxRounds} rounds; settlement response requested tools again.`
+      settledAtActionLimit
+        ? `Tool use did not settle after Free Moment action limit ${boundedFreeMomentActionLimit}; settlement response requested tools again.`
+        : `Tool use did not settle after ${maxRounds} rounds; settlement response requested tools again.`
     );
   }
 
@@ -894,8 +991,11 @@ async function settleAfterToolLimit({
     data: settlementData,
     toolEvents,
     workTrace: [...workTrace.values()],
-    settledAfterToolLimit: true,
-    settledToolRoundLimit: maxRounds
+    settledAfterToolLimit: !settledAtActionLimit,
+    settledToolRoundLimit: settledAtActionLimit ? null : maxRounds,
+    settledAfterActionLimit: settledAtActionLimit,
+    settledToolActionLimit: settledAtActionLimit ? boundedFreeMomentActionLimit : null,
+    toolActionsUsed
   };
 }
 
@@ -1363,6 +1463,14 @@ function withToolLimitSettlementNote(text: string, maxRounds: number) {
   return `${text.trimEnd()}\n\n[Runtime note: This response was settled after reaching ANTHROPIC_MAX_TOOL_ROUNDS=${maxRounds}. No additional tools were available for the final response.]`;
 }
 
+function withFreeMomentActionLimitSettlementNote(
+  text: string,
+  actionLimit: number,
+  actionsUsed: number
+) {
+  return `${text.trimEnd()}\n\n[Runtime note: This Free Moment settled at its configured action bound of ${actionLimit}; ${actionsUsed} tool action${actionsUsed === 1 ? "" : "s"} completed. No additional activities were started.]`;
+}
+
 function withToolLimitSettlementPrompt(
   messages: AnthropicMessage[],
   maxRounds: number,
@@ -1387,6 +1495,41 @@ function withToolLimitSettlementPrompt(
 
   if (!lastMessage || lastMessage.role !== "user") {
     return [...nextMessages, { role: "user", content: prompt }];
+  }
+
+  if (typeof lastMessage.content === "string") {
+    lastMessage.content = `${lastMessage.content.trimEnd()}\n\n${prompt}`;
+  } else {
+    lastMessage.content.push({ type: "text", text: prompt });
+  }
+
+  return nextMessages;
+}
+
+function withFreeMomentActionLimitSettlementPrompt(
+  messages: AnthropicMessage[],
+  actionLimit: number,
+  actionsUsed: number,
+  blockedToolNames: string[]
+) {
+  const prompt = [
+    `This Free Moment has reached its configured action bound of ${freeMomentActionLimitLabel(actionLimit)} (${actionsUsed} tool action${actionsUsed === 1 ? "" : "s"} completed).`,
+    "Do not request or use any more tools or begin another activity.",
+    "Leave one concise, honest closing note about what you chose. This is an ordinary bounded ending, not a failure or cancellation.",
+    blockedToolNames.length
+      ? `The next activity was not started: ${blockedToolNames.join(", ")}.`
+      : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const nextMessages = messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message.content) ? [...message.content] : message.content
+  }));
+  const lastMessage = nextMessages.at(-1);
+
+  if (!lastMessage || lastMessage.role !== "user") {
+    return [...nextMessages, { role: "user" as const, content: prompt }];
   }
 
   if (typeof lastMessage.content === "string") {

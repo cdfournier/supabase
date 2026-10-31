@@ -1010,12 +1010,18 @@ Current posture:
 - Free Moments is local, in-process, and restores from durable runtime settings on status load after a server restart. It wakes Soren and Varro using their existing main conversations. Scheduled turns default to paired mode at a 180-minute cadence, waking both sequentially in one scheduled cycle. Round-robin mode remains available as an explicit override for tests. A quiet response, short response, or nothing-useful-to-report response is success.
 - `ANTHROPIC_MAX_TOOL_ROUNDS` accepts a non-negative integer or the explicit
   value `none`. `none` disables the tool-round cap; an absent or invalid value
-  remains safely bounded at the default of 6.
-- If a bounded Free Moment reaches `ANTHROPIC_MAX_TOOL_ROUNDS`, the runtime makes one
-  final no-tools settlement call before failing the turn. That call asks the
-  agent to answer from already-gathered context, or to pass quietly. Raising the
-  round cap should be treated as extra oxygen, not the primary fix for unsettled
-  tool behavior.
+  remains safely bounded at the default of 6. It applies to ordinary runtime
+  turns, not to a Free Moment with an explicit action policy.
+- Each agent has an independent Free Moment action budget at
+  `agent_capabilities.free_moments.max_actions_per_moment`. The Operator UI can
+  set a whole-number count or **No cap**. `No cap` is a real uncapped policy,
+  not a large hidden ceiling. The budget counts tool actions (including every
+  call in a multi-tool response), rather than elapsed time or model rounds.
+- At an action boundary, the runtime does not start a partial multi-tool batch.
+  It makes one final no-tools settlement call, records a normal `bounded`
+  lifecycle receipt with the configured limit and actions used, and leaves a
+  concise closing note. A bounded ending is neither a failure nor an Operator
+  cancellation.
 - Free Moment wakes include a derived context posture receipt so the agent can
   see what context was loaded, what was bounded or omitted, and which tools to
   use before concluding something did not happen.

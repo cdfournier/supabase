@@ -582,6 +582,7 @@ type FreeTimeStatus = {
   next_turn_at: string | null;
   last_error: string | null;
   recent_events: FreeTimeEvent[];
+  action_limits?: Record<AgentName, number | null>;
   active_run?: ActiveFreeMomentRun | null;
 };
 
@@ -2278,6 +2279,38 @@ export default function Home() {
     }
   }
 
+  async function setFreeTimeActionLimit(agent: AgentName, actionLimit: number | null) {
+    if (freeTimeRequestInProgress) {
+      return;
+    }
+
+    setFreeTimeRequestInProgress(true);
+    setFreeTimeError("");
+
+    try {
+      const response = await fetch("/api/free-time", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ action: "set_action_limit", agent, actionLimit })
+      });
+      const data = await readJsonResponse<FreeTimeStatus & { error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not save Free Moment action limit.");
+      }
+
+      setFreeTime(data);
+    } catch (actionError) {
+      setFreeTimeError(
+        actionError instanceof Error ? actionError.message : "Could not save Free Moment action limit."
+      );
+    } finally {
+      setFreeTimeRequestInProgress(false);
+    }
+  }
+
   async function runWorkPacketSignalsAction(action: "start" | "stop" | "start_wakes" | "stop_wakes" | "tick") {
     if (workPacketSignalsRequestInProgress) {
       return;
@@ -3613,6 +3646,7 @@ export default function Home() {
           expanded={controlPanels.freeMoments}
           loading={freeTimeLoading}
           onAction={runFreeTimeAction}
+          onActionLimit={setFreeTimeActionLimit}
           onToggle={() => toggleControlPanel("freeMoments")}
           requestInProgress={freeTimeRequestInProgress}
           status={freeTime}
@@ -6045,6 +6079,7 @@ function FreeTimePanel({
   expanded,
   loading,
   onAction,
+  onActionLimit,
   onToggle,
   requestInProgress,
   selectedAgent,
@@ -6054,6 +6089,7 @@ function FreeTimePanel({
   expanded: boolean;
   loading: boolean;
   onAction: (action: "start" | "stop" | "tick") => void;
+  onActionLimit: (agent: AgentName, actionLimit: number | null) => void;
   onToggle: () => void;
   requestInProgress: boolean;
   selectedAgent: AgentName;
@@ -6154,6 +6190,12 @@ function FreeTimePanel({
             </button>
           </div>
 
+          <FreeMomentActionBudgets
+            disabled={disabled}
+            limits={status.action_limits}
+            onSave={onActionLimit}
+          />
+
           <div className="free-time-events">
             <div className="pressure-row">
               <span>Recent events</span>
@@ -6179,6 +6221,87 @@ function FreeTimePanel({
 
         {error ? <p className="health-error">{error}</p> : null}
       </div>
+    </section>
+  );
+}
+
+function FreeMomentActionBudgets({
+  disabled,
+  limits,
+  onSave
+}: {
+  disabled: boolean;
+  limits?: Record<AgentName, number | null>;
+  onSave: (agent: AgentName, actionLimit: number | null) => void;
+}) {
+  const [drafts, setDrafts] = useState<Record<AgentName, string>>({ soren: "", varro: "" });
+  const [uncapped, setUncapped] = useState<Record<AgentName, boolean>>({ soren: true, varro: true });
+
+  useEffect(() => {
+    if (!limits) {
+      return;
+    }
+
+    setDrafts({
+      soren: limits.soren === null ? "" : String(limits.soren),
+      varro: limits.varro === null ? "" : String(limits.varro)
+    });
+    setUncapped({ soren: limits.soren === null, varro: limits.varro === null });
+  }, [limits]);
+
+  return (
+    <section className="free-time-budgets" aria-label="Free Moment action budgets">
+      <div>
+        <strong>Action budgets</strong>
+        <p>Per-agent tool actions per Free Moment. “No cap” preserves today’s open-ended freedom.</p>
+      </div>
+      {(["soren", "varro"] as const).map((agent) => {
+        const label = agent[0].toUpperCase() + agent.slice(1);
+        const parsed = Number(drafts[agent]);
+        const validLimit = Number.isInteger(parsed) && parsed >= 0 && parsed <= 1_000;
+
+        return (
+          <form
+            className="free-time-budget-row"
+            key={agent}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (uncapped[agent] || validLimit) {
+                onSave(agent, uncapped[agent] ? null : parsed);
+              }
+            }}
+          >
+            <label className="free-time-budget-name" htmlFor={`free-time-budget-${agent}`}>{label}</label>
+            <input
+              aria-label={`${label} action limit`}
+              disabled={disabled || uncapped[agent]}
+              id={`free-time-budget-${agent}`}
+              inputMode="numeric"
+              min="0"
+              onChange={(event) => setDrafts((current) => ({ ...current, [agent]: event.target.value }))}
+              placeholder="Actions"
+              type="number"
+              value={drafts[agent]}
+            />
+            <label className="free-time-no-cap">
+              <input
+                checked={uncapped[agent]}
+                disabled={disabled}
+                onChange={(event) => setUncapped((current) => ({ ...current, [agent]: event.target.checked }))}
+                type="checkbox"
+              />
+              No cap
+            </label>
+            <button
+              className="quiet-action"
+              disabled={disabled || (!uncapped[agent] && !validLimit)}
+              type="submit"
+            >
+              Save
+            </button>
+          </form>
+        );
+      })}
     </section>
   );
 }

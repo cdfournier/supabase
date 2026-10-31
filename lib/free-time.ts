@@ -1,8 +1,10 @@
 import "server-only";
 import type { AgentName } from "@/lib/agent-context";
 import {
+  actionLimitForSurface,
   isSurfaceAllowed,
-  loadAgentCapabilityProfile
+  loadAgentCapabilityProfile,
+  writeActionLimitForSurface
 } from "@/lib/capability-profile";
 import {
   isRuntimeTurnForceStoppedError,
@@ -58,6 +60,7 @@ type FreeTimeEventType =
   | "turn_started"
   | "turn_context_failed"
   | "turn_completed"
+  | "turn_bounded"
   | "turn_failed"
   | "turn_cancellation_requested"
   | "turn_wrapping_up"
@@ -80,7 +83,7 @@ type ActiveFreeMomentRun = {
   lastActivity: Record<string, unknown>;
 };
 
-type FreeMomentRunOutcome = "completed" | "cancelled" | "forced_stop" | "skipped" | "failed";
+type FreeMomentRunOutcome = "completed" | "bounded" | "cancelled" | "forced_stop" | "skipped" | "failed";
 
 type PendingWorkPacketSignal = {
   id: string;
@@ -163,10 +166,13 @@ export async function statusWithSettings() {
     const settings = await readFreeMomentsSettings();
     await restoreFromSettings(settings);
 
+    const actionLimits = await readFreeMomentActionLimits();
+
     return {
       ...status(),
       durable_enabled: settings.enabled,
-      durable_error: null
+      durable_error: null,
+      action_limits: actionLimits
     };
   } catch (error) {
     return {
@@ -175,6 +181,36 @@ export async function statusWithSettings() {
       durable_error: error instanceof Error ? error.message : "Could not read durable Free Moments setting."
     };
   }
+}
+
+/**
+ * Operator configuration for one agent's next Free Moment. This does not
+ * interrupt an in-flight moment; its profile is read at turn start.
+ */
+export async function setActionLimit(agent: AgentName, limit: number | null) {
+  if (!AGENTS.includes(agent)) {
+    throw new Error("Free Moments action limit agent must be soren or varro.");
+  }
+
+  if (limit !== null && (!Number.isInteger(limit) || limit < 0 || limit > 1_000)) {
+    throw new Error("Free Moments action limit must be a whole number from 0 to 1000, or no cap.");
+  }
+
+  const savedLimit = await writeActionLimitForSurface(
+    getSupabaseAdmin(),
+    agent,
+    "free_moments",
+    limit
+  );
+  addEvent(
+    "scheduled",
+    savedLimit === null
+      ? "Free Moment action budget set to no cap."
+      : `Free Moment action budget set to ${savedLimit}.`,
+    agent
+  );
+
+  return statusWithSettings();
 }
 
 /** Request a bounded, graceful end without changing the future schedule. */
@@ -406,6 +442,8 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
     return "skipped";
   }
 
+  const actionLimit = actionLimitForSurface(capabilityProfile, "free_moments");
+
   addEvent("turn_started", `Free Moment turn started for ${agent}.`, agent);
   let receipt: FreeMomentRunReceipt;
 
@@ -431,8 +469,9 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
 
   try {
     const triggerContext = await buildFreeTimeTriggerContext(agent, capabilityProfile, true);
-    await sendAgentMessage(agent, promptWithTriggerDigest(triggerContext.digest), {
+    const turn = await sendAgentMessage(agent, promptWithTriggerDigest(triggerContext.digest), {
       source: "free_time",
+      freeMomentActionLimit: actionLimit,
       cancellation: {
         signal: activeRun.cancellation.abortController.signal,
         isCancellationRequested: () =>
@@ -470,6 +509,19 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
       });
       outcome = "cancelled";
       addEvent("turn_cancelled", "Free Moment ended after its current activity.", agent);
+    } else if (turn.free_moment_bound?.reached) {
+      const actionsUsed = turn.free_moment_bound.actions_used;
+      await finishFreeMomentRun(activeRun.receipt.id, "bounded", {
+        message: `Free Moment settled at its configured action bound after ${actionsUsed} tool action${actionsUsed === 1 ? "" : "s"}.`,
+        lastActivity: activeRun.lastActivity,
+        metadata: {
+          last_activity: activeRun.lastActivity,
+          action_limit: turn.free_moment_bound.action_limit,
+          actions_used: actionsUsed
+        }
+      });
+      outcome = "bounded";
+      addEvent("turn_bounded", `Free Moment settled at its action bound after ${actionsUsed} tool action${actionsUsed === 1 ? "" : "s"}.`, agent);
     } else {
       await finishFreeMomentRun(activeRun.receipt.id, "completed", {
         lastActivity: activeRun.lastActivity,
@@ -510,6 +562,18 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
   }
 
   return outcome;
+}
+
+async function readFreeMomentActionLimits() {
+  const supabase = getSupabaseAdmin();
+  const entries = await Promise.all(
+    AGENTS.map(async (agent) => {
+      const profile = await loadAgentCapabilityProfile(supabase, agent);
+      return [agent, actionLimitForSurface(profile, "free_moments")] as const;
+    })
+  );
+
+  return Object.fromEntries(entries) as Record<AgentName, number | null>;
 }
 
 async function buildFreeTimeTriggerContext(
