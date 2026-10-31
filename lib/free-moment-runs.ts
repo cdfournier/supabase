@@ -190,6 +190,7 @@ export async function finishFreeMomentRun(
     phase: "finished",
     completed_at: new Date().toISOString(),
     error: options.error ?? null,
+    ...(options.metadata ? { metadata: sanitizeRecord(options.metadata) } : {}),
     ...(options.lastActivity ? { last_activity: sanitizeRecord(options.lastActivity) } : {})
   });
   await recordFreeMomentRunEvent(runId, status, message, {
