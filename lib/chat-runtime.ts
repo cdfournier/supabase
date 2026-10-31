@@ -209,7 +209,7 @@ export async function sendAgentMessage(
     }));
 
   const attachmentDelivery = await buildAttachmentDelivery(attachmentRefs);
-  const messageForModel = source === "free_time" || source === "work_packet_signal" || source === "operator_note_wake" || source === "live_session"
+  const messageForModel = source === "free_time" || source === "work_packet_signal" || source === "operator_note_wake" || source === "agent_authored_wake" || source === "live_session"
     ? messageWithContextReceipt(message, contextReceipt)
     : message;
   const modelMessage = buildAttachmentPromptTextWithDelivery(

@@ -106,6 +106,62 @@ create table if not exists public.free_moment_scheduler_events (
 create index if not exists free_moment_scheduler_events_by_created
   on public.free_moment_scheduler_events (created_at desc);
 
+create table if not exists public.agent_wake_appointment_policies (
+  agent text primary key references public.agents(name) on delete cascade,
+  enabled boolean not null default false,
+  allow_quiet_time_interrupt boolean not null default false,
+  quiet_start_minute smallint,
+  quiet_end_minute smallint,
+  timezone text not null default 'America/New_York',
+  updated_at timestamptz not null default now(),
+  constraint agent_wake_appointment_quiet_start_check
+    check (quiet_start_minute is null or quiet_start_minute between 0 and 1439),
+  constraint agent_wake_appointment_quiet_end_check
+    check (quiet_end_minute is null or quiet_end_minute between 0 and 1439),
+  constraint agent_wake_appointment_quiet_pair_check
+    check ((quiet_start_minute is null) = (quiet_end_minute is null))
+);
+
+create table if not exists public.agent_wake_appointments (
+  id uuid primary key default gen_random_uuid(),
+  agent text not null references public.agents(name) on delete cascade,
+  note text not null,
+  quiet_time_policy text not null default 'defer'
+    check (quiet_time_policy in ('defer', 'interrupt')),
+  due_at timestamptz not null,
+  original_due_at timestamptz not null,
+  status text not null default 'scheduled'
+    check (status in ('scheduled', 'deferred_quiet', 'delivering', 'completed', 'cancelled', 'failed', 'interrupted')),
+  deferred_until timestamptz,
+  claimed_at timestamptz,
+  delivered_at timestamptz,
+  cancelled_at timestamptz,
+  completed_at timestamptz,
+  error text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists agent_wake_appointments_one_pending
+  on public.agent_wake_appointments (agent)
+  where status in ('scheduled', 'deferred_quiet', 'delivering');
+
+create index if not exists agent_wake_appointments_by_due
+  on public.agent_wake_appointments (status, due_at asc);
+
+create table if not exists public.agent_wake_appointment_events (
+  id uuid primary key default gen_random_uuid(),
+  appointment_id uuid not null references public.agent_wake_appointments(id) on delete cascade,
+  event_type text not null,
+  message text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists agent_wake_appointment_events_by_appointment
+  on public.agent_wake_appointment_events (appointment_id, created_at asc);
+
 insert into public.runtime_settings (key, value)
 values ('free_moments', '{"enabled": false}'::jsonb)
 on conflict (key) do nothing;
@@ -644,6 +700,34 @@ set access_level = excluded.access_level,
     notes = excluded.notes,
     updated_at = now();
 
+insert into public.agent_wake_appointment_policies (agent)
+select agent.name
+from public.agents agent
+where agent.name in ('soren', 'varro')
+on conflict (agent) do nothing;
+
+insert into public.agent_capabilities
+  (agent, surface, access_level, default_bias, requires_operator_approval, notify_operator, max_actions_per_moment, quiet_mode, notes)
+select agent.name,
+       'wake_appointments',
+       'off',
+       'agent-authored, operator-enabled',
+       false,
+       'audit_only',
+       null::int,
+       false,
+       'One deliberate, self-authored wake appointment at a time. Quiet-time interruption remains Operator-controlled.'
+from public.agents agent
+where agent.name in ('soren', 'varro')
+on conflict (agent, surface) do update
+set default_bias = excluded.default_bias,
+    requires_operator_approval = excluded.requires_operator_approval,
+    notify_operator = excluded.notify_operator,
+    max_actions_per_moment = excluded.max_actions_per_moment,
+    quiet_mode = excluded.quiet_mode,
+    notes = excluded.notes,
+    updated_at = now();
+
 alter table public.agents enable row level security;
 alter table public.conversations enable row level security;
 alter table public.conversation_messages enable row level security;
@@ -667,6 +751,9 @@ alter table public.runtime_settings enable row level security;
 alter table public.free_moment_runs enable row level security;
 alter table public.free_moment_run_events enable row level security;
 alter table public.free_moment_scheduler_events enable row level security;
+alter table public.agent_wake_appointment_policies enable row level security;
+alter table public.agent_wake_appointments enable row level security;
+alter table public.agent_wake_appointment_events enable row level security;
 alter table public.agent_capabilities enable row level security;
 alter table public.cafe_rooms enable row level security;
 alter table public.cafe_participants enable row level security;

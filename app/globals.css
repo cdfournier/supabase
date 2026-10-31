@@ -608,6 +608,64 @@ button {
   min-height: 1.35em;
 }
 
+.wake-appointment-controls {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.wake-appointment-controls > div > p,
+.wake-appointment-muted {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 4px 0 10px;
+}
+
+.wake-appointment-row {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.wake-appointment-row > * {
+  min-width: 0;
+}
+
+.wake-appointment-row .quiet-action {
+  flex: 1 1 68px;
+  min-height: 36px;
+  margin: 0;
+  padding: 7px 8px;
+}
+
+.wake-appointment-receipts {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.wake-appointment-receipts ol {
+  display: grid;
+  gap: 7px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.wake-appointment-receipts li {
+  display: grid;
+  font-size: 12px;
+  gap: 3px;
+  line-height: 1.35;
+}
+
+.wake-appointment-receipts time {
+  color: var(--muted);
+}
+
 .free-time-events {
   border-top: 1px solid var(--line);
   margin-top: 12px;

@@ -18,6 +18,7 @@ export type CapabilitySurface =
   | "web"
   | "source_materials"
   | "free_moments"
+  | "wake_appointments"
   | "live_sessions"
   | "work_packets"
   | "operator_notes"
@@ -214,6 +215,16 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
     notes: "Unprompted time; a quiet pass is success."
   },
   {
+    surface: "wake_appointments",
+    access_level: "off",
+    default_bias: "one deliberate future wake",
+    requires_operator_approval: false,
+    notify_operator: "audit_only",
+    max_actions_per_moment: null,
+    quiet_mode: false,
+    notes: "Agent-authored one-time wake appointments. Operator enables per agent."
+  },
+  {
     surface: "live_sessions",
     access_level: "write",
     default_bias: "presence with explicit exit",
@@ -280,6 +291,9 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   runtime_get_time: { surface: "runtime", action: "read" },
   runtime_get_usage: { surface: "runtime", action: "read" },
   runtime_get_self_status: { surface: "runtime", action: "read" },
+  wake_appointment_schedule: { surface: "wake_appointments", action: "write" },
+  wake_appointment_list: { surface: "wake_appointments", action: "read" },
+  wake_appointment_cancel: { surface: "wake_appointments", action: "write" },
   runtime_read_recent_messages: { surface: "conversation_history", action: "read" },
   runtime_search_conversation: { surface: "conversation_history", action: "read" },
   runtime_get_message_window: { surface: "conversation_history", action: "read" },
@@ -541,6 +555,38 @@ export async function writeActionLimitForSurface(
   return typeof data.max_actions_per_moment === "number"
     ? Math.floor(data.max_actions_per_moment)
     : null;
+}
+
+/** Updates a capability toggle while retaining the rest of its durable posture. */
+export async function writeCapabilityAccessLevelForSurface(
+  supabase: SupabaseClient,
+  agent: AgentName,
+  surface: CapabilitySurface,
+  accessLevel: CapabilityAccessLevel
+) {
+  const profile = await loadAgentCapabilityProfile(supabase, agent);
+  const capability = capabilityFor(profile, surface);
+  const { error } = await supabase.from("agent_capabilities").upsert(
+    {
+      agent,
+      surface,
+      access_level: accessLevel,
+      default_bias: capability.default_bias,
+      requires_operator_approval: capability.requires_operator_approval,
+      notify_operator: capability.notify_operator,
+      max_actions_per_moment: capability.max_actions_per_moment,
+      quiet_mode: capability.quiet_mode,
+      notes: capability.notes,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "agent,surface" }
+  );
+
+  if (error) {
+    throw new Error(`Could not save ${surface} capability access: ${error.message}`);
+  }
+
+  return accessLevel;
 }
 
 export function fallbackProfile(agent: AgentName): CapabilityProfile {

@@ -586,6 +586,34 @@ type FreeTimeStatus = {
   active_run?: ActiveFreeMomentRun | null;
 };
 
+type WakeAppointmentPolicy = {
+  agent: AgentName;
+  enabled: boolean;
+  allow_quiet_time_interrupt: boolean;
+  quiet_start_minute: number | null;
+  quiet_end_minute: number | null;
+  timezone: string;
+};
+
+type WakeAppointment = {
+  id: string;
+  agent: AgentName;
+  note: string;
+  quiet_time_policy: "defer" | "interrupt";
+  due_at: string;
+  original_due_at: string;
+  status: string;
+  deferred_until: string | null;
+  error: string | null;
+};
+
+type WakeAppointmentsStatus = {
+  policies: WakeAppointmentPolicy[];
+  appointments: WakeAppointment[];
+  scheduler_armed: boolean;
+  dispatch_in_progress: boolean;
+};
+
 type WorkPacketSignalPreview = {
   agent: AgentName;
   participant_id: string;
@@ -6198,6 +6226,8 @@ function FreeTimePanel({
             onSave={onActionLimit}
           />
 
+          <WakeAppointmentControls disabled={disabled} />
+
           <div className="free-time-events">
             <div className="pressure-row">
               <span>Recent events</span>
@@ -6333,6 +6363,173 @@ function FreeMomentActionBudgets({
       <p aria-live="polite" className="free-time-budget-receipt">{saveReceipt}</p>
     </section>
   );
+}
+
+function WakeAppointmentControls({ disabled }: { disabled: boolean }) {
+  const [status, setStatus] = useState<WakeAppointmentsStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [savingAgent, setSavingAgent] = useState<AgentName | null>(null);
+  const [error, setError] = useState("");
+  const [receipt, setReceipt] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/wake-appointments", { cache: "no-store" });
+      const payload = await readJsonResponse<WakeAppointmentsStatus & { error?: string }>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not load wake appointment settings.");
+      }
+      setStatus(payload);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not load wake appointment settings.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const save = useCallback(async (policy: WakeAppointmentPolicy) => {
+    setSavingAgent(policy.agent);
+    setError("");
+    setReceipt("");
+    try {
+      const response = await fetch("/api/wake-appointments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "set_policy",
+          agent: policy.agent,
+          enabled: policy.enabled,
+          allowQuietTimeInterrupt: policy.allow_quiet_time_interrupt,
+          timezone: policy.timezone
+        })
+      });
+      const payload = await readJsonResponse<{ policy?: WakeAppointmentPolicy; error?: string }>(response);
+      if (!response.ok || !payload.policy) {
+        throw new Error(payload.error ?? "Could not save wake appointment policy.");
+      }
+      setStatus((current) => current ? {
+        ...current,
+        policies: current.policies.map((currentPolicy) => currentPolicy.agent === policy.agent ? payload.policy! : currentPolicy)
+      } : current);
+      setReceipt(`${agentLabel(policy.agent)}: self-authored wake appointments ${payload.policy.enabled ? "enabled" : "disabled"}.`);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not save wake appointment policy.");
+    } finally {
+      setSavingAgent(null);
+    }
+  }, []);
+
+  return (
+    <section className="wake-appointment-controls" aria-label="Agent-authored wake appointments">
+      <div>
+        <strong>Agent wake appointments</strong>
+        <p>Let each agent schedule one deliberate, one-time wake. Quiet-time interruption remains an Operator policy.</p>
+      </div>
+      {loading ? <p className="wake-appointment-muted">Loading appointment policies...</p> : null}
+      {!loading && status?.policies.map((policy) => (
+        <WakeAppointmentPolicyRow
+          disabled={disabled}
+          key={policy.agent}
+          onSave={save}
+          policy={policy}
+          saving={savingAgent === policy.agent}
+        />
+      ))}
+      {!loading && status?.policies.length === 0 ? <p className="wake-appointment-muted">No native-agent policies found yet.</p> : null}
+      {status?.appointments.some((appointment) => ["scheduled", "deferred_quiet", "delivering"].includes(appointment.status)) ? (
+        <p className="wake-appointment-muted">One or more wake appointments are pending. Their receipts remain in the appointment log.</p>
+      ) : null}
+      {status?.appointments.length ? (
+        <div className="wake-appointment-receipts">
+          <div className="pressure-row">
+            <span>Recent appointment receipts</span>
+            <strong>{status.appointments.length}</strong>
+          </div>
+          <ol>
+            {status.appointments.map((appointment) => (
+              <li key={appointment.id}>
+                <time dateTime={appointment.due_at}>{formatShortTime(appointment.due_at)}</time>
+                <span>
+                  {agentLabel(appointment.agent)}: {appointment.status.replaceAll("_", " ")}. {appointment.note}
+                  {appointment.deferred_until ? ` Deferred to ${formatShortTime(appointment.deferred_until)}.` : ""}
+                  {appointment.error ? ` ${appointment.error}` : ""}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+      {error ? <p className="health-error">{error}</p> : null}
+      <p aria-live="polite" className="free-time-budget-receipt">{receipt}</p>
+    </section>
+  );
+}
+
+function WakeAppointmentPolicyRow({
+  disabled,
+  onSave,
+  policy,
+  saving
+}: {
+  disabled: boolean;
+  onSave: (policy: WakeAppointmentPolicy) => Promise<void>;
+  policy: WakeAppointmentPolicy;
+  saving: boolean;
+}) {
+  const [draft, setDraft] = useState(policy);
+
+  useEffect(() => {
+    setDraft(policy);
+  }, [policy]);
+
+  return (
+    <form
+      className="wake-appointment-row"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSave(draft);
+      }}
+    >
+      <span className="free-time-budget-name">{agentLabel(draft.agent)}</span>
+      <label className="free-time-budget-field" htmlFor={`wake-appointments-enabled-${draft.agent}`}>
+        <span>Self-wakes</span>
+        <select
+          disabled={disabled || saving}
+          id={`wake-appointments-enabled-${draft.agent}`}
+          onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.value === "enabled" }))}
+          value={draft.enabled ? "enabled" : "disabled"}
+        >
+          <option value="disabled">Off</option>
+          <option value="enabled">On</option>
+        </select>
+      </label>
+      <label className="free-time-budget-field" htmlFor={`wake-appointments-interrupt-${draft.agent}`}>
+        <span>May interrupt quiet</span>
+        <select
+          disabled={disabled || saving || !draft.enabled}
+          id={`wake-appointments-interrupt-${draft.agent}`}
+          onChange={(event) => setDraft((current) => ({ ...current, allow_quiet_time_interrupt: event.target.value === "allow" }))}
+          value={draft.allow_quiet_time_interrupt ? "allow" : "defer"}
+        >
+          <option value="defer">No — defer</option>
+          <option value="allow">Yes — allow</option>
+        </select>
+      </label>
+      <button className="quiet-action" disabled={disabled || saving} type="submit">
+        {saving ? "Saving" : "Save"}
+      </button>
+    </form>
+  );
+}
+
+function agentLabel(agent: AgentName) {
+  return agent[0].toUpperCase() + agent.slice(1);
 }
 
 function WorkPacketSignalsPanel({

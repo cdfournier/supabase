@@ -116,6 +116,11 @@ import {
   speakWorld,
   travelWorld
 } from "@/lib/tools/world";
+import {
+  cancelWakeAppointment,
+  listWakeAppointments,
+  scheduleWakeAppointment
+} from "@/lib/agent-wake-appointments";
 
 export const toolDefinitions: ToolDefinition[] = [
   {
@@ -162,6 +167,64 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wake_appointment_schedule",
+    description:
+      "Schedule one future, agent-authored runtime wake for yourself. Provide exactly one of in_minutes or due_at plus a concise note explaining why you want to wake. Default quiet-time policy is defer; interrupt is available only when the Operator enabled it for you. One pending appointment at a time.",
+    input_schema: {
+      type: "object",
+      properties: {
+        in_minutes: {
+          type: "number",
+          description: "Whole minutes from now. Use for a relative appointment."
+        },
+        due_at: {
+          type: "string",
+          description: "Exact future ISO-8601 timestamp. Use instead of in_minutes."
+        },
+        note: {
+          type: "string",
+          description: "Short reminder or instructions you want delivered with your normal orientation."
+        },
+        quiet_time_policy: {
+          type: "string",
+          description: "defer (default) respects quiet time; interrupt requests delivery during quiet time if your Operator policy permits it."
+        }
+      },
+      required: ["note"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wake_appointment_list",
+    description: "List your own pending and recent agent-authored wake appointments and their durable receipts.",
+    input_schema: {
+      type: "object",
+      properties: {
+        include_recent: {
+          type: "boolean",
+          description: "Whether to include recent completed/cancelled appointments. Defaults to true."
+        }
+      },
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "wake_appointment_cancel",
+    description: "Cancel one of your own pending agent-authored wake appointments. This cannot cancel an appointment already being delivered.",
+    input_schema: {
+      type: "object",
+      properties: {
+        appointment_id: {
+          type: "string",
+          description: "The appointment id returned by wake_appointment_list."
+        }
+      },
+      required: ["appointment_id"],
       additionalProperties: false
     }
   },
@@ -1926,6 +1989,12 @@ export async function runTool(
           ok: true,
           content: await getRuntimeSelfStatus(agent, input, toolDefinitions)
         };
+      case "wake_appointment_schedule":
+        return { ok: true, content: await scheduleWakeAppointment(agent, input) };
+      case "wake_appointment_list":
+        return { ok: true, content: await listWakeAppointments(agent, input) };
+      case "wake_appointment_cancel":
+        return { ok: true, content: await cancelWakeAppointment(agent, input) };
       case "peer_send_note":
         return {
           ok: true,
