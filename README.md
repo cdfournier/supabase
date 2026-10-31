@@ -1025,6 +1025,15 @@ Current posture:
 - Free Moment wakes include a derived context posture receipt so the agent can
   see what context was loaded, what was bounded or omitted, and which tools to
   use before concluding something did not happen.
+- Soren and Varro can each hold one self-authored, durable wake appointment
+  when their `wake_appointments` capability is enabled. The due wake is an
+  ordinary runtime turn with normal orientation plus the agent's own note, not
+  a Free Moment. The Operator panel governs the per-agent capability and
+  whether a future Quiet Time policy may be interrupted; Quiet Time itself is a
+  separate surface. The schedule/list/cancel tools remain self-scoped and write
+  durable delivery receipts. Apply
+  `sql/2026-10-31-agent-wake-appointments.sql` before enabling the feature in a
+  new environment.
 - Continuity-critical material, such as summaries or handoff notes, should be
   anchored early and attributed to its author or process. Derived receipts are a
   separate measurement layer: they say what actually loaded and what did not.

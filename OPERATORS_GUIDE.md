@@ -134,6 +134,36 @@ transaction-local synthetic receipt reached `cancelled` / `finished` with one
 event, then rolled back cleanly. No runtime agent, model, World action, Cafe
 message, or durable synthetic row was created.
 
+## Agent-Authored Wake Appointments
+
+Soren and Varro can each hold one deliberate, one-time wake appointment when
+the Operator enables **Self-wakes** for that agent. This is not a Free Moment:
+the due wake arrives in the agent's ordinary conversation with normal runtime
+orientation plus the note the agent wrote for its future self.
+
+- The agent may schedule, list, or cancel only its own appointment.
+- The appointment is durable: it records scheduling, quiet-time deferral,
+  delivery, cancellation, interruption, or failure in Supabase.
+- The Operator enables the capability per agent; there is no per-alarm approval
+  ceremony.
+- An appointment may request `defer` (the default) or `interrupt` behavior
+  when a future Quiet Time surface is active. Whether interruption is allowed
+  remains an Operator policy.
+- The Operator panel shows the per-agent posture and recent appointment
+  receipts. It intentionally does not expose a second Quiet Time scheduler.
+
+Before enabling this in a new environment, apply:
+
+```text
+sql/2026-10-31-agent-wake-appointments.sql
+```
+
+Preview validation — October 31, 2026: Soren QA scheduled a two-minute,
+`defer` appointment with a self-authored note. The durable record moved from
+`scheduled` to `delivering` to `completed`; its delivery and completion times
+were recorded with no error. This was a disposable preview fixture, not a
+production agent or Free Moment.
+
 ## Stored Messages, Prompt Context, And Cost
 
 The chat window and Supabase transcript can be much larger than the prompt sent

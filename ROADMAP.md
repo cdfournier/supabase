@@ -578,6 +578,23 @@ Staged plan:
 
 ## Release Notes
 
+### 2026-10-31
+
+Autonomous-time stabilization:
+
+- Added graceful current-Free-Moment cancellation, escalation to force stop,
+  and durable interruption/closing receipts.
+- Added per-agent Free Moment action budgets, including a genuine **No cap**
+  posture and explicit `bounded` outcomes.
+- Added an Anthropic timeout plus one infrastructure-only retry for Free
+  Moments, and durable scheduler-event history for delivery/recovery insight.
+- Added per-agent, agent-authored one-time wake appointments with self-scoped
+  schedule/list/cancel tools, one-pending enforcement, durable receipts, and
+  Operator enablement. A preview Soren QA appointment completed end-to-end
+  with its note intact and no delivery error.
+- Kept Quiet Time as its own future control surface: appointment `defer` and
+  `interrupt` policy is recorded now without introducing a competing scheduler.
+
 ### 2026-07-08
 
 Runtime visibility:
