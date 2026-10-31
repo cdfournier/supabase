@@ -546,34 +546,66 @@ button {
 }
 
 .free-time-budget-row {
-  align-items: center;
-  display: grid;
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  grid-template-columns: minmax(52px, 0.7fr) minmax(72px, 1fr) minmax(78px, 1fr) auto;
   margin-top: 8px;
 }
 
-.free-time-budget-row input[type="number"] {
+.free-time-budget-row > * {
   min-width: 0;
 }
 
 .free-time-budget-name {
+  flex: 1 0 100%;
   font-weight: 700;
   text-transform: capitalize;
 }
 
-.free-time-no-cap {
-  align-items: center;
+.free-time-budget-field {
+  display: grid;
+  flex: 1 1 88px;
+  gap: 4px;
+  min-width: 88px;
+}
+
+.free-time-budget-field > span {
   color: var(--muted);
-  display: inline-flex;
   font-size: 12px;
-  gap: 5px;
-  white-space: nowrap;
+}
+
+.free-time-budget-field input,
+.free-time-budget-field select {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  min-height: 36px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.free-time-budget-field input:disabled,
+.free-time-budget-field select:disabled {
+  background: rgba(216, 209, 198, 0.26);
+  color: var(--muted);
 }
 
 .free-time-budget-row .quiet-action {
+  flex: 1 1 68px;
+  min-height: 36px;
   margin: 0;
   padding: 7px 8px;
+}
+
+.free-time-budget-receipt {
+  color: #2f7d4f;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 10px 0 0;
+  min-height: 1.35em;
 }
 
 .free-time-events {

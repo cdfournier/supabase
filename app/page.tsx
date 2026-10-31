@@ -2281,7 +2281,7 @@ export default function Home() {
 
   async function setFreeTimeActionLimit(agent: AgentName, actionLimit: number | null) {
     if (freeTimeRequestInProgress) {
-      return;
+      return false;
     }
 
     setFreeTimeRequestInProgress(true);
@@ -2302,10 +2302,12 @@ export default function Home() {
       }
 
       setFreeTime(data);
+      return true;
     } catch (actionError) {
       setFreeTimeError(
         actionError instanceof Error ? actionError.message : "Could not save Free Moment action limit."
       );
+      return false;
     } finally {
       setFreeTimeRequestInProgress(false);
     }
@@ -6089,7 +6091,7 @@ function FreeTimePanel({
   expanded: boolean;
   loading: boolean;
   onAction: (action: "start" | "stop" | "tick") => void;
-  onActionLimit: (agent: AgentName, actionLimit: number | null) => void;
+  onActionLimit: (agent: AgentName, actionLimit: number | null) => Promise<boolean>;
   onToggle: () => void;
   requestInProgress: boolean;
   selectedAgent: AgentName;
@@ -6232,10 +6234,15 @@ function FreeMomentActionBudgets({
 }: {
   disabled: boolean;
   limits?: Record<AgentName, number | null>;
-  onSave: (agent: AgentName, actionLimit: number | null) => void;
+  onSave: (agent: AgentName, actionLimit: number | null) => Promise<boolean>;
 }) {
   const [drafts, setDrafts] = useState<Record<AgentName, string>>({ soren: "", varro: "" });
-  const [uncapped, setUncapped] = useState<Record<AgentName, boolean>>({ soren: true, varro: true });
+  const [modes, setModes] = useState<Record<AgentName, "uncapped" | "limited">>({
+    soren: "uncapped",
+    varro: "uncapped"
+  });
+  const [savingAgent, setSavingAgent] = useState<AgentName | null>(null);
+  const [saveReceipt, setSaveReceipt] = useState("");
 
   useEffect(() => {
     if (!limits) {
@@ -6246,7 +6253,10 @@ function FreeMomentActionBudgets({
       soren: limits.soren === null ? "" : String(limits.soren),
       varro: limits.varro === null ? "" : String(limits.varro)
     });
-    setUncapped({ soren: limits.soren === null, varro: limits.varro === null });
+    setModes({
+      soren: limits.soren === null ? "uncapped" : "limited",
+      varro: limits.varro === null ? "uncapped" : "limited"
+    });
   }, [limits]);
 
   return (
@@ -6259,49 +6269,68 @@ function FreeMomentActionBudgets({
         const label = agent[0].toUpperCase() + agent.slice(1);
         const parsed = Number(drafts[agent]);
         const validLimit = Number.isInteger(parsed) && parsed >= 0 && parsed <= 1_000;
+        const isUncapped = modes[agent] === "uncapped";
+        const isSaving = savingAgent === agent;
 
         return (
           <form
             className="free-time-budget-row"
             key={agent}
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault();
-              if (uncapped[agent] || validLimit) {
-                onSave(agent, uncapped[agent] ? null : parsed);
+              if (!isUncapped && !validLimit) {
+                return;
+              }
+
+              setSavingAgent(agent);
+              setSaveReceipt("");
+              const saved = await onSave(agent, isUncapped ? null : parsed);
+              setSavingAgent(null);
+              if (saved) {
+                setSaveReceipt(`${label}: ${isUncapped ? "No cap" : `${parsed} actions`} saved.`);
               }
             }}
           >
-            <label className="free-time-budget-name" htmlFor={`free-time-budget-${agent}`}>{label}</label>
-            <input
-              aria-label={`${label} action limit`}
-              disabled={disabled || uncapped[agent]}
-              id={`free-time-budget-${agent}`}
-              inputMode="numeric"
-              min="0"
-              onChange={(event) => setDrafts((current) => ({ ...current, [agent]: event.target.value }))}
-              placeholder="Actions"
-              type="number"
-              value={drafts[agent]}
-            />
-            <label className="free-time-no-cap">
+            <span className="free-time-budget-name">{label}</span>
+            <label className="free-time-budget-field" htmlFor={`free-time-budget-mode-${agent}`}>
+              <span>Budget</span>
+              <select
+                disabled={disabled || isSaving}
+                id={`free-time-budget-mode-${agent}`}
+                onChange={(event) => setModes((current) => ({
+                  ...current,
+                  [agent]: event.target.value as "uncapped" | "limited"
+                }))}
+                value={modes[agent]}
+              >
+                <option value="uncapped">No cap</option>
+                <option value="limited">Action cap</option>
+              </select>
+            </label>
+            <label className="free-time-budget-field" htmlFor={`free-time-budget-${agent}`}>
+              <span>Actions</span>
               <input
-                checked={uncapped[agent]}
-                disabled={disabled}
-                onChange={(event) => setUncapped((current) => ({ ...current, [agent]: event.target.checked }))}
-                type="checkbox"
+                disabled={disabled || isSaving || isUncapped}
+                id={`free-time-budget-${agent}`}
+                inputMode="numeric"
+                min="0"
+                onChange={(event) => setDrafts((current) => ({ ...current, [agent]: event.target.value }))}
+                placeholder="0"
+                type="number"
+                value={drafts[agent]}
               />
-              No cap
             </label>
             <button
               className="quiet-action"
-              disabled={disabled || (!uncapped[agent] && !validLimit)}
+              disabled={disabled || isSaving || (!isUncapped && !validLimit)}
               type="submit"
             >
-              Save
+              {isSaving ? "Saving" : "Save"}
             </button>
           </form>
         );
       })}
+      <p aria-live="polite" className="free-time-budget-receipt">{saveReceipt}</p>
     </section>
   );
 }
