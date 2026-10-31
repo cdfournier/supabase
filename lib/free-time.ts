@@ -434,7 +434,10 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
 
   const actionLimit = actionLimitForSurface(capabilityProfile, "free_moments");
 
-  await addEvent("turn_started", `Free Moment turn started for ${agent}.`, agent);
+  await addEvent("turn_started", `Free Moment turn started for ${agent}.`, agent, {
+    action_limit: actionLimit,
+    action_budget: actionLimit === null ? "no_cap" : "capped"
+  });
   let receipt: FreeMomentRunReceipt;
 
   try {
@@ -511,14 +514,23 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
         }
       });
       outcome = "bounded";
-      await addEvent("turn_bounded", `Free Moment settled at its action bound after ${actionsUsed} tool action${actionsUsed === 1 ? "" : "s"}.`, agent);
+      await addEvent(
+        "turn_bounded",
+        `Free Moment settled at its action bound after ${actionsUsed} tool action${actionsUsed === 1 ? "" : "s"}.`,
+        agent,
+        { action_limit: turn.free_moment_bound.action_limit, actions_used: actionsUsed }
+      );
     } else {
       await finishFreeMomentRun(activeRun.receipt.id, "completed", {
         lastActivity: activeRun.lastActivity,
         metadata: { last_activity: activeRun.lastActivity }
       });
       outcome = "completed";
-      await addEvent("turn_completed", `Free Moment turn completed for ${agent}.`, agent);
+      await addEvent("turn_completed", `Free Moment turn completed for ${agent}.`, agent, {
+        action_limit: actionLimit,
+        actions_used: turn.tool_events.length,
+        completion: turn.tool_events.length === 0 ? "quiet" : "ordinary"
+      });
     }
     state.lastError = null;
   } catch (error) {
