@@ -2795,6 +2795,72 @@ button {
   padding: 9px 10px;
 }
 
+.runtime-turn-audit {
+  background: rgba(245, 240, 223, 0.58);
+  border: 1px solid rgba(120, 83, 31, 0.26);
+  border-radius: 8px;
+  margin-top: 10px;
+  padding: 9px 10px;
+}
+
+.runtime-turn-audit summary {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.runtime-turn-audit-body {
+  border-top: 1px solid rgba(120, 83, 31, 0.18);
+  display: grid;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 9px;
+}
+
+.runtime-turn-audit-body > p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.runtime-turn-cancel,
+.runtime-turn-force-stop {
+  justify-self: start;
+  margin: 0;
+  width: auto;
+}
+
+.runtime-turn-receipt {
+  background: rgba(245, 240, 223, 0.62);
+  border-left: 3px solid rgba(120, 83, 31, 0.55);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+}
+
+.runtime-turn-receipt strong {
+  color: var(--ink);
+}
+
+.runtime-turn-notice {
+  border: 1px solid rgba(47, 125, 79, 0.55);
+  border-radius: 8px;
+  color: #1c6039;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+}
+
+.runtime-turn-notice.success {
+  background: rgba(218, 245, 226, 0.82);
+}
+
 .free-moment-audit summary {
   border: 0;
   margin: 0;
@@ -2881,6 +2947,7 @@ button {
 
 .free-moment-modal-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
   margin-top: 16px;

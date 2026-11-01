@@ -595,6 +595,24 @@ Autonomous-time stabilization:
 - Kept Quiet Time as its own future control surface: appointment `defer` and
   `interrupt` policy is recorded now without introducing a competing scheduler.
 
+### 2026-11-01
+
+Runtime turn safety:
+
+- Added **Cancel anytime** for ordinary interactive `chat_api` turns, with one
+  shared turn ID spanning queue state, messages, tools, model usage, and the
+  durable receipt.
+- Added graceful Cancel, delayed Force stop, transcript-visible work/tool
+  preservation, and explicit runtime cancellation receipts.
+- Added durable `runtime_turn_runs` / `runtime_turn_events` with honest
+  `cancelled`, `forced_stop`, `failed`, and `interrupted` outcomes.
+- Preview QA proved graceful cancellation both before tools and after one
+  internal status tool, then proved force escalation with the final receipt
+  correctly recording `cancellation_mode='force'` and no error.
+- Scheduled arrivals, packet/note wakes, appointments, and live sessions are
+  intentionally not yet enrolled in this interactive-turn controller; retain
+  their existing per-lane controls until a shared active-turn registry pass.
+
 ### 2026-07-08
 
 Runtime visibility:

@@ -5,6 +5,7 @@ import {
   type SourceMaterialReference,
   attachmentsFromContent,
   formatBytes,
+  runtimeTurnOutcomeFromContent,
   textFromContent,
   workDurationFromContent,
   workTraceFromContent,
@@ -88,9 +89,27 @@ type ChatResponse = {
 type ChatTurnResponse = {
   error?: string;
   turn_id: string;
-  status: "running" | "completed" | "failed";
+  agent?: AgentName;
+  phase?: "preparing" | "model" | "tool" | "wrap_up" | "finished";
+  started_at?: string;
+  cancellation_requested_at?: string | null;
+  cancellation_mode?: "graceful" | "force" | null;
+  force_stop_available?: boolean;
+  status:
+    | "running"
+    | "cancellation_requested"
+    | "force_stopping"
+    | "completed"
+    | "cancelled"
+    | "forced_stop"
+    | "failed";
   activity?: LiveToolActivity[];
   result?: ChatResponse;
+};
+
+type RuntimeTurnNotice = {
+  tone: "success";
+  text: string;
 };
 
 type CafeParticipant = {
@@ -1034,6 +1053,9 @@ export default function Home() {
   const [freeTime, setFreeTime] = useState<FreeTimeStatus | null>(null);
   const [toolEvents, setToolEvents] = useState<Record<string, ToolEvent[]>>({});
   const [liveToolActivity, setLiveToolActivity] = useState<LiveToolActivity[]>([]);
+  const [activeChatTurns, setActiveChatTurns] = useState<Partial<Record<AgentName, ChatTurnResponse>>>({});
+  const [chatTurnActionInProgress, setChatTurnActionInProgress] = useState(false);
+  const [runtimeTurnNotice, setRuntimeTurnNotice] = useState<RuntimeTurnNotice | null>(null);
   const [freeTimeLoading, setFreeTimeLoading] = useState(true);
   const [freeTimeRequestInProgress, setFreeTimeRequestInProgress] = useState(false);
   const [freeTimeError, setFreeTimeError] = useState("");
@@ -1136,6 +1158,7 @@ export default function Home() {
 
     return [...latestByActivity.values()];
   }, [liveToolActivity]);
+  const activeChatTurn = activeChatTurns[selectedAgent] ?? null;
 
   useEffect(() => {
     if (window.matchMedia("(max-width: 720px)").matches) {
@@ -1153,6 +1176,30 @@ export default function Home() {
       [panel]: !current[panel]
     }));
   }, []);
+
+  const loadActiveChatTurns = useCallback(async () => {
+    try {
+      const response = await fetch("/api/chat?active=1", { cache: "no-store" });
+      const data = await readJsonResponse<{ turns?: ChatTurnResponse[]; error?: string }>(response);
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load active runtime turns.");
+      }
+      setActiveChatTurns(
+        (data.turns ?? []).reduce<Partial<Record<AgentName, ChatTurnResponse>>>((next, turn) => {
+          if (turn.agent) {
+            next[turn.agent] = turn;
+          }
+          return next;
+        }, {})
+      );
+    } catch (turnError) {
+      console.error("Could not load active runtime turns.", turnError);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadActiveChatTurns();
+  }, [loadActiveChatTurns]);
 
   const loadFreeTimeStatus = useCallback(async () => {
     try {
@@ -2894,6 +2941,7 @@ export default function Home() {
 
     setSending(true);
     setError("");
+    setRuntimeTurnNotice(null);
     setMessage("");
 
     let acceptedTurn = false;
@@ -2919,21 +2967,35 @@ export default function Home() {
 
       acceptedTurn = true;
       setLiveToolActivity(startedTurn.activity ?? []);
+      setActiveChatTurns((current) => ({ ...current, [selectedAgent]: startedTurn }));
       setPendingAttachments([]);
-      const data = await waitForChatTurn(startedTurn.turn_id, (activity) => {
-        setLiveToolActivity(activity);
-      });
+      const settledTurn = await waitForChatTurn(
+        startedTurn.turn_id,
+        (activity) => {
+          setLiveToolActivity(activity);
+        },
+        (turn) => {
+          setActiveChatTurns((current) => ({ ...current, [selectedAgent]: turn }));
+        }
+      );
+
+      if (settledTurn.turn.status === "forced_stop") {
+        setRuntimeTurnNotice({
+          tone: "success",
+          text: `${agentLabel(selectedAgent)}’s turn was cancelled immediately. The durable runtime receipt records where it stopped.`
+        });
+      }
 
       setTranscripts((current) => ({
         ...current,
         [selectedAgent]: trimLiveMessages([
           ...(current[selectedAgent] ?? []),
-          ...(data.messages ?? [])
+          ...(settledTurn.data.messages ?? [])
         ])
       }));
       setToolEvents((current) => ({
         ...current,
-        [selectedAgent]: [...(current[selectedAgent] ?? []), ...(data.tool_events ?? [])]
+        [selectedAgent]: [...(current[selectedAgent] ?? []), ...(settledTurn.data.tool_events ?? [])]
       }));
     } catch (sendError) {
       if (!acceptedTurn) {
@@ -2943,13 +3005,19 @@ export default function Home() {
     } finally {
       setSending(false);
       setLiveToolActivity([]);
+      setActiveChatTurns((current) => {
+        const next = { ...current };
+        delete next[selectedAgent];
+        return next;
+      });
     }
   }
 
   async function waitForChatTurn(
     turnId: string,
-    onActivity: (activity: LiveToolActivity[]) => void
-  ): Promise<ChatResponse> {
+    onActivity: (activity: LiveToolActivity[]) => void,
+    onTurn: (turn: ChatTurnResponse) => void
+  ): Promise<{ data: ChatResponse; turn: ChatTurnResponse }> {
     for (;;) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, chatTurnPollMs));
 
@@ -2964,9 +3032,14 @@ export default function Home() {
         }
 
         onActivity(turn.activity ?? []);
+        onTurn(turn);
 
-        if (turn.status === "completed") {
-          return turn.result ?? {};
+        if (turn.status === "completed" || turn.status === "cancelled") {
+          return { data: turn.result ?? {}, turn };
+        }
+
+        if (turn.status === "forced_stop") {
+          return { data: turn.result ?? {}, turn };
         }
 
         if (turn.status === "failed") {
@@ -2979,6 +3052,38 @@ export default function Home() {
           throw pollError;
         }
       }
+    }
+  }
+
+  async function cancelActiveChatTurn(mode: "graceful" | "force") {
+    if (!activeChatTurn || chatTurnActionInProgress) {
+      return;
+    }
+
+    setChatTurnActionInProgress(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/chat/turns/${encodeURIComponent(activeChatTurn.turn_id)}/cancel`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mode })
+        }
+      );
+      const data = await readJsonResponse<{ turn?: ChatTurnResponse; error?: string }>(response);
+      if (!response.ok || !data.turn) {
+        throw new Error(data.error || "Could not cancel this runtime turn.");
+      }
+      const cancelledTurn = data.turn;
+      const cancelledAgent = cancelledTurn.agent;
+      if (cancelledAgent) {
+        setActiveChatTurns((current) => ({ ...current, [cancelledAgent]: cancelledTurn }));
+      }
+    } catch (turnError) {
+      setError(turnError instanceof Error ? turnError.message : "Could not cancel this runtime turn.");
+    } finally {
+      setChatTurnActionInProgress(false);
     }
   }
 
@@ -3908,6 +4013,9 @@ export default function Home() {
           onSubmit={sendMessage}
         >
           {error ? <p className="error">{error}</p> : null}
+          {runtimeTurnNotice ? (
+            <p className={`runtime-turn-notice ${runtimeTurnNotice.tone}`}>{runtimeTurnNotice.text}</p>
+          ) : null}
           <div className="composer-row">
             <textarea
               disabled={loading || sending || agents.length === 0}
@@ -3944,6 +4052,11 @@ export default function Home() {
               </button>
             </div>
           </div>
+          <ActiveTurnAudit
+            onAction={cancelActiveChatTurn}
+            requestInProgress={chatTurnActionInProgress}
+            turn={activeChatTurn}
+          />
           {sending ? (
             <details className="live-tool-activity" open>
               <summary>
@@ -4095,6 +4208,7 @@ export default function Home() {
             const messageAttachments = attachmentsFromContent(chatMessage.content);
             const messageWorkTrace = workTraceFromContent(chatMessage.content);
             const messageWorkDuration = workDurationFromContent(chatMessage.content);
+            const runtimeTurnOutcome = runtimeTurnOutcomeFromContent(chatMessage.content);
             const failedToolEventCount = messageToolEvents.filter((toolEvent) => !toolEvent.ok).length;
             const toolActivitySummary = failedToolEventCount
               ? `${messageToolEvents.length} calls · ${failedToolEventCount} ${failedToolEventCount === 1 ? "issue" : "issues"}`
@@ -4128,6 +4242,11 @@ export default function Home() {
                       </span>
                     ))}
                   </div>
+                ) : null}
+                {runtimeTurnOutcome ? (
+                  <p className="runtime-turn-receipt">
+                    <strong>Runtime receipt:</strong> {runtimeTurnOutcome.message} {runtimeTurnOutcome.tool_actions_completed} tool action{runtimeTurnOutcome.tool_actions_completed === 1 ? "" : "s"} completed.
+                  </p>
                 ) : null}
                 {messageWorkTrace.length > 0 ? (
                   <details className="tool-audit work-trace-audit">
@@ -4326,6 +4445,132 @@ function FreeMomentActivityAudit({
       ) : null}
     </>
   );
+}
+
+function ActiveTurnAudit({
+  onAction,
+  requestInProgress,
+  turn
+}: {
+  onAction: (mode: "graceful" | "force") => void;
+  requestInProgress: boolean;
+  turn: ChatTurnResponse | null;
+}) {
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+
+  if (!turn || !turn.agent || !turn.started_at) {
+    return null;
+  }
+
+  const agentName = agentLabel(turn.agent);
+  const elapsed = formatElapsedDuration(turn.started_at);
+  const latestActivity = turn.activity?.at(-1);
+  const activityLabel = latestActivity?.label ?? phaseActivityLabel(turn.phase);
+  const cancellationPending = turn.status === "cancellation_requested";
+  const forceStopping = turn.status === "force_stopping";
+
+  return (
+    <>
+      <details className="tool-audit runtime-turn-audit" open>
+        <summary>
+          <span>Active turn</span>
+          <span>{`${agentName} · ${elapsed}`}</span>
+        </summary>
+        <div className="runtime-turn-audit-body">
+          <div className="tool-call-meta">
+            <strong>{activityLabel}</strong>
+            <span>
+              {forceStopping
+                ? "Force stopping"
+                : cancellationPending
+                  ? "Cancelling after current activity"
+                  : turn.phase === "wrap_up"
+                    ? "Closing note"
+                    : turn.phase === "tool"
+                      ? "Working"
+                      : "Active"}
+            </span>
+          </div>
+          {forceStopping ? (
+            <p>The runtime has aborted its current request. The receipt will say exactly where it stopped.</p>
+          ) : cancellationPending ? (
+            <p>Cancelling after the current activity…</p>
+          ) : (
+            <button
+              className="quiet-action runtime-turn-cancel"
+              disabled={requestInProgress}
+              onClick={() => setConfirmingCancel(true)}
+              type="button"
+            >
+              Cancel
+            </button>
+          )}
+          {cancellationPending && turn.force_stop_available ? (
+            <button
+              className="danger-action runtime-turn-force-stop"
+              disabled={requestInProgress}
+              onClick={() => onAction("force")}
+              type="button"
+            >
+              Force stop
+            </button>
+          ) : null}
+        </div>
+      </details>
+
+      {confirmingCancel ? (
+        <div className="free-moment-modal-backdrop" role="presentation">
+          <section
+            aria-describedby="runtime-turn-cancel-description"
+            aria-labelledby="runtime-turn-cancel-title"
+            aria-modal="true"
+            className="free-moment-modal"
+            role="dialog"
+          >
+            <h2 id="runtime-turn-cancel-title">Cancel this turn?</h2>
+            <p id="runtime-turn-cancel-description">
+              This stops further actions after the current activity and asks for one concise closing note.
+              It does not affect future Free Moments or scheduled wakes.
+            </p>
+            <div className="free-moment-modal-actions">
+              <button
+                className="quiet-action"
+                disabled={requestInProgress}
+                onClick={() => setConfirmingCancel(false)}
+                type="button"
+              >
+                Keep going
+              </button>
+              <button
+                className="danger-action"
+                disabled={requestInProgress}
+                onClick={() => {
+                  setConfirmingCancel(false);
+                  onAction("graceful");
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function phaseActivityLabel(phase: ChatTurnResponse["phase"]) {
+  if (phase === "tool") {
+    return "Using a tool.";
+  }
+  if (phase === "wrap_up") {
+    return "Writing a closing note.";
+  }
+  if (phase === "model") {
+    return "Waiting for the model.";
+  }
+  return "Preparing the turn.";
 }
 
 function formatElapsedDuration(startedAt: string) {

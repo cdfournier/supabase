@@ -34,6 +34,13 @@ export type AssistantMessageContent = {
   text: string;
   work_trace?: WorkTraceItem[];
   work_duration_ms?: number;
+  runtime_turn?: RuntimeTurnOutcome;
+};
+
+export type RuntimeTurnOutcome = {
+  status: "cancelled";
+  message: string;
+  tool_actions_completed: number;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -155,9 +162,10 @@ export function buildOperatorMessageContent(
 export function buildAssistantMessageContent(
   text: string,
   workTrace: WorkTraceItem[],
-  workDurationMs: number
+  workDurationMs: number,
+  runtimeTurn?: RuntimeTurnOutcome
 ): string | AssistantMessageContent {
-  if (!workTrace.length) {
+  if (!workTrace.length && !runtimeTurn) {
     return text;
   }
 
@@ -165,7 +173,8 @@ export function buildAssistantMessageContent(
     type: "assistant_message",
     text,
     work_trace: workTrace,
-    work_duration_ms: Math.max(0, Math.round(workDurationMs))
+    work_duration_ms: Math.max(0, Math.round(workDurationMs)),
+    ...(runtimeTurn ? { runtime_turn: runtimeTurn } : {})
   };
 }
 
@@ -183,6 +192,13 @@ export function workDurationFromContent(content: unknown) {
   }
 
   return Math.max(0, Number(content.work_duration_ms));
+}
+
+export function runtimeTurnOutcomeFromContent(content: unknown): RuntimeTurnOutcome | null {
+  if (!isAssistantMessageContent(content) || !isRuntimeTurnOutcome(content.runtime_turn)) {
+    return null;
+  }
+  return content.runtime_turn;
 }
 
 export function buildAttachmentPromptText(text: string, attachments: SourceMaterialReference[]) {
@@ -235,6 +251,16 @@ function isWorkTraceItem(value: unknown): value is WorkTraceItem {
     (item.kind === "narration" || item.kind === "tool") &&
     typeof item.label === "string"
   );
+}
+
+function isRuntimeTurnOutcome(value: unknown): value is RuntimeTurnOutcome {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const outcome = value as Record<string, unknown>;
+  return outcome.status === "cancelled" &&
+    typeof outcome.message === "string" &&
+    typeof outcome.tool_actions_completed === "number";
 }
 
 function contentBlocksToText(content: unknown[]) {

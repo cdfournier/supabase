@@ -1,12 +1,25 @@
 import "server-only";
 
 import type { AgentName } from "@/lib/agent-context";
-import { sendAgentMessage, type RuntimeToolActivity } from "@/lib/chat-runtime";
+import {
+  isRuntimeTurnForceStoppedError,
+  RuntimeTurnForceStoppedError,
+  sendAgentMessage,
+  type RuntimeToolActivity
+} from "@/lib/chat-runtime";
 import {
   ChatTurnStore,
   type ChatTurnSnapshot,
   type ChatTurnStatus
 } from "@/lib/chat-turn-store";
+import {
+  finishRuntimeTurnRun,
+  markRuntimeTurnCancellation,
+  markRuntimeTurnWrappingUp,
+  reconcileInterruptedRuntimeTurns,
+  startRuntimeTurnRun,
+  updateRuntimeTurnActivity
+} from "@/lib/runtime-turn-runs";
 import type { AttachmentInput } from "@/lib/source-material-upload";
 
 type ChatTurnResult = Awaited<ReturnType<typeof sendAgentMessage>>;
@@ -22,7 +35,12 @@ type StartInput = {
 
 type RuntimeGlobal = typeof globalThis & {
   __runtimeChatTurnStore?: ChatTurnStore<AgentName, ChatTurnResult, RuntimeToolActivity>;
+  __runtimeChatTurnReceiptsReconciled?: boolean;
 };
+
+const DEFAULT_CHAT_TURN_CANCEL_GRACE_SECONDS = 60;
+const MIN_CHAT_TURN_CANCEL_GRACE_SECONDS = 5;
+const MAX_CHAT_TURN_CANCEL_GRACE_SECONDS = 300;
 
 function chatTurnStore() {
   const runtimeGlobal = globalThis as RuntimeGlobal;
@@ -31,18 +49,125 @@ function chatTurnStore() {
     ChatTurnResult,
     RuntimeToolActivity
   >();
+  if (!runtimeGlobal.__runtimeChatTurnReceiptsReconciled) {
+    runtimeGlobal.__runtimeChatTurnReceiptsReconciled = true;
+    void reconcileInterruptedRuntimeTurns().catch((error) => {
+      console.error("Could not reconcile interrupted runtime turns.", error);
+    });
+  }
   return runtimeGlobal.__runtimeChatTurnStore;
 }
 
 export function startChatTurn(input: StartInput) {
-  return chatTurnStore().start(input.agent, (reportActivity) =>
-    sendAgentMessage(input.agent, input.message, {
-      attachments: input.attachments,
-      onToolActivity: reportActivity
-    })
-  );
+  return chatTurnStore().start(input.agent, async ({ cancellation, reportActivity, reportPhase, turn }) => {
+    await startRuntimeTurnRun({ id: turn.turn_id, agent: input.agent, source: "chat_api" });
+
+    try {
+      const result = await sendAgentMessage(input.agent, input.message, {
+        turnId: turn.turn_id,
+        attachments: input.attachments,
+        onToolActivity: (activity) => {
+          reportActivity(activity);
+          void updateRuntimeTurnActivity(turn.turn_id, "tool", activityAsRecord(activity)).catch((error) => {
+            console.error("Could not persist runtime tool activity.", error);
+          });
+        },
+        cancellation: {
+          signal: cancellation.abortController.signal,
+          isCancellationRequested: () => cancellation.gracefulStopRequested,
+          onPhaseChange: (phase) => {
+            reportPhase(phase);
+            if (phase === "wrap_up") {
+              void markRuntimeTurnWrappingUp(turn.turn_id).catch((error) => {
+                console.error("Could not persist runtime turn wrap-up.", error);
+              });
+              return;
+            }
+            void updateRuntimeTurnActivity(turn.turn_id, phase, { phase, message: phaseLabel(phase) }).catch((error) => {
+              console.error("Could not persist runtime turn phase.", error);
+            });
+          }
+        }
+      });
+
+      await finishRuntimeTurnRun(
+        turn.turn_id,
+        cancellation.forceStopRequested
+          ? "forced_stop"
+          : cancellation.gracefulStopRequested
+            ? "cancelled"
+            : "completed"
+      );
+      return result;
+    } catch (error) {
+      const forceStopped = cancellation.forceStopRequested || isRuntimeTurnForceStoppedError(error);
+      await finishRuntimeTurnRun(turn.turn_id, forceStopped ? "forced_stop" : "failed", {
+        ...(forceStopped
+          ? { message: "Runtime turn was cancelled immediately by the Operator." }
+          : { error: error instanceof Error ? error.message : "Unknown runtime turn error" })
+      });
+      throw forceStopped ? new RuntimeTurnForceStoppedError() : error;
+    }
+  });
 }
 
 export function getChatTurn(turnId: string) {
   return chatTurnStore().get(turnId);
+}
+
+export function getActiveChatTurns() {
+  return chatTurnStore().active();
+}
+
+export async function cancelChatTurn(turnId: string, mode: "graceful" | "force", reason?: string) {
+  const store = chatTurnStore();
+  const outcome = store.cancel(turnId, mode, chatTurnCancelGraceMs());
+  if (outcome.changed) {
+    if (mode === "force") {
+      try {
+        await markRuntimeTurnCancellation(turnId, mode, reason);
+      } finally {
+        // Force stopping remains a safety action even if receipt persistence
+        // is temporarily unavailable. The finalizer records an interruption
+        // honestly if the process cannot complete its durable write.
+        // A Next development hot reload can preserve an older in-memory
+        // store instance while this module has new code. Older stores applied
+        // force immediately inside cancel(); a fresh store uses this explicit
+        // commit. Either path must stay safe rather than surfacing a method
+        // shape error to the Operator.
+        const commitForceStop = (store as unknown as {
+          commitForceStop?: (id: string) => boolean;
+        }).commitForceStop;
+        commitForceStop?.call(store, turnId);
+      }
+    } else {
+      await markRuntimeTurnCancellation(turnId, mode, reason);
+    }
+  }
+  return outcome;
+}
+
+function chatTurnCancelGraceMs() {
+  const requested = Number(process.env.RUNTIME_TURN_CANCEL_GRACE_SECONDS);
+  const seconds = Number.isFinite(requested)
+    ? Math.min(
+        MAX_CHAT_TURN_CANCEL_GRACE_SECONDS,
+        Math.max(MIN_CHAT_TURN_CANCEL_GRACE_SECONDS, Math.floor(requested))
+      )
+    : DEFAULT_CHAT_TURN_CANCEL_GRACE_SECONDS;
+  return seconds * 1000;
+}
+
+function activityAsRecord(activity: RuntimeToolActivity) {
+  return JSON.parse(JSON.stringify(activity)) as Record<string, unknown>;
+}
+
+function phaseLabel(phase: "model" | "tool" | "wrap_up") {
+  if (phase === "model") {
+    return "Waiting for the model.";
+  }
+  if (phase === "tool") {
+    return "Using a tool.";
+  }
+  return "Writing a closing note.";
 }

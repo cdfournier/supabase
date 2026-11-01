@@ -121,6 +121,12 @@ type ContextPostureReceipt = {
 };
 
 export type SendAgentMessageOptions = {
+  /**
+   * The public runtime-turn ID. Interactive chat creates it before work
+   * starts so the queue, model usage, messages, tools, and cancellation
+   * receipt all describe the same turn.
+   */
+  turnId?: string;
   source?: string;
   attachments?: AttachmentInput[];
   onToolActivity?: (activity: RuntimeToolActivity) => void;
@@ -167,7 +173,7 @@ export async function sendAgentMessage(
 
   const supabase = getSupabaseAdmin();
   const conversationId = await ensureConversation(supabase, agent);
-  const turnId = randomUUID();
+  const turnId = options.turnId ?? randomUUID();
   const existingMessages = await loadConversationMessages(supabase, conversationId);
   const checkpoint = latestCompactionCheckpoint(existingMessages);
   const activeMessages = checkpoint
@@ -282,7 +288,18 @@ export async function sendAgentMessage(
     position: position + 1,
     role: "assistant",
     source,
-    content: buildAssistantMessageContent(assistantReply, workTrace, Date.now() - workStartedAt)
+    content: buildAssistantMessageContent(
+      assistantReply,
+      workTrace,
+      Date.now() - workStartedAt,
+      options.cancellation?.isCancellationRequested?.()
+        ? {
+            status: "cancelled",
+            message: "Cancelled by the Operator after the current activity.",
+            tool_actions_completed: toolEvents.filter((toolEvent) => toolEvent.ok).length
+          }
+        : undefined
+    )
   };
 
   const { data: savedMessages, error: saveError } = await supabase
@@ -812,12 +829,7 @@ async function settleAfterCancellation({
     ...messages,
     {
       role: "user",
-      content: [
-        "The Operator has asked for this Free Moment to end.",
-        "Do not call any tools or begin another activity.",
-        "Leave one concise, honest closing note about where you stopped.",
-        "Future Free Moments remain enabled unless the Operator changes them separately."
-      ].join(" ")
+      content: cancellationClosingPrompt(source)
     }
   ];
   const settlementData = await callAnthropic({
@@ -864,6 +876,25 @@ async function settleAfterCancellation({
     settledToolActionLimit: null,
     toolActionsUsed: toolEvents.length
   };
+}
+
+function cancellationClosingPrompt(source: string) {
+  if (source === "free_time") {
+    return [
+      "The Operator has asked for this Free Moment to end.",
+      "Do not call any tools or begin another activity.",
+      "Leave one concise, honest closing note about where you stopped.",
+      "Future Free Moments remain enabled unless the Operator changes them separately."
+    ].join(" ");
+  }
+
+  return [
+    "The Operator cancelled this runtime turn while its current activity was in flight.",
+    "Do not call any tools or begin another activity.",
+    "The previous draft was not delivered to the Operator: do not claim that the requested work was completed.",
+    "Leave one concise, honest closing note that says the turn was cancelled and names the last activity if known.",
+    "This does not affect future Free Moments or scheduled wakes."
+  ].join(" ");
 }
 
 async function settleAfterToolLimit({
