@@ -1,16 +1,19 @@
-export type FreeMomentCancellationMode = "graceful" | "force";
+export type RuntimeTurnCancellationMode = "graceful" | "force";
+// Kept as an alias while Free Moment callers retain their product-specific
+// naming. The controller itself is intentionally turn-agnostic.
+export type FreeMomentCancellationMode = RuntimeTurnCancellationMode;
 
 /**
- * Small, provider-neutral control for one active Free Moment. It owns only
+ * Small, provider-neutral control for one active runtime turn. It owns only
  * cancellation state and its timer; the runtime owns model/tool execution and
  * durable receipts. Keeping this seam pure lets us exercise Stop without
  * waking an agent or reaching any external surface.
  */
-export class FreeMomentCancelController {
+export class RuntimeTurnCancelController {
   readonly abortController = new AbortController();
   private graceTimer: ReturnType<typeof setTimeout> | null = null;
   private requestedAt: string | null = null;
-  private requestedMode: FreeMomentCancellationMode | null = null;
+  private requestedMode: RuntimeTurnCancellationMode | null = null;
   private forceAvailable = false;
 
   get cancellationRequestedAt() {
@@ -78,3 +81,6 @@ export class FreeMomentCancelController {
     }
   }
 }
+
+// Existing Free Moment imports retain their narrow, human-readable name.
+export class FreeMomentCancelController extends RuntimeTurnCancelController {}

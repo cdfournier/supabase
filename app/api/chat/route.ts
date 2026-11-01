@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAgentName } from "@/lib/agent-context";
-import { getChatTurn, startChatTurn } from "@/lib/chat-turns";
+import { getActiveChatTurns, getChatTurn, startChatTurn } from "@/lib/chat-turns";
 
 type AttachmentInput = {
   id: string;
@@ -49,7 +49,12 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const turnId = new URL(request.url).searchParams.get("turn_id")?.trim();
+  const url = new URL(request.url);
+  if (url.searchParams.get("active") === "1") {
+    return NextResponse.json({ turns: getActiveChatTurns() }, { headers: NO_STORE_HEADERS });
+  }
+
+  const turnId = url.searchParams.get("turn_id")?.trim();
 
   if (!turnId) {
     return NextResponse.json({ error: "turn_id is required." }, { status: 400 });

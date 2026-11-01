@@ -121,6 +121,12 @@ type ContextPostureReceipt = {
 };
 
 export type SendAgentMessageOptions = {
+  /**
+   * The public runtime-turn ID. Interactive chat creates it before work
+   * starts so the queue, model usage, messages, tools, and cancellation
+   * receipt all describe the same turn.
+   */
+  turnId?: string;
   source?: string;
   attachments?: AttachmentInput[];
   onToolActivity?: (activity: RuntimeToolActivity) => void;
@@ -167,7 +173,7 @@ export async function sendAgentMessage(
 
   const supabase = getSupabaseAdmin();
   const conversationId = await ensureConversation(supabase, agent);
-  const turnId = randomUUID();
+  const turnId = options.turnId ?? randomUUID();
   const existingMessages = await loadConversationMessages(supabase, conversationId);
   const checkpoint = latestCompactionCheckpoint(existingMessages);
   const activeMessages = checkpoint
