@@ -136,6 +136,8 @@ test("chat turns force stop through the same active-turn receipt", async () => {
   assert.equal(forced.changed, true);
   assert.equal(forced.turn?.status, "force_stopping");
   assert.equal(forced.turn?.cancellation_mode, "force");
+  assert.equal(store.get(started.turn.turn_id)?.status, "force_stopping");
+  assert.equal(store.commitForceStop(started.turn.turn_id), true);
 
   await settle();
   const completed = store.get(started.turn.turn_id);

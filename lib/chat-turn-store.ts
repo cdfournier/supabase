@@ -135,7 +135,10 @@ export class ChatTurnStore<Agent extends string, Result, Activity = unknown> {
     }
 
     if (mode === "force") {
-      const changed = cancellation.requestForceStop();
+      // The API persists this escalation before it calls commitForceStop.
+      // That ordering prevents an AbortError from winning the race and
+      // leaving a terminal receipt marked as merely graceful.
+      const changed = cancellation.requestForceStop({ abortImmediately: false });
       if (changed) {
         turn.status = "force_stopping";
         turn.cancellation_requested_at ??= new Date().toISOString();
@@ -156,6 +159,15 @@ export class ChatTurnStore<Agent extends string, Result, Activity = unknown> {
       turn.cancellation_mode = "graceful";
     }
     return { turn, changed, error: changed ? null : "Cancellation was already requested." };
+  }
+
+  commitForceStop(turnId: string) {
+    const cancellation = this.cancellationByTurn.get(turnId);
+    if (!cancellation?.forceStopRequested) {
+      return false;
+    }
+    cancellation.abort();
+    return true;
   }
 
   private releaseAgent(agent: Agent, turnId: string) {

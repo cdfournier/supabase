@@ -57,7 +57,7 @@ export class RuntimeTurnCancelController {
     return true;
   }
 
-  requestForceStop() {
+  requestForceStop(options: { abortImmediately?: boolean } = {}) {
     if (this.forceStopRequested) {
       return false;
     }
@@ -66,8 +66,14 @@ export class RuntimeTurnCancelController {
     this.requestedMode = "force";
     this.forceAvailable = false;
     this.clearGraceTimer();
-    this.abortController.abort();
+    if (options.abortImmediately !== false) {
+      this.abort();
+    }
     return true;
+  }
+
+  abort() {
+    this.abortController.abort();
   }
 
   clear() {

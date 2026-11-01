@@ -120,7 +120,18 @@ export function getActiveChatTurns() {
 export async function cancelChatTurn(turnId: string, mode: "graceful" | "force", reason?: string) {
   const outcome = chatTurnStore().cancel(turnId, mode, CHAT_TURN_CANCEL_GRACE_MS);
   if (outcome.changed) {
-    await markRuntimeTurnCancellation(turnId, mode, reason);
+    if (mode === "force") {
+      try {
+        await markRuntimeTurnCancellation(turnId, mode, reason);
+      } finally {
+        // Force stopping remains a safety action even if receipt persistence
+        // is temporarily unavailable. The finalizer records an interruption
+        // honestly if the process cannot complete its durable write.
+        chatTurnStore().commitForceStop(turnId);
+      }
+    } else {
+      await markRuntimeTurnCancellation(turnId, mode, reason);
+    }
   }
   return outcome;
 }
