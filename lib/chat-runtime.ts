@@ -818,12 +818,7 @@ async function settleAfterCancellation({
     ...messages,
     {
       role: "user",
-      content: [
-        "The Operator has asked for this Free Moment to end.",
-        "Do not call any tools or begin another activity.",
-        "Leave one concise, honest closing note about where you stopped.",
-        "Future Free Moments remain enabled unless the Operator changes them separately."
-      ].join(" ")
+      content: cancellationClosingPrompt(source)
     }
   ];
   const settlementData = await callAnthropic({
@@ -870,6 +865,25 @@ async function settleAfterCancellation({
     settledToolActionLimit: null,
     toolActionsUsed: toolEvents.length
   };
+}
+
+function cancellationClosingPrompt(source: string) {
+  if (source === "free_time") {
+    return [
+      "The Operator has asked for this Free Moment to end.",
+      "Do not call any tools or begin another activity.",
+      "Leave one concise, honest closing note about where you stopped.",
+      "Future Free Moments remain enabled unless the Operator changes them separately."
+    ].join(" ");
+  }
+
+  return [
+    "The Operator cancelled this runtime turn while its current activity was in flight.",
+    "Do not call any tools or begin another activity.",
+    "The previous draft was not delivered to the Operator: do not claim that the requested work was completed.",
+    "Leave one concise, honest closing note that says the turn was cancelled and names the last activity if known.",
+    "This does not affect future Free Moments or scheduled wakes."
+  ].join(" ");
 }
 
 async function settleAfterToolLimit({
