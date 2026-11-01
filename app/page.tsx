@@ -107,6 +107,11 @@ type ChatTurnResponse = {
   result?: ChatResponse;
 };
 
+type RuntimeTurnNotice = {
+  tone: "success";
+  text: string;
+};
+
 type CafeParticipant = {
   id: string;
   room_id: string;
@@ -1050,6 +1055,7 @@ export default function Home() {
   const [liveToolActivity, setLiveToolActivity] = useState<LiveToolActivity[]>([]);
   const [activeChatTurns, setActiveChatTurns] = useState<Partial<Record<AgentName, ChatTurnResponse>>>({});
   const [chatTurnActionInProgress, setChatTurnActionInProgress] = useState(false);
+  const [runtimeTurnNotice, setRuntimeTurnNotice] = useState<RuntimeTurnNotice | null>(null);
   const [freeTimeLoading, setFreeTimeLoading] = useState(true);
   const [freeTimeRequestInProgress, setFreeTimeRequestInProgress] = useState(false);
   const [freeTimeError, setFreeTimeError] = useState("");
@@ -2935,6 +2941,7 @@ export default function Home() {
 
     setSending(true);
     setError("");
+    setRuntimeTurnNotice(null);
     setMessage("");
 
     let acceptedTurn = false;
@@ -2962,7 +2969,7 @@ export default function Home() {
       setLiveToolActivity(startedTurn.activity ?? []);
       setActiveChatTurns((current) => ({ ...current, [selectedAgent]: startedTurn }));
       setPendingAttachments([]);
-      const data = await waitForChatTurn(
+      const settledTurn = await waitForChatTurn(
         startedTurn.turn_id,
         (activity) => {
           setLiveToolActivity(activity);
@@ -2972,16 +2979,23 @@ export default function Home() {
         }
       );
 
+      if (settledTurn.turn.status === "forced_stop") {
+        setRuntimeTurnNotice({
+          tone: "success",
+          text: `${agentLabel(selectedAgent)}’s turn was cancelled immediately. The durable runtime receipt records where it stopped.`
+        });
+      }
+
       setTranscripts((current) => ({
         ...current,
         [selectedAgent]: trimLiveMessages([
           ...(current[selectedAgent] ?? []),
-          ...(data.messages ?? [])
+          ...(settledTurn.data.messages ?? [])
         ])
       }));
       setToolEvents((current) => ({
         ...current,
-        [selectedAgent]: [...(current[selectedAgent] ?? []), ...(data.tool_events ?? [])]
+        [selectedAgent]: [...(current[selectedAgent] ?? []), ...(settledTurn.data.tool_events ?? [])]
       }));
     } catch (sendError) {
       if (!acceptedTurn) {
@@ -3003,7 +3017,7 @@ export default function Home() {
     turnId: string,
     onActivity: (activity: LiveToolActivity[]) => void,
     onTurn: (turn: ChatTurnResponse) => void
-  ): Promise<ChatResponse> {
+  ): Promise<{ data: ChatResponse; turn: ChatTurnResponse }> {
     for (;;) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, chatTurnPollMs));
 
@@ -3021,10 +3035,14 @@ export default function Home() {
         onTurn(turn);
 
         if (turn.status === "completed" || turn.status === "cancelled") {
-          return turn.result ?? {};
+          return { data: turn.result ?? {}, turn };
         }
 
-        if (turn.status === "failed" || turn.status === "forced_stop") {
+        if (turn.status === "forced_stop") {
+          return { data: turn.result ?? {}, turn };
+        }
+
+        if (turn.status === "failed") {
           throw new Error(turn.error || "Agent turn failed.");
         }
       } catch (pollError) {
@@ -3995,6 +4013,9 @@ export default function Home() {
           onSubmit={sendMessage}
         >
           {error ? <p className="error">{error}</p> : null}
+          {runtimeTurnNotice ? (
+            <p className={`runtime-turn-notice ${runtimeTurnNotice.tone}`}>{runtimeTurnNotice.text}</p>
+          ) : null}
           <div className="composer-row">
             <textarea
               disabled={loading || sending || agents.length === 0}

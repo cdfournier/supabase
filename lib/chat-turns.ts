@@ -1,7 +1,12 @@
 import "server-only";
 
 import type { AgentName } from "@/lib/agent-context";
-import { sendAgentMessage, type RuntimeToolActivity } from "@/lib/chat-runtime";
+import {
+  isRuntimeTurnForceStoppedError,
+  RuntimeTurnForceStoppedError,
+  sendAgentMessage,
+  type RuntimeToolActivity
+} from "@/lib/chat-runtime";
 import {
   ChatTurnStore,
   type ChatTurnSnapshot,
@@ -93,10 +98,13 @@ export function startChatTurn(input: StartInput) {
       );
       return result;
     } catch (error) {
-      await finishRuntimeTurnRun(turn.turn_id, cancellation.forceStopRequested ? "forced_stop" : "failed", {
-        error: error instanceof Error ? error.message : "Unknown runtime turn error"
+      const forceStopped = cancellation.forceStopRequested || isRuntimeTurnForceStoppedError(error);
+      await finishRuntimeTurnRun(turn.turn_id, forceStopped ? "forced_stop" : "failed", {
+        ...(forceStopped
+          ? { message: "Runtime turn was cancelled immediately by the Operator." }
+          : { error: error instanceof Error ? error.message : "Unknown runtime turn error" })
       });
-      throw error;
+      throw forceStopped ? new RuntimeTurnForceStoppedError() : error;
     }
   });
 }
