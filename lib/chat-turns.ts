@@ -118,7 +118,8 @@ export function getActiveChatTurns() {
 }
 
 export async function cancelChatTurn(turnId: string, mode: "graceful" | "force", reason?: string) {
-  const outcome = chatTurnStore().cancel(turnId, mode, CHAT_TURN_CANCEL_GRACE_MS);
+  const store = chatTurnStore();
+  const outcome = store.cancel(turnId, mode, CHAT_TURN_CANCEL_GRACE_MS);
   if (outcome.changed) {
     if (mode === "force") {
       try {
@@ -127,7 +128,15 @@ export async function cancelChatTurn(turnId: string, mode: "graceful" | "force",
         // Force stopping remains a safety action even if receipt persistence
         // is temporarily unavailable. The finalizer records an interruption
         // honestly if the process cannot complete its durable write.
-        chatTurnStore().commitForceStop(turnId);
+        // A Next development hot reload can preserve an older in-memory
+        // store instance while this module has new code. Older stores applied
+        // force immediately inside cancel(); a fresh store uses this explicit
+        // commit. Either path must stay safe rather than surfacing a method
+        // shape error to the Operator.
+        const commitForceStop = (store as unknown as {
+          commitForceStop?: (id: string) => boolean;
+        }).commitForceStop;
+        commitForceStop?.call(store, turnId);
       }
     } else {
       await markRuntimeTurnCancellation(turnId, mode, reason);
