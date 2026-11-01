@@ -134,6 +134,42 @@ transaction-local synthetic receipt reached `cancelled` / `finished` with one
 event, then rolled back cleanly. No runtime agent, model, World action, Cafe
 message, or durable synthetic row was created.
 
+## Ordinary Turn Cancel And Receipts
+
+The same safety pattern now covers ordinary Operator chat turns for Soren and
+Varro. It is separate from the Free Moment control: cancelling an ordinary
+turn does not alter the Free Moment schedule or a pending wake appointment.
+
+- The active chat audit exposes **Cancel** after the turn begins. The
+  confirmation asks the runtime to finish only its current activity, begin no
+  further tools, and leave a short closing note.
+- After `RUNTIME_TURN_CANCEL_GRACE_SECONDS` (60 seconds by default), that
+  audit exposes **Force stop**. The runtime durably records the force intent
+  before aborting the current request.
+- A graceful cancellation preserves every completed work item and tool result
+  in the transcript, then adds an explicit **Runtime receipt**. A force stop
+  is shown as a calm Operator notice: the turn was cancelled immediately;
+  transport-level abort language remains internal.
+- `runtime_turn_runs` and `runtime_turn_events` are server-only receipt tables.
+  Their terminal statuses distinguish `cancelled`, `forced_stop`, `failed`,
+  and `interrupted`; a process restart never gets represented as a clean stop.
+
+Before deploying this feature, apply:
+
+```text
+sql/2026-11-01-runtime-turn-receipts.sql
+```
+
+Preview validation — November 1, 2026: a disposable Soren QA fixture proved
+ordinary graceful cancellation with zero and one completed tool action,
+preserved the tool trail and transcript receipt, and proved force escalation
+with ordered durable events: `started`, `cancellation_requested`,
+`force_stop_requested`, `forced_stop`. The final forced receipt held
+`cancellation_mode='force'` and no error. This slice covers interactive
+`source='chat_api'` turns; scheduled arrivals and other delivery lanes retain
+their own controls until they are deliberately enrolled in the shared turn
+registry.
+
 ## Agent-Authored Wake Appointments
 
 Soren and Varro can each hold one deliberate, one-time wake appointment when
