@@ -38,7 +38,9 @@ type RuntimeGlobal = typeof globalThis & {
   __runtimeChatTurnReceiptsReconciled?: boolean;
 };
 
-const CHAT_TURN_CANCEL_GRACE_MS = 60_000;
+const DEFAULT_CHAT_TURN_CANCEL_GRACE_SECONDS = 60;
+const MIN_CHAT_TURN_CANCEL_GRACE_SECONDS = 5;
+const MAX_CHAT_TURN_CANCEL_GRACE_SECONDS = 300;
 
 function chatTurnStore() {
   const runtimeGlobal = globalThis as RuntimeGlobal;
@@ -119,7 +121,7 @@ export function getActiveChatTurns() {
 
 export async function cancelChatTurn(turnId: string, mode: "graceful" | "force", reason?: string) {
   const store = chatTurnStore();
-  const outcome = store.cancel(turnId, mode, CHAT_TURN_CANCEL_GRACE_MS);
+  const outcome = store.cancel(turnId, mode, chatTurnCancelGraceMs());
   if (outcome.changed) {
     if (mode === "force") {
       try {
@@ -143,6 +145,17 @@ export async function cancelChatTurn(turnId: string, mode: "graceful" | "force",
     }
   }
   return outcome;
+}
+
+function chatTurnCancelGraceMs() {
+  const requested = Number(process.env.RUNTIME_TURN_CANCEL_GRACE_SECONDS);
+  const seconds = Number.isFinite(requested)
+    ? Math.min(
+        MAX_CHAT_TURN_CANCEL_GRACE_SECONDS,
+        Math.max(MIN_CHAT_TURN_CANCEL_GRACE_SECONDS, Math.floor(requested))
+      )
+    : DEFAULT_CHAT_TURN_CANCEL_GRACE_SECONDS;
+  return seconds * 1000;
 }
 
 function activityAsRecord(activity: RuntimeToolActivity) {
