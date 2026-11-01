@@ -5,6 +5,7 @@ import { ChatTurnStore } from "../lib/chat-turn-store.ts";
 import {
   buildAssistantMessageContent,
   textFromContent,
+  runtimeTurnOutcomeFromContent,
   workDurationFromContent,
   workTraceFromContent
 } from "../lib/source-materials-shared.ts";
@@ -164,4 +165,19 @@ test("assistant messages preserve a public work trace without changing chat text
   assert.equal(workDurationFromContent(content), 83_000);
   assert.equal(workTraceFromContent(content).length, 2);
   assert.equal(workTraceFromContent(content)[1]?.label, "Checking the World map");
+});
+
+test("assistant messages preserve a deterministic runtime cancellation receipt", () => {
+  const content = buildAssistantMessageContent("The turn was cancelled.", [], 420, {
+    status: "cancelled",
+    message: "Cancelled by the Operator after the current activity.",
+    tool_actions_completed: 2
+  });
+
+  assert.equal(textFromContent(content), "The turn was cancelled.");
+  assert.deepEqual(runtimeTurnOutcomeFromContent(content), {
+    status: "cancelled",
+    message: "Cancelled by the Operator after the current activity.",
+    tool_actions_completed: 2
+  });
 });

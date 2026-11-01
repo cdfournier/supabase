@@ -288,7 +288,18 @@ export async function sendAgentMessage(
     position: position + 1,
     role: "assistant",
     source,
-    content: buildAssistantMessageContent(assistantReply, workTrace, Date.now() - workStartedAt)
+    content: buildAssistantMessageContent(
+      assistantReply,
+      workTrace,
+      Date.now() - workStartedAt,
+      options.cancellation?.isCancellationRequested?.()
+        ? {
+            status: "cancelled",
+            message: "Cancelled by the Operator after the current activity.",
+            tool_actions_completed: toolEvents.filter((toolEvent) => toolEvent.ok).length
+          }
+        : undefined
+    )
   };
 
   const { data: savedMessages, error: saveError } = await supabase

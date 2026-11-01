@@ -5,6 +5,7 @@ import {
   type SourceMaterialReference,
   attachmentsFromContent,
   formatBytes,
+  runtimeTurnOutcomeFromContent,
   textFromContent,
   workDurationFromContent,
   workTraceFromContent,
@@ -4186,6 +4187,7 @@ export default function Home() {
             const messageAttachments = attachmentsFromContent(chatMessage.content);
             const messageWorkTrace = workTraceFromContent(chatMessage.content);
             const messageWorkDuration = workDurationFromContent(chatMessage.content);
+            const runtimeTurnOutcome = runtimeTurnOutcomeFromContent(chatMessage.content);
             const failedToolEventCount = messageToolEvents.filter((toolEvent) => !toolEvent.ok).length;
             const toolActivitySummary = failedToolEventCount
               ? `${messageToolEvents.length} calls · ${failedToolEventCount} ${failedToolEventCount === 1 ? "issue" : "issues"}`
@@ -4219,6 +4221,11 @@ export default function Home() {
                       </span>
                     ))}
                   </div>
+                ) : null}
+                {runtimeTurnOutcome ? (
+                  <p className="runtime-turn-receipt">
+                    <strong>Runtime receipt:</strong> {runtimeTurnOutcome.message} {runtimeTurnOutcome.tool_actions_completed} tool action{runtimeTurnOutcome.tool_actions_completed === 1 ? "" : "s"} completed.
+                  </p>
                 ) : null}
                 {messageWorkTrace.length > 0 ? (
                   <details className="tool-audit work-trace-audit">

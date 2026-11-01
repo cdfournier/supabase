@@ -2832,6 +2832,21 @@ button {
   width: auto;
 }
 
+.runtime-turn-receipt {
+  background: rgba(245, 240, 223, 0.62);
+  border-left: 3px solid rgba(120, 83, 31, 0.55);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+}
+
+.runtime-turn-receipt strong {
+  color: var(--ink);
+}
+
 .free-moment-audit summary {
   border: 0;
   margin: 0;
