@@ -855,7 +855,7 @@ begin
   where proposal_row.id = p_proposal_id
   returning * into v_existing;
 
-  select coalesce(max(revision_number), 0) + 1 into v_revision_number
+  select coalesce(max(revision_row.revision_number), 0) + 1 into v_revision_number
   from public.compaction_proposal_revisions as revision_row where revision_row.proposal_id = p_proposal_id;
 
   insert into public.compaction_proposal_revisions
@@ -946,7 +946,7 @@ begin
   if p_proposal_id is not null then
     update public.compaction_proposals as proposal_row set status = 'room_refreshed', updated_at = now()
     where proposal_row.id = p_proposal_id;
-    select coalesce(max(revision_number), 0) + 1 into v_next_proposal_revision
+    select coalesce(max(revision_row.revision_number), 0) + 1 into v_next_proposal_revision
     from public.compaction_proposal_revisions as revision_row where revision_row.proposal_id = p_proposal_id;
     insert into public.compaction_proposal_revisions
       (proposal_id, agent, revision_number, proposal, agent_notes, status, change_reason)
