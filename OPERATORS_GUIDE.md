@@ -1260,6 +1260,14 @@ Room Refresh is complete. Orient from the refreshed room. Review your current st
 
 The linked archive records `orientation_status`, the orientation assistant message id, completion time, and any delivery error. An Operator normally only needs to inspect these receipts or intervene after a failed safeguard.
 
+Preview validation — November 3, 2026: a disposable Soren QA room preserved a
+10-message archive, retained the compiler original plus an agent-approved
+revision, completed its agent-owned Room Refresh, and delivered the linked
+fresh-context orientation at later transcript positions. A separate isolated
+fixture then changed the live source after a valid archive became `ready`.
+Finalization refused the stale source, wrote no checkpoint, and retained a
+`checkpoint_failed` receipt with the source-window reason.
+
 CLI form:
 
 ```bash
