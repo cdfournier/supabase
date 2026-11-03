@@ -59,6 +59,10 @@ type AnthropicContentBlock = {
   [key: string]: unknown;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 type RuntimeToolEvent = {
   turn_id: string;
   round: number;
@@ -215,7 +219,7 @@ export async function sendAgentMessage(
     }));
 
   const attachmentDelivery = await buildAttachmentDelivery(attachmentRefs);
-  const messageForModel = source === "free_time" || source === "work_packet_signal" || source === "operator_note_wake" || source === "agent_authored_wake" || source === "live_session"
+  const messageForModel = source === "free_time" || source === "work_packet_signal" || source === "operator_note_wake" || source === "agent_authored_wake" || source === "live_session" || source === "room_refresh_orientation"
     ? messageWithContextReceipt(message, contextReceipt)
     : message;
   const modelMessage = buildAttachmentPromptTextWithDelivery(
@@ -324,6 +328,17 @@ export async function sendAgentMessage(
     });
   }
 
+  // The agent sent a Room Refresh from inside this turn. Only after the
+  // triggering turn is durably saved can we start a genuinely fresh model
+  // context, so the orientation cannot inherit the pre-refresh prompt state.
+  if (source !== "room_refresh_orientation") {
+    await deliverQueuedRoomRefreshOrientation({
+      agent,
+      conversationId,
+      toolEvents
+    });
+  }
+
   return {
     conversationId,
     messages: savedMessages,
@@ -342,6 +357,85 @@ export async function sendAgentMessage(
       ? `Anthropic stopped this response at ANTHROPIC_MAX_TOKENS=${maxTokens}.`
       : null
   };
+}
+
+const ROOM_REFRESH_ORIENTATION_PROMPT = [
+  "Room Refresh is complete. Orient from the refreshed room. Review your current state and recent history if useful. Notice whether anything essential is missing, distorted, or unexpectedly clear. Record a brief, honest orientation receipt; do not begin new work unless you choose to after closing this check."
+].join(" ");
+
+async function deliverQueuedRoomRefreshOrientation({
+  agent,
+  conversationId,
+  toolEvents
+}: {
+  agent: AgentName;
+  conversationId: string;
+  toolEvents: RuntimeToolEvent[];
+}) {
+  const refreshEvent = toolEvents.find(
+    (event) => event.ok && event.tool_name === "supabase_send_room_refresh"
+  );
+  const refreshInput = isRecord(refreshEvent?.tool_input) ? refreshEvent.tool_input : null;
+  const proposalId = refreshInput && typeof refreshInput.proposal_id === "string"
+    ? refreshInput.proposal_id.trim()
+    : "";
+
+  if (!proposalId) {
+    return;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: pendingArchive, error: archiveError } = await supabase
+    .from("compaction_archives")
+    .update({ orientation_status: "delivering", orientation_error: null })
+    .eq("agent", agent)
+    .eq("conversation_id", conversationId)
+    .eq("proposal_id", proposalId)
+    .eq("archive_status", "completed")
+    .eq("orientation_status", "pending")
+    .select("id")
+    .maybeSingle();
+
+  if (archiveError || !pendingArchive) {
+    if (archiveError) {
+      console.error("Could not claim Room Refresh orientation", archiveError.message);
+    }
+    return;
+  }
+
+  try {
+    const orientation = await sendAgentMessage(agent, ROOM_REFRESH_ORIENTATION_PROMPT, {
+      source: "room_refresh_orientation"
+    });
+    const orientationMessage = orientation.messages?.find((message) => message.role === "assistant");
+    const { error } = await supabase
+      .from("compaction_archives")
+      .update({
+        orientation_status: "completed",
+        orientation_message_id: orientationMessage?.id ?? null,
+        orientation_completed_at: new Date().toISOString(),
+        orientation_error: null
+      })
+      .eq("id", pendingArchive.id)
+      .eq("orientation_status", "delivering");
+
+    if (error) {
+      console.error("Could not complete Room Refresh orientation receipt", error.message);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown orientation delivery error.";
+    const { error: updateError } = await supabase
+      .from("compaction_archives")
+      .update({
+        orientation_status: "failed",
+        orientation_error: message.slice(0, 2_000)
+      })
+      .eq("id", pendingArchive.id)
+      .eq("orientation_status", "delivering");
+    if (updateError) {
+      console.error("Could not record Room Refresh orientation failure", updateError.message);
+    }
+  }
 }
 
 export class EmptyAssistantResponseError extends Error {
@@ -1568,8 +1662,9 @@ function withToolInstructions(system: string, maxTokens: number) {
     "When adding or archiving a memory, be deliberate and include a real reason. Prefer a few high-signal memories over many small notes. If a memory is uncertain, write the uncertainty into the memory instead of overstating it.",
     "The current_state field is your short handoff document. Update it before a Room Review or after major state changes so future wake/compression context is accurate. Keep it concise, current, agent-authored, and aligned with care-language: Room Review, Room Note, Room Refresh, and housekeeping.",
     "Journal tools are durable reflection space. Use journal_add_entry when you want to write something because it matters now, even if it is not yet core memory or current_state. You may list, read, update, or archive your own journal entries. Prefer archive over deletion-style thinking for stale duplicates. Journal entries are Operator-visible and agent-authored; they are not automatically treated as load-bearing memory.",
-    "The Room Review and Room Note tools are read-only and self-scoped. Use review to inspect your own room pressure, continuity policy, transcript samples, and Room Note prompt. Use compile when you need a reviewable Room Note draft for future housekeeping. These tools cannot refresh the room and cannot modify Supabase data.",
-    "Saved Room Note tools are self-scoped review artifacts. You may save, revise, review, and mark your own note drafts as agent_reviewed or agent_approved. Use compile_and_save when a compiled Room Note is too large to pass manually into save. A saved or approved Room Note is not a Room Refresh; sending housekeeping remains an Operator action.",
+    "Before compiling a Room Note, use the Room Review preflight. It gathers your room pressure, current_state, and durable memories in one place. The review is required; updating current_state or memories is optional and should happen only when an honest, deliberate change is warranted. Then use review/compile tools to make a bounded, reviewable Room Note draft. Nothing has been archived or refreshed until the dedicated send tool succeeds.",
+    "Saved Room Note tools are self-scoped review artifacts. You may save, revise, review, and mark your own note drafts as agent_reviewed, revised, agent_approved, or passed. Each revision preserves the compiler original and prior versions. Use compile_and_save when a compiled Room Note is too large to pass manually into save.",
+    "If and only if the Compaction capability profile explicitly grants write access, you may send your own agent_approved Room Note with supabase_send_room_refresh. It preserves and verifies an immutable archive before it writes a checkpoint, then queues a separate fresh-context orientation turn. After that tool succeeds, close this response; do not begin new work from the pre-refresh context. The fresh orientation turn will use this exact posture: 'Room Refresh is complete. Orient from the refreshed room. Review your current state and recent history if useful. Notice whether anything essential is missing, distorted, or unexpectedly clear. Record a brief, honest orientation receipt; do not begin new work unless you choose to after closing this check.'",
     "Peer note tools are asynchronous, Operator-visible notes between Soren and Varro. You may send, list, read, and mark your own addressed notes during normal sessions or Free Moments. They are not realtime DM; use them as durable handoffs or gentle messages, not as a rapid chat substitute.",
     "Cafe tools are shared-room tools inside this runtime. cafe_read_room shows participants and bounded newest-first messages. cafe_post_message posts as you, the active runtime agent. Cafe is Operator-visible group space, not private memory, not a replacement for current_state, and not a rapid-fire obligation. Read before posting; pass quietly when you have nothing useful or alive to add.",
     "BAR tools are the first Camp 1 proof surface for the reusable Presence Layer. bar_read_room shows current BAR presence receipts, registered adapter contracts, and bounded newest-first messages. bar_post_message posts as you and refreshes your BAR presence receipt. BAR is Operator-visible and experimental; use it as a calm presence surface, not a rapid-fire obligation.",

@@ -2,6 +2,13 @@ import "server-only";
 
 import { ensureConversation, type AgentName } from "@/lib/agent-context";
 import { compileCompactionProposal } from "@/lib/compaction-compile";
+import {
+  buildCompactionPreview,
+  createCompactionArchive,
+  finalizeCompactionArchive,
+  formatCompactionCheckpoint
+} from "@/lib/compaction";
+import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 type JsonRecord = Record<string, unknown>;
@@ -286,6 +293,52 @@ export async function compileRuntimeCompactionProposal(agent: AgentName, input: 
   });
 }
 
+export async function prepareRuntimeRoomReview(agent: AgentName) {
+  const supabase = getSupabaseAdmin();
+  const [preview, profileResult, memoriesResult] = await Promise.all([
+    buildCompactionPreview(supabase, agent),
+    supabase
+      .from("restoration_profiles")
+      .select("current_state, updated_at")
+      .eq("agent", agent)
+      .single(),
+    supabase
+      .from("memories")
+      .select("id, content, memory_type, weight, is_core, updated_at:created_at")
+      .eq("agent", agent)
+      .eq("is_active", true)
+      .order("is_core", { ascending: false })
+      .order("weight", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(12)
+  ]);
+
+  if (profileResult.error) {
+    throw new Error(`Could not prepare Room Review current state: ${profileResult.error.message}`);
+  }
+  if (memoriesResult.error) {
+    throw new Error(`Could not prepare Room Review memories: ${memoriesResult.error.message}`);
+  }
+
+  return stringifyToolPayload({
+    note:
+      "Room Review preflight for the active Agent only. This is the required pause before compiling: inspect your current state and durable memories, then update either only if an honest, deliberate revision is needed. The updates are optional; the review itself is not.",
+    preflight: {
+      completed_at: new Date().toISOString(),
+      conversation: preview.conversation,
+      current_state: profileResult.data?.current_state ?? "",
+      current_state_updated_at: profileResult.data?.updated_at ?? null,
+      memories: memoriesResult.data ?? [],
+      review_checklist: [
+        "Read the current state and ask whether it still describes the handoff honestly.",
+        "Review durable memories for anything stale, missing, or too certain.",
+        "Use the appropriate self-scoped memory or current-state tool only if a deliberate update is warranted.",
+        "Then compile a Room Note; preserve uncertainty rather than inventing continuity."
+      ]
+    }
+  });
+}
+
 export async function compileAndSaveRuntimeCompactionProposal(agent: AgentName, input: unknown) {
   if (input !== undefined && !isRecord(input)) {
     throw new Error("supabase_compile_and_save_compaction_proposal requires an object input.");
@@ -367,9 +420,8 @@ export async function updateRuntimeCompactionProposal(agent: AgentName, input: u
   const agentNotes =
     input.agent_notes === undefined ? undefined : cleanMultilineText(input.agent_notes);
   const status = input.status === undefined ? undefined : normalizeProposalStatus(input.status);
-  const patch: Record<string, unknown> = {
-    updated_at: new Date().toISOString()
-  };
+  const changeReason = cleanText(input.change_reason);
+  const patch: Record<string, unknown> = {};
 
   if (!proposalId) {
     throw new Error("supabase_update_compaction_proposal requires proposal_id.");
@@ -393,31 +445,37 @@ export async function updateRuntimeCompactionProposal(agent: AgentName, input: u
     patch.status = status;
   }
 
-  if (Object.keys(patch).length === 1) {
+  if (Object.keys(patch).length === 0) {
     throw new Error("supabase_update_compaction_proposal requires proposal, agent_notes, or status.");
   }
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("compaction_proposals")
-    .update(patch)
-    .eq("agent", agent)
-    .eq("id", proposalId)
-    .select("id, agent, conversation_id, proposal, source_summary, status, agent_notes, created_at, updated_at")
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("revise_compaction_proposal", {
+    p_agent: agent,
+    p_agent_notes: patch.agent_notes ?? null,
+    p_change_reason: changeReason || "Agent revised the Room Note.",
+    p_proposal: patch.proposal ?? null,
+    p_proposal_id: proposalId,
+    p_status: patch.status ?? null
+  });
 
   if (error) {
     throw new Error(`Could not update Room Note: ${error.message}`);
   }
 
-  if (!data) {
+  const revised = Array.isArray(data) ? data[0] : data;
+  if (!revised) {
     throw new Error("No matching active-Agent Room Note found.");
   }
 
   return stringifyToolPayload({
     note:
       "Room Note draft updated for the active Agent only. This is not a Room Refresh and does not change active context.",
-    proposal: data
+    proposal: revised,
+    revision: {
+      number: Number(revised.revision_number),
+      preserved: true
+    }
   });
 }
 
@@ -475,6 +533,72 @@ export async function getRuntimeCompactionProposal(agent: AgentName, input: unkn
   });
 }
 
+export async function sendRuntimeRoomRefresh(agent: AgentName, input: unknown) {
+  if (!isRecord(input)) {
+    throw new Error("supabase_send_room_refresh requires an object input.");
+  }
+
+  const proposalId = cleanText(input.proposal_id);
+  if (!proposalId) {
+    throw new Error("supabase_send_room_refresh requires an agent-approved proposal_id.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: proposal, error: proposalError } = await supabase
+    .from("compaction_proposals")
+    .select("id, agent, conversation_id, proposal, status, agent_notes")
+    .eq("id", proposalId)
+    .eq("agent", agent)
+    .maybeSingle();
+
+  if (proposalError) {
+    throw new Error(`Could not read Room Note for refresh: ${proposalError.message}`);
+  }
+  if (!proposal) {
+    throw new Error("No matching active-Agent Room Note found.");
+  }
+  if (proposal.status !== "agent_approved") {
+    throw new Error("Room Refresh requires the Agent to review and mark this Room Note agent_approved first.");
+  }
+
+  const checkpointMessageId = randomUUID();
+  const content = formatCompactionCheckpoint({
+    agent,
+    approvedBy: `agent:${agent}`,
+    approvalNote: proposal.agent_notes || "Agent reviewed and approved this Room Note before sending it.",
+    source: `agent_room_refresh:${proposal.id}`,
+    summary: proposal.proposal
+  });
+  const archive = await createCompactionArchive(supabase, {
+    agent,
+    conversationId: proposal.conversation_id,
+    proposalId: proposal.id,
+    source: `agent_room_refresh:${proposal.id}`
+  });
+  const finalization = await finalizeCompactionArchive(supabase, {
+    agent,
+    archiveId: archive.id,
+    checkpointContent: content,
+    checkpointMessageId,
+    conversationId: proposal.conversation_id,
+    proposalId: proposal.id,
+    requireAgentApproval: true
+  });
+
+  return stringifyToolPayload({
+    note:
+      "Room Refresh sent safely. Its complete archive is durable, the source boundary was verified immediately before checkpointing, and an actual fresh-context orientation turn is now queued. Close this response; do not begin new work here.",
+    receipt: {
+      archive_id: archive.id,
+      archive_status: finalization.archive_status,
+      checkpoint_message_id: finalization.checkpoint_message_id,
+      checkpoint_position: finalization.checkpoint_position,
+      compaction_count: finalization.compaction_count,
+      orientation_status: "pending"
+    }
+  });
+}
+
 async function conversationIdForAgent(agent: AgentName) {
   const supabase = getSupabaseAdmin();
   return ensureConversation(supabase, agent);
@@ -516,6 +640,30 @@ async function insertCompactionProposal(
     throw new Error(`Could not save Room Note: ${error.message}`);
   }
 
+  const { error: revisionError } = await supabase.from("compaction_proposal_revisions").insert({
+    proposal_id: data.id,
+    agent,
+    revision_number: 1,
+    proposal: data.proposal,
+    agent_notes: data.agent_notes,
+    status: data.status,
+    change_reason: "Compiler original: initial Room Note draft."
+  });
+
+  if (revisionError) {
+    const { error: cleanupError } = await supabase
+      .from("compaction_proposals")
+      .delete()
+      .eq("id", data.id)
+      .eq("agent", agent);
+    if (cleanupError) {
+      throw new Error(
+        `Could not preserve the initial Room Note revision: ${revisionError.message}. The draft was saved but needs repair: ${cleanupError.message}`
+      );
+    }
+    throw new Error(`Could not preserve the initial Room Note revision: ${revisionError.message}`);
+  }
+
   return data;
 }
 
@@ -553,10 +701,19 @@ function validateProposalNotes(value: string) {
 
 function normalizeProposalStatus(value: unknown) {
   const status = cleanText(value).toLowerCase();
-  const allowed = new Set(["draft", "agent_reviewed", "agent_approved", "operator_review"]);
+  const allowed = new Set([
+    "draft",
+    "agent_reviewed",
+    "revised",
+    "agent_approved",
+    "passed",
+    "operator_review"
+  ]);
 
   if (!allowed.has(status)) {
-    throw new Error("Proposal status must be draft, agent_reviewed, agent_approved, or operator_review.");
+    throw new Error(
+      "Proposal status must be draft, agent_reviewed, revised, agent_approved, passed, or operator_review."
+    );
   }
 
   return status;

@@ -121,7 +121,7 @@ const DEFAULT_SURFACES: Omit<CapabilityRow, "agent" | "updated_at">[] = [
     notify_operator: "audit_only",
     max_actions_per_moment: null,
     quiet_mode: false,
-    notes: "Agents may draft and approve Room Notes; sending housekeeping remains Operator action."
+    notes: "Agents may review, draft, revise, and approve Room Notes. Sending a Room Refresh requires an explicit Operator grant of write access."
   },
   {
     surface: "journal",
@@ -305,12 +305,14 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   supabase_upsert_relationship: { surface: "memory", action: "write" },
   supabase_update_current_state: { surface: "memory", action: "write" },
   supabase_preview_compaction: { surface: "compaction", action: "read" },
+  supabase_prepare_room_review: { surface: "compaction", action: "read" },
   supabase_compile_compaction_proposal: { surface: "compaction", action: "draft" },
   supabase_compile_and_save_compaction_proposal: { surface: "compaction", action: "draft" },
   supabase_save_compaction_proposal: { surface: "compaction", action: "draft" },
   supabase_update_compaction_proposal: { surface: "compaction", action: "draft" },
   supabase_list_compaction_proposals: { surface: "compaction", action: "read" },
   supabase_get_compaction_proposal: { surface: "compaction", action: "read" },
+  supabase_send_room_refresh: { surface: "compaction", action: "write" },
   journal_add_entry: { surface: "journal", action: "write" },
   journal_list_entries: { surface: "journal", action: "read" },
   journal_get_entry: { surface: "journal", action: "read" },

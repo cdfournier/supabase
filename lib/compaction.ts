@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import {
   type AgentName,
   type ChatMessage,
@@ -40,9 +41,22 @@ export type CompactionArchiveReceipt = {
   conversation_id: string;
   checkpoint_message_id: string | null;
   message_count: number;
+  archive_status: "archiving" | "ready" | "completed" | "checkpoint_failed" | "failed" | "legacy_completed";
+  source_end_position: number | null;
+  source_digest: string | null;
   source_started_at: string | null;
   source_ended_at: string | null;
+  ready_at: string | null;
+  completed_at: string | null;
+  failure_reason: string | null;
   created_at: string | null;
+};
+
+export type CompactionFinalizationReceipt = {
+  checkpoint_message_id: string;
+  checkpoint_position: number;
+  compaction_count: number;
+  archive_status: "completed";
 };
 
 export async function buildCompactionPreview(supabase: SupabaseClient, agent: AgentName) {
@@ -140,13 +154,11 @@ export async function createCompactionArchive(
   supabase: SupabaseClient,
   {
     agent,
-    checkpointMessageId,
     conversationId,
     proposalId,
     source
   }: {
     agent: AgentName;
-    checkpointMessageId?: string | null;
     conversationId: string;
     proposalId?: string | null;
     source?: string;
@@ -157,22 +169,28 @@ export async function createCompactionArchive(
   const activeMessages = checkpoint ? messagesAfterCheckpoint(messages, checkpoint) : messages;
   const firstMessage = activeMessages[0] ?? null;
   const lastMessage = activeMessages.at(-1) ?? null;
+  const sourceEndPosition = lastMessage?.position ?? -1;
+  const sourceDigest = createHash("sha256")
+    .update(JSON.stringify(activeMessages.map(archiveDigestEntry)))
+    .digest("hex");
 
   const { data: archive, error: archiveError } = await supabase
     .from("compaction_archives")
     .insert({
       agent,
-      checkpoint_message_id: checkpointMessageId ?? null,
+      archive_status: "archiving",
       conversation_id: conversationId,
       latest_checkpoint_position: checkpoint?.position ?? null,
       message_count: activeMessages.length,
       proposal_id: proposalId ?? null,
+      source_digest: sourceDigest,
+      source_end_position: sourceEndPosition,
       source: source || "manual_compaction_checkpoint",
       source_started_at: firstMessage?.created_at ?? null,
       source_ended_at: lastMessage?.created_at ?? null
     })
     .select(
-      "id, agent, conversation_id, checkpoint_message_id, message_count, source_started_at, source_ended_at, created_at"
+      "id, agent, conversation_id, checkpoint_message_id, message_count, archive_status, source_end_position, source_digest, source_started_at, source_ended_at, ready_at, completed_at, failure_reason, created_at"
     )
     .single();
 
@@ -197,23 +215,100 @@ export async function createCompactionArchive(
     const { error: messageError } = await supabase.from("compaction_archive_messages").insert(rows);
 
     if (messageError) {
-      await supabase.from("compaction_archive_messages").delete().eq("archive_id", archiveId);
-      await supabase.from("compaction_archives").delete().eq("id", archiveId);
+      await markArchiveFailure(
+        supabase,
+        archiveId,
+        "failed",
+        `Could not preserve the complete Room Refresh archive: ${messageError.message}`
+      );
       throw new Error(`Could not create compaction archive messages: ${messageError.message}`);
     }
   }
 
+  const { count: archivedCount, error: countError } = await supabase
+    .from("compaction_archive_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("archive_id", archiveId);
+  const { data: archivedTail, error: tailError } = await supabase
+    .from("compaction_archive_messages")
+    .select("position")
+    .eq("archive_id", archiveId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (countError || tailError || Number(archivedCount ?? 0) !== activeMessages.length ||
+      Number(archivedTail?.position ?? -1) !== sourceEndPosition) {
+    const reason = countError?.message || tailError?.message || "Archive message count or source boundary did not verify.";
+    await markArchiveFailure(supabase, archiveId, "failed", reason);
+    throw new Error(`Could not verify complete Room Refresh archive: ${reason}`);
+  }
+
+  const { data: readyArchive, error: readyError } = await supabase
+    .from("compaction_archives")
+    .update({ archive_status: "ready", ready_at: new Date().toISOString(), failure_reason: null })
+    .eq("id", archiveId)
+    .eq("archive_status", "archiving")
+    .select(
+      "id, agent, conversation_id, checkpoint_message_id, message_count, archive_status, source_end_position, source_digest, source_started_at, source_ended_at, ready_at, completed_at, failure_reason, created_at"
+    )
+    .single();
+
+  if (readyError) {
+    await markArchiveFailure(supabase, archiveId, "failed", `Could not mark archive ready: ${readyError.message}`);
+    throw new Error(`Could not mark Room Refresh archive ready: ${readyError.message}`);
+  }
+
+  return archiveReceipt(readyArchive, agent, conversationId, activeMessages.length);
+}
+
+export async function finalizeCompactionArchive(
+  supabase: SupabaseClient,
+  {
+    archiveId,
+    agent,
+    checkpointContent,
+    checkpointMessageId,
+    conversationId,
+    proposalId,
+    requireAgentApproval
+  }: {
+    archiveId: string;
+    agent: AgentName;
+    checkpointContent: string;
+    checkpointMessageId: string;
+    conversationId: string;
+    proposalId?: string | null;
+    requireAgentApproval?: boolean;
+  }
+): Promise<CompactionFinalizationReceipt> {
+  const { data, error } = await supabase.rpc("finalize_compaction_archive", {
+    p_agent: agent,
+    p_archive_id: archiveId,
+    p_checkpoint_content: checkpointContent,
+    p_checkpoint_id: checkpointMessageId,
+    p_conversation_id: conversationId,
+    p_proposal_id: proposalId ?? null,
+    p_require_agent_approval: requireAgentApproval === true
+  });
+
+  if (error) {
+    await markArchiveFailure(supabase, archiveId, "checkpoint_failed", `Room Refresh finalization failed: ${error.message}`);
+    throw new Error(`Could not finalize Room Refresh: ${error.message}`);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+
+  if (!row) {
+    await markArchiveFailure(supabase, archiveId, "checkpoint_failed", "Room Refresh finalization returned no receipt.");
+    throw new Error("Could not finalize Room Refresh: no finalization receipt returned.");
+  }
+
   return {
-    id: archiveId,
-    agent: archive.agent as AgentName,
-    conversation_id: String(archive.conversation_id),
-    checkpoint_message_id: archive.checkpoint_message_id
-      ? String(archive.checkpoint_message_id)
-      : null,
-    message_count: Number(archive.message_count ?? activeMessages.length),
-    source_started_at: archive.source_started_at ? String(archive.source_started_at) : null,
-    source_ended_at: archive.source_ended_at ? String(archive.source_ended_at) : null,
-    created_at: archive.created_at ? String(archive.created_at) : null
+    archive_status: "completed",
+    checkpoint_message_id: String(row.checkpoint_message_id),
+    checkpoint_position: Number(row.checkpoint_position),
+    compaction_count: Number(row.compaction_count)
   };
 }
 
@@ -356,6 +451,59 @@ function formatMessageForCompaction(message: ChatMessage) {
     `[position:${message.position} role:${message.role} created_at:${message.created_at ?? "unknown"}]`,
     contentToText(message.content)
   ].join("\n");
+}
+
+function archiveDigestEntry(message: ChatMessage) {
+  return {
+    content: message.content,
+    created_at: message.created_at ?? null,
+    id: message.id ?? null,
+    position: message.position,
+    role: message.role
+  };
+}
+
+function archiveReceipt(
+  archive: Record<string, unknown>,
+  agent: AgentName,
+  conversationId: string,
+  fallbackMessageCount: number
+): CompactionArchiveReceipt {
+  return {
+    id: String(archive.id),
+    agent: (archive.agent as AgentName | undefined) ?? agent,
+    conversation_id: String(archive.conversation_id ?? conversationId),
+    checkpoint_message_id: archive.checkpoint_message_id ? String(archive.checkpoint_message_id) : null,
+    message_count: Number(archive.message_count ?? fallbackMessageCount),
+    archive_status: String(archive.archive_status ?? "failed") as CompactionArchiveReceipt["archive_status"],
+    source_end_position: archive.source_end_position === null || archive.source_end_position === undefined
+      ? null
+      : Number(archive.source_end_position),
+    source_digest: archive.source_digest ? String(archive.source_digest) : null,
+    source_started_at: archive.source_started_at ? String(archive.source_started_at) : null,
+    source_ended_at: archive.source_ended_at ? String(archive.source_ended_at) : null,
+    ready_at: archive.ready_at ? String(archive.ready_at) : null,
+    completed_at: archive.completed_at ? String(archive.completed_at) : null,
+    failure_reason: archive.failure_reason ? String(archive.failure_reason) : null,
+    created_at: archive.created_at ? String(archive.created_at) : null
+  };
+}
+
+async function markArchiveFailure(
+  supabase: SupabaseClient,
+  archiveId: string,
+  status: "failed" | "checkpoint_failed",
+  reason: string
+) {
+  const { error } = await supabase
+    .from("compaction_archives")
+    .update({ archive_status: status, failure_reason: clampText(reason, 2_000) })
+    .eq("id", archiveId)
+    .in("archive_status", status === "failed" ? ["archiving"] : ["ready"]);
+
+  if (error) {
+    console.error("Could not record Room Refresh archive failure", error.message);
+  }
 }
 
 function buildCompactionPrompt(

@@ -30,7 +30,9 @@ import {
   listRuntimeCompactionProposals,
   listRuntimeRelationships,
   listRuntimeMemories,
+  prepareRuntimeRoomReview,
   saveRuntimeCompactionProposal,
+  sendRuntimeRoomRefresh,
   updateRuntimeCompactionProposal,
   updateRuntimeCurrentState,
   upsertRuntimeRelationship
@@ -1775,6 +1777,17 @@ export const toolDefinitions: ToolDefinition[] = [
     }
   },
   {
+    name: "supabase_prepare_room_review",
+    description:
+      "Prepare the required preflight before compiling a Room Note. It presents the active Agent's current state, durable memories, and room pressure together so the Agent can deliberately review them. The review is required; changing current state or memories remains optional and should happen only when honestly warranted. This does not archive, refresh, or modify active context.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false
+    }
+  },
+  {
     name: "supabase_preview_compaction",
     description:
       "Read-only Room Review for the active Agent's own conversation. Returns room pressure, message range, continuity policy, bounded transcript samples, and a Room Note prompt. It does not summarize, archive, delete, replace, or modify any Supabase data.",
@@ -1860,7 +1873,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "supabase_update_compaction_proposal",
     description:
-      "Update one of the active Agent's saved Room Note drafts. Use this to revise note text, add Agent notes, or mark status such as agent_reviewed or agent_approved. This does not send housekeeping or create a Room Refresh.",
+      "Revise one of the active Agent's saved Room Note drafts. Every update preserves an immutable revision, including the compiler original. Use this to revise note text, add Agent notes, or mark status such as agent_reviewed, revised, agent_approved, or passed. This does not send housekeeping or create a Room Refresh.",
     input_schema: {
       type: "object",
       properties: {
@@ -1876,9 +1889,29 @@ export const toolDefinitions: ToolDefinition[] = [
           type: "string",
           description: "Optional full replacement agent notes."
         },
+        change_reason: {
+          type: "string",
+          description: "Optional concise reason for this preserved revision."
+        },
         status: {
           type: "string",
-          description: "Optional status: draft, agent_reviewed, agent_approved, or operator_review."
+          description: "Optional status: draft, agent_reviewed, revised, agent_approved, passed, or operator_review."
+        }
+      },
+      required: ["proposal_id"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "supabase_send_room_refresh",
+    description:
+      "Send one active Agent-owned Room Refresh from an agent_approved saved Room Note. This is available only when the Operator has explicitly granted the compaction surface write access. It creates and verifies a complete immutable archive before a guarded checkpoint transaction; it refuses if the source window changed. After success, it queues a separate fresh-context orientation turn. Use only after the required Room Review preflight, a full draft review, any desired revise pass, and deliberate agent_approved status.",
+    input_schema: {
+      type: "object",
+      properties: {
+        proposal_id: {
+          type: "string",
+          description: "The active Agent's saved Room Note id with status agent_approved."
         }
       },
       required: ["proposal_id"],
@@ -2456,6 +2489,11 @@ export async function runTool(
           ok: true,
           content: JSON.stringify(await buildCompactionPreview(getSupabaseAdmin(), agent), null, 2)
         };
+      case "supabase_prepare_room_review":
+        return {
+          ok: true,
+          content: await prepareRuntimeRoomReview(agent)
+        };
       case "supabase_compile_compaction_proposal":
         return {
           ok: true,
@@ -2475,6 +2513,11 @@ export async function runTool(
         return {
           ok: true,
           content: await updateRuntimeCompactionProposal(agent, input)
+        };
+      case "supabase_send_room_refresh":
+        return {
+          ok: true,
+          content: await sendRuntimeRoomRefresh(agent, input)
         };
       case "supabase_list_compaction_proposals":
         return {

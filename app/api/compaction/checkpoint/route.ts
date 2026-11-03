@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import {
   ensureConversation,
-  isAgentName,
-  nextMessagePosition
+  isAgentName
 } from "@/lib/agent-context";
-import { createCompactionArchive, formatCompactionCheckpoint } from "@/lib/compaction";
+import {
+  createCompactionArchive,
+  finalizeCompactionArchive,
+  formatCompactionCheckpoint
+} from "@/lib/compaction";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 const MAX_CHECKPOINT_CHARS = 30_000;
@@ -33,7 +36,6 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseAdmin();
     const conversationId = await ensureConversation(supabase, agent);
-    const position = await nextMessagePosition(supabase, conversationId);
     const checkpointMessageId = randomUUID();
     const source = String(body.source ?? "compiled_compaction_proposal");
     const proposalId = proposalIdFromBody(body.proposal_id, source);
@@ -49,59 +51,35 @@ export async function POST(request: Request) {
 
     const archive = await createCompactionArchive(supabase, {
       agent,
-      checkpointMessageId,
       conversationId,
       proposalId,
       source
     });
 
-    const { data: checkpoint, error: insertError } = await supabase
-      .from("conversation_messages")
-      .insert({
-        id: checkpointMessageId,
-        conversation_id: conversationId,
-        position,
-        role: "assistant",
-        content
-      })
-      .select("id, conversation_id, position, role, content, created_at")
-      .single();
-
-    if (insertError) {
-      throw new Error(`Could not save Room Refresh: ${insertError.message}`);
-    }
-
-    const { data: conversation, error: conversationError } = await supabase
-      .from("conversations")
-      .select("compaction_count")
-      .eq("id", conversationId)
-      .single();
-
-    if (conversationError) {
-      throw new Error(`Could not read conversation counter: ${conversationError.message}`);
-    }
-
-    const nextCompactionCount = Number(conversation?.compaction_count ?? 0) + 1;
-    const { error: updateError } = await supabase
-      .from("conversations")
-      .update({
-        compaction_count: nextCompactionCount,
-        updated_at: new Date().toISOString()
-      })
-      .eq("id", conversationId);
-
-    if (updateError) {
-      throw new Error(`Could not update compaction counter: ${updateError.message}`);
-    }
+    const finalization = await finalizeCompactionArchive(supabase, {
+      agent,
+      archiveId: archive.id,
+      checkpointContent: content,
+      checkpointMessageId,
+      conversationId,
+      proposalId,
+      requireAgentApproval: false
+    });
 
     return NextResponse.json({
       agent,
       conversation_id: conversationId,
       destructive: false,
       status: "checkpoint_saved",
-      checkpoint,
+      checkpoint: {
+        id: finalization.checkpoint_message_id,
+        conversation_id: conversationId,
+        position: finalization.checkpoint_position,
+        role: "assistant",
+        content
+      },
       archive,
-      compaction_count: nextCompactionCount,
+      compaction_count: finalization.compaction_count,
       next_step:
         "Restart or continue normally. The runtime will use this Room Refresh plus messages after it as active context."
     });
