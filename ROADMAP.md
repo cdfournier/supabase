@@ -253,14 +253,23 @@ Scope:
 
 ### 7. Room Refresh And Archive UX
 
-Status: partially implemented; UI polish pending.
+Status: archive safety and Agent-owned Room Refresh are implemented; archive browsing and collapsed-history UI remain.
 
 Current state:
 
-- Approved Room Refreshes snapshot active source messages into immutable archive
-  rows, then write append-only internal refresh markers.
+- Room Refresh archives move through explicit `archiving` → `ready` → `completed`
+  states. Failed copy/finalization attempts preserve an auditable receipt and
+  never delete the source transcript.
+- Finalization is an atomic database operation: it verifies the archived source
+  boundary is still current before appending a checkpoint and incrementing the
+  conversation counter.
 - Raw messages remain stored in Supabase.
-- Agents can compile and save reviewable Room Notes.
+- Agents preflight current state and memories, then compile, save, revise, and
+  approve reviewable Room Notes. Immutable revisions retain compiler original,
+  later edits, and the final refresh receipt.
+- Per-agent Compaction `write` access enables Agent-owned Room Refreshes
+  without per-refresh Operator approval. A fresh-context orientation turn is
+  delivered after the checkpoint and recorded on its archive.
 - The runtime UI has started using care-language for this ritual while retaining
   compaction/checkpoint names in internal routes, tables, and records.
 
@@ -269,13 +278,10 @@ Planned:
 - Add archive browsing/search tools for Operators and Agents.
 - Collapse pre-refresh chat history in the UI behind an archive affordance
   without deleting raw messages.
-- Add clearer archive/refresh health receipts.
 - Increase the housekeeping/Room Note output ceiling so Soren and Varro can
   post a complete housekeeping note in one pass. The ceiling should be high
   enough for the whole note, while keeping the compiler completeness guard and
   required-section checks intact.
-- Consider database RPCs for atomic archive/refresh operations if concurrency
-  becomes real.
 
 ### 8. Operator Runtime Control Panel
 

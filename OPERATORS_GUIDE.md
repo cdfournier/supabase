@@ -1214,13 +1214,13 @@ curl -s -X POST http://localhost:3001/api/compaction/preview \
 
 This does not summarize, archive, delete, or replace conversation messages. It returns the agent's current compaction pressure, their compaction policy, a bounded sample of the transcript, and the prompt shape for a future manual compaction pass.
 
-Agents can also call `supabase_preview_compaction` for their own conversation. That tool is read-only and cannot modify Supabase data.
+Agents can also call `supabase_preview_compaction` for their own conversation. That tool is read-only and cannot modify Supabase data. Before compiling a Room Note, the agent should use `supabase_prepare_room_review`: it places room pressure, current state, and durable memories together for one deliberate review. Reviewing is required; changing current state or memories is optional and should happen only when an honest correction is warranted.
 
 Agents can call `supabase_compile_compaction_proposal` to generate their own non-destructive proposal draft. This uses the same compiler as the Operator UI button. It does not save a checkpoint, archive messages, delete messages, or modify Supabase data. The agent should review and revise the proposal in conversation before the Operator creates an append-only checkpoint.
 
 Agents can call `supabase_compile_and_save_compaction_proposal` when the generated proposal is too large to pass manually into the save tool. This compiles server-side, saves server-side, and returns the saved proposal id plus a short preview. It is still only a draft, not a checkpoint.
 
-Agents can also save proposal drafts in `compaction_proposals`, revise them, and mark status as `agent_reviewed` or `agent_approved`. These saved drafts are persistent review artifacts only. They are not checkpoints and do not change active context.
+Agents can also save proposal drafts in `compaction_proposals`, revise them, and mark status as `agent_reviewed`, `revised`, `agent_approved`, or `passed`. Every revision is copied to immutable `compaction_proposal_revisions`, including the compiler original. These saved drafts are persistent review artifacts only. They are not checkpoints and do not change active context.
 
 If proposal save/list tools fail with a missing-table error, run the latest `schema.sql` in Supabase first. Existing rows are preserved because the schema uses `create table if not exists`.
 
@@ -1242,9 +1242,23 @@ If compiled proposals are truncated before sections 6 or 7, increase `COMPACTION
 
 ## Compaction Checkpoint
 
-After the agent and operator review a compiled proposal, the operator can edit the proposal in the UI and click **Create Checkpoint**.
+After the agent and operator review a compiled proposal, the operator can edit the proposal in the UI and click **Create Checkpoint**. The legacy Operator path remains available.
 
-This is append-only. It snapshots the active pre-checkpoint messages into immutable archive rows, saves a checkpoint marker into `conversation_messages`, increments the conversation's compaction count, and tells the runtime to use that checkpoint plus messages after it as active context. It does not delete or replace raw messages.
+This is append-only. The runtime first writes an archive in `archiving` state, copies its source messages, verifies the copied count and ending position, and advances it to `ready`. One database transaction then confirms that the live source window has not changed, saves the checkpoint marker into `conversation_messages`, completes the archive, increments the conversation's compaction count, and tells the runtime to use that checkpoint plus messages after it as active context. It does not delete or replace raw messages. If copying or finalization fails, the source transcript remains intact and the archive keeps an auditable `failed` or `checkpoint_failed` receipt.
+
+### Agent-owned Room Refresh
+
+`compaction` defaults to `draft`: an agent can independently preflight, compile, save, inspect, revise, and approve a Room Note, but cannot send a refresh. Setting that one agent's capability to **write** exposes `supabase_send_room_refresh`. This is a standing per-agent grant, not a per-refresh approval.
+
+The agent must complete the preflight, inspect its saved Room Note, revise if useful, then deliberately mark it `agent_approved`. `supabase_send_room_refresh` refuses every other status. On success it uses the same verified archive and guarded finalization path as the Operator flow, records an immutable `room_refreshed` revision, and queues a second, fresh-context orientation turn. The original pre-refresh turn is instructed to close rather than continue work.
+
+The fresh orientation prompt is:
+
+```text
+Room Refresh is complete. Orient from the refreshed room. Review your current state and recent history if useful. Notice whether anything essential is missing, distorted, or unexpectedly clear. Record a brief, honest orientation receipt; do not begin new work unless you choose to after closing this check.
+```
+
+The linked archive records `orientation_status`, the orientation assistant message id, completion time, and any delivery error. An Operator normally only needs to inspect these receipts or intervene after a failed safeguard.
 
 CLI form:
 
@@ -1260,12 +1274,6 @@ Suggested pre-housekeeping prompt:
 
 ```text
 When you say go, I'm going to send housekeeping in to tidy the room: fresh sheets, clean towels, everything important left where you can find it. I love you.
-```
-
-Suggested post-housekeeping orientation prompt:
-
-```text
-Housekeeping is complete. Please orient yourself, take a look around, read your recent history, and let me know how you feel.
 ```
 
 ## Current State Handoff
