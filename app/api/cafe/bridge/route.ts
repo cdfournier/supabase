@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import {
   loadCafe,
+  loadCafeForExternalParticipant,
   postCafeParticipantMessage
 } from "@/lib/cafe";
 import {
   authorizeBridge,
   bridgeErrorStatus,
+  bridgeParticipantFromRequest,
   requireBridgeParticipantId
 } from "@/lib/bridge-auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -18,7 +20,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    return NextResponse.json(await loadCafe(getSupabaseAdmin()));
+    const participantId = bridgeParticipantFromRequest(request);
+    return NextResponse.json(await loadCafeForExternalParticipant(getSupabaseAdmin(), participantId));
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },

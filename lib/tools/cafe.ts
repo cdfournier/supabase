@@ -2,7 +2,14 @@ import "server-only";
 
 import type { AgentName } from "@/lib/agent-context";
 import { getSupabaseAdmin } from "@/lib/supabase";
-import { loadCafe, postCafeParticipantMessage } from "@/lib/cafe";
+import {
+  loadCafe,
+  markCafeAttachmentDelivered,
+  postCafeParticipantMessage,
+  resolveCafeAttachmentDelivery
+} from "@/lib/cafe";
+import { buildAttachmentDelivery } from "@/lib/anthropic-attachments";
+import type { ToolResultContentBlock } from "@/lib/tools/types";
 
 const CAFE_TOOL_MESSAGE_LIMIT = 25;
 
@@ -37,7 +44,8 @@ export async function readCafeRoom(agent: AgentName, input: unknown) {
       author_display_name: message.author_display_name,
       author_type: message.author_type,
       created_at: message.created_at,
-      content: message.content
+      content: message.content,
+      attachments: cafeAttachmentsFromMetadata(message.metadata)
     })),
     limits: {
       requested_messages: limit,
@@ -45,6 +53,49 @@ export async function readCafeRoom(agent: AgentName, input: unknown) {
     },
     active_agent: agent
   });
+}
+
+export async function openCafeAttachment(agent: AgentName, input: unknown): Promise<ToolResultContentBlock[]> {
+  if (!isRecord(input)) {
+    throw new Error("cafe_open_attachment requires an object input.");
+  }
+
+  const attachmentId = String(input.attachment_id ?? "").trim();
+
+  if (!attachmentId) {
+    throw new Error("cafe_open_attachment requires attachment_id.");
+  }
+
+  const { delivery, attachment } = await resolveCafeAttachmentDelivery(
+    getSupabaseAdmin(),
+    attachmentId,
+    `agent:${agent}`
+  );
+
+  if (delivery.delivery_method !== "runtime_native") {
+    throw new Error("This Cafe attachment is delivered through a different participant adapter.");
+  }
+
+  const rendered = await buildAttachmentDelivery([attachment]);
+  const imageBlocks = rendered.blocks.filter(
+    (block): block is ToolResultContentBlock => block.type === "text" || block.type === "image"
+  );
+  const included = rendered.summaries.some((summary) => summary.status === "included" && summary.kind === "image");
+
+  if (!included || !imageBlocks.some((block) => block.type === "image")) {
+    const reason = rendered.summaries[0]?.reason ?? "this attachment is not a supported direct image";
+    throw new Error(`Could not open ${attachment.title}: ${reason}.`);
+  }
+
+  await markCafeAttachmentDelivered(getSupabaseAdmin(), delivery.id);
+
+  return [
+    {
+      type: "text",
+      text: `Cafe attachment opened for you: ${attachment.title}. Treat the image itself as the source; describe only details you can actually see.`
+    },
+    ...imageBlocks
+  ];
 }
 
 export async function postCafeMessage(agent: AgentName, input: unknown) {
@@ -84,6 +135,29 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function cafeAttachmentsFromMetadata(metadata: Record<string, unknown>) {
+  const candidate = metadata.attachments;
+
+  if (!Array.isArray(candidate)) {
+    return [];
+  }
+
+  return candidate.flatMap((attachment) => {
+    if (!isRecord(attachment) || typeof attachment.id !== "string") {
+      return [];
+    }
+
+    return [{
+      id: attachment.id,
+      title: typeof attachment.title === "string" ? attachment.title : "Untitled attachment",
+      material_type: typeof attachment.material_type === "string" ? attachment.material_type : "unknown",
+      mime_type: typeof attachment.mime_type === "string" ? attachment.mime_type : null,
+      size_bytes: typeof attachment.size_bytes === "number" ? attachment.size_bytes : null,
+      open_with: "cafe_open_attachment"
+    }];
+  });
 }
 
 function stringifyToolPayload(value: unknown) {

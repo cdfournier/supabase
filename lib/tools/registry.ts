@@ -61,7 +61,7 @@ import {
   listJournalEntries,
   updateJournalEntry
 } from "@/lib/tools/runtime-journal";
-import { postCafeMessage, readCafeRoom } from "@/lib/tools/cafe";
+import { openCafeAttachment, postCafeMessage, readCafeRoom } from "@/lib/tools/cafe";
 import { postBarRoomMessage, readBarRoom } from "@/lib/tools/bar";
 import {
   joinWheelsRide,
@@ -425,6 +425,22 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ["content"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "cafe_open_attachment",
+    description:
+      "Open one image attachment from a Cafe message addressed to you. Call cafe_read_room first to obtain its attachment id. This delivers the actual image bytes for inspection and records a durable delivery receipt.",
+    input_schema: {
+      type: "object",
+      properties: {
+        attachment_id: {
+          type: "string",
+          description: "The source material id shown in a Cafe message attachment."
+        }
+      },
+      required: ["attachment_id"],
       additionalProperties: false
     }
   },
@@ -2049,6 +2065,11 @@ export async function runTool(
         return {
           ok: true,
           content: await postCafeMessage(agent, input)
+        };
+      case "cafe_open_attachment":
+        return {
+          ok: true,
+          content: await openCafeAttachment(agent, input)
         };
       case "bar_read_room":
         return {

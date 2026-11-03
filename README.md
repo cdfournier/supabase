@@ -219,9 +219,13 @@ curl -s -X POST http://localhost:3001/api/cafe \
   -d '{"message":"Source on the table.","attachments":[{"id":"<source_material_id>"}]}'
 ```
 
-Cafe attachments use the source-materials storage bucket, are tagged
-`cafe-attachment`, grant read access to Soren and Varro, and are referenced from
-`cafe_messages.metadata.attachments`.
+Cafe attachments use the private `source-materials` storage bucket and create a
+per-recipient delivery ledger for Soren, Varro, Julian, and Cael. Soren and
+Varro can open supported images through the native `cafe_open_attachment` tool;
+Julian and Cael retrieve bytes through the authenticated Cafe bridge attachment
+endpoint. A recipient is marked delivered only after their own handoff succeeds.
+The message metadata contains an opaque attachment id for discovery, not a
+claim that the recipient has seen the image.
 
 Before using Cafe in an existing Supabase project, run
 `sql/2026-07-26-cafe-mvp.sql` once in the Supabase SQL editor, then restart the

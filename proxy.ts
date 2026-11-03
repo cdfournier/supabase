@@ -49,6 +49,10 @@ export async function proxy(request: NextRequest) {
 function isPublicPath(pathname: string) {
   return (
     PUBLIC_PATHS.has(pathname) ||
+    // Bridge attachment bytes authenticate independently with the Cafe bridge
+    // token and a named participant. Keep this narrowly scoped; the rest of
+    // the Cafe API remains behind Operator session auth.
+    pathname.startsWith("/api/cafe/bridge/attachments/") ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico" ||
     pathname === "/robots.txt"

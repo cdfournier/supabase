@@ -327,6 +327,7 @@ const TOOL_SURFACES: Record<string, ToolSurfaceRule> = {
   operator_note_mark_read: { surface: "operator_notes", action: "write" },
   cafe_read_room: { surface: "cafe", action: "read" },
   cafe_post_message: { surface: "cafe", action: "write" },
+  cafe_open_attachment: { surface: "cafe", action: "read" },
   bar_read_room: { surface: "bar", action: "read" },
   bar_post_message: { surface: "bar", action: "write" },
   // WHEELS room chat uses the existing BAR-style shared-room permission.
