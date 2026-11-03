@@ -106,6 +106,52 @@ create table if not exists public.free_moment_scheduler_events (
 create index if not exists free_moment_scheduler_events_by_created
   on public.free_moment_scheduler_events (created_at desc);
 
+-- Durable ordinary-turn receipts. These are distinct from Free Moment runs so
+-- cancellation, force-stop, and delivery trails remain inspectable for every
+-- prompted runtime turn.
+create table if not exists public.runtime_turn_runs (
+  id uuid primary key,
+  agent text not null references public.agents(name),
+  source text not null,
+  status text not null default 'running',
+  phase text not null default 'preparing',
+  started_at timestamptz not null default now(),
+  cancellation_requested_at timestamptz,
+  cancellation_mode text,
+  cancellation_reason text,
+  last_activity jsonb not null default '{}'::jsonb,
+  completed_at timestamptz,
+  error text,
+  metadata jsonb not null default '{}'::jsonb,
+  constraint runtime_turn_runs_status_check check (
+    status in ('running', 'cancellation_requested', 'force_stopping', 'completed', 'cancelled', 'forced_stop', 'failed', 'interrupted')
+  ),
+  constraint runtime_turn_runs_phase_check check (
+    phase in ('preparing', 'model', 'tool', 'wrap_up', 'finished')
+  ),
+  constraint runtime_turn_runs_cancellation_mode_check check (
+    cancellation_mode is null or cancellation_mode in ('graceful', 'force')
+  )
+);
+
+create index if not exists runtime_turn_runs_by_agent_started
+  on public.runtime_turn_runs (agent, started_at desc);
+
+create index if not exists runtime_turn_runs_by_status_started
+  on public.runtime_turn_runs (status, started_at desc);
+
+create table if not exists public.runtime_turn_events (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references public.runtime_turn_runs(id) on delete cascade,
+  event_type text not null,
+  message text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists runtime_turn_events_by_run
+  on public.runtime_turn_events (run_id, created_at asc);
+
 create table if not exists public.agent_wake_appointment_policies (
   agent text primary key references public.agents(name) on delete cascade,
   enabled boolean not null default false,
@@ -783,6 +829,8 @@ alter table public.runtime_settings enable row level security;
 alter table public.free_moment_runs enable row level security;
 alter table public.free_moment_run_events enable row level security;
 alter table public.free_moment_scheduler_events enable row level security;
+alter table public.runtime_turn_runs enable row level security;
+alter table public.runtime_turn_events enable row level security;
 alter table public.agent_wake_appointment_policies enable row level security;
 alter table public.agent_wake_appointments enable row level security;
 alter table public.agent_wake_appointment_events enable row level security;
