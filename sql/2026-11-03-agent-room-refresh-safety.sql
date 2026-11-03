@@ -304,7 +304,7 @@ begin
 
   update public.conversations as conversation_row
   set
-    compaction_count = coalesce(compaction_count, 0) + 1,
+    compaction_count = coalesce(conversation_row.compaction_count, 0) + 1,
     updated_at = now()
   where conversation_row.id = p_conversation_id
   returning conversation_row.compaction_count into v_next_compaction_count;

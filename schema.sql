@@ -956,7 +956,7 @@ begin
          then 'Agent sent the approved Room Refresh.' else 'Operator sent the reviewed Room Refresh.' end);
   end if;
 
-  update public.conversations as conversation_row set compaction_count = coalesce(compaction_count, 0) + 1,
+  update public.conversations as conversation_row set compaction_count = coalesce(conversation_row.compaction_count, 0) + 1,
     updated_at = now() where conversation_row.id = p_conversation_id
   returning conversation_row.compaction_count into v_next_compaction_count;
   return query select p_checkpoint_id, v_current_max_position + 1,
