@@ -839,24 +839,24 @@ declare
   v_revision_number int;
 begin
   select * into v_existing
-  from public.compaction_proposals
-  where id = p_proposal_id and agent = p_agent
+  from public.compaction_proposals as proposal_row
+  where proposal_row.id = p_proposal_id and proposal_row.agent = p_agent
   for update;
   if not found then
     raise exception 'No matching active-Agent Room Note found.';
   end if;
 
-  update public.compaction_proposals
+  update public.compaction_proposals as proposal_row
   set
     proposal = coalesce(p_proposal, v_existing.proposal),
     agent_notes = coalesce(p_agent_notes, v_existing.agent_notes),
     status = coalesce(p_status, v_existing.status),
     updated_at = now()
-  where id = p_proposal_id
+  where proposal_row.id = p_proposal_id
   returning * into v_existing;
 
   select coalesce(max(revision_number), 0) + 1 into v_revision_number
-  from public.compaction_proposal_revisions where proposal_id = p_proposal_id;
+  from public.compaction_proposal_revisions as revision_row where revision_row.proposal_id = p_proposal_id;
 
   insert into public.compaction_proposal_revisions
     (proposal_id, agent, revision_number, proposal, agent_notes, status, change_reason)
@@ -896,12 +896,12 @@ declare
   v_next_compaction_count int;
   v_next_proposal_revision int;
 begin
-  perform 1 from public.conversations
-  where id = p_conversation_id and agent = p_agent for update;
+  perform 1 from public.conversations as conversation_row
+  where conversation_row.id = p_conversation_id and conversation_row.agent = p_agent for update;
   if not found then raise exception 'Room Refresh conversation is unavailable.'; end if;
 
-  select * into v_archive from public.compaction_archives
-  where id = p_archive_id and agent = p_agent and conversation_id = p_conversation_id
+  select * into v_archive from public.compaction_archives as archive_row
+  where archive_row.id = p_archive_id and archive_row.agent = p_agent and archive_row.conversation_id = p_conversation_id
   for update;
   if not found then raise exception 'Room Refresh archive is unavailable.'; end if;
   if v_archive.archive_status <> 'ready' then
@@ -910,15 +910,15 @@ begin
 
   select count(*), coalesce(max(position), -1)
   into v_archived_count, v_archived_end_position
-  from public.compaction_archive_messages where archive_id = p_archive_id;
+  from public.compaction_archive_messages as archived_message where archived_message.archive_id = p_archive_id;
   if v_archived_count <> v_archive.message_count
      or v_archived_end_position is distinct from coalesce(v_archive.source_end_position, -1) then
     raise exception 'Room Refresh archive integrity check failed.';
   end if;
 
   if p_proposal_id is not null then
-    select * into v_proposal from public.compaction_proposals
-    where id = p_proposal_id and agent = p_agent and conversation_id = p_conversation_id
+    select * into v_proposal from public.compaction_proposals as proposal_row
+    where proposal_row.id = p_proposal_id and proposal_row.agent = p_agent and proposal_row.conversation_id = p_conversation_id
     for update;
     if not found then raise exception 'Room Refresh proposal is unavailable.'; end if;
     if p_require_agent_approval and v_proposal.status <> 'agent_approved' then
@@ -927,7 +927,7 @@ begin
   end if;
 
   select coalesce(max(position), -1) into v_current_max_position
-  from public.conversation_messages where conversation_id = p_conversation_id;
+  from public.conversation_messages as message_row where message_row.conversation_id = p_conversation_id;
   if v_current_max_position is distinct from coalesce(v_archive.source_end_position, -1) then
     raise exception 'Room Refresh source window changed after archive; create a fresh Room Review.';
   end if;
@@ -937,17 +937,17 @@ begin
   values
     (p_checkpoint_id, p_conversation_id, v_current_max_position + 1, 'assistant', to_jsonb(p_checkpoint_content));
 
-  update public.compaction_archives set
+  update public.compaction_archives as archive_row set
     checkpoint_message_id = p_checkpoint_id,
     archive_status = 'completed', completed_at = now(), failure_reason = null,
     orientation_status = case when p_require_agent_approval then 'pending' else 'not_requested' end
-  where id = p_archive_id;
+  where archive_row.id = p_archive_id;
 
   if p_proposal_id is not null then
-    update public.compaction_proposals set status = 'room_refreshed', updated_at = now()
-    where id = p_proposal_id;
+    update public.compaction_proposals as proposal_row set status = 'room_refreshed', updated_at = now()
+    where proposal_row.id = p_proposal_id;
     select coalesce(max(revision_number), 0) + 1 into v_next_proposal_revision
-    from public.compaction_proposal_revisions where proposal_id = p_proposal_id;
+    from public.compaction_proposal_revisions as revision_row where revision_row.proposal_id = p_proposal_id;
     insert into public.compaction_proposal_revisions
       (proposal_id, agent, revision_number, proposal, agent_notes, status, change_reason)
     values
@@ -956,9 +956,9 @@ begin
          then 'Agent sent the approved Room Refresh.' else 'Operator sent the reviewed Room Refresh.' end);
   end if;
 
-  update public.conversations set compaction_count = coalesce(compaction_count, 0) + 1,
-    updated_at = now() where id = p_conversation_id
-  returning compaction_count into v_next_compaction_count;
+  update public.conversations as conversation_row set compaction_count = coalesce(compaction_count, 0) + 1,
+    updated_at = now() where conversation_row.id = p_conversation_id
+  returning conversation_row.compaction_count into v_next_compaction_count;
   return query select p_checkpoint_id, v_current_max_position + 1,
     v_next_compaction_count, 'completed'::text;
 end;
