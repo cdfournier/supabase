@@ -933,9 +933,9 @@ begin
   end if;
 
   insert into public.conversation_messages
-    (id, conversation_id, position, role, content)
+    (id, conversation_id, position, role, source, content)
   values
-    (p_checkpoint_id, p_conversation_id, v_current_max_position + 1, 'assistant', to_jsonb(p_checkpoint_content));
+    (p_checkpoint_id, p_conversation_id, v_current_max_position + 1, 'assistant', 'room_refresh', to_jsonb(p_checkpoint_content));
 
   update public.compaction_archives as archive_row set
     checkpoint_message_id = p_checkpoint_id,
