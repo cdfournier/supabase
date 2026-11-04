@@ -43,6 +43,15 @@ larger architectural tracks stay visible without becoming today's obligation.
 
 ## Active Roadmap
 
+### Room Refresh capacity arrivals
+
+- [x] Agent-owned Room Refresh archive/checkpoint/orientation safety path.
+- [x] Preview QA of both successful refresh and stale-source refusal.
+- [ ] Durable 90% / 95% / 100% capacity-arrival lane, preview QA, then
+  production rollout. It must remain Agent-owned, use the existing
+  `compaction: write` capability as its standing enablement, and preserve a
+  clear receipt when required maintenance cannot settle.
+
 ### 1. Agent Capability Profile V1
 
 Status: first implementation slice in progress.

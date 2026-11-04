@@ -1260,6 +1260,32 @@ Room Refresh is complete. Orient from the refreshed room. Review your current st
 
 The linked archive records `orientation_status`, the orientation assistant message id, completion time, and any delivery error. An Operator normally only needs to inspect these receipts or intervene after a failed safeguard.
 
+### Capacity arrivals (feature branch / preview first)
+
+The next Room Refresh increment adds a durable capacity-arrival lane for Agents
+whose existing `compaction` capability has deliberately been granted `write`.
+It does not silently elevate a `draft`-only Agent, and it does not create a
+second archive or checkpoint implementation. It calls the same Agent-owned
+Room Review → Room Note → verified refresh path above.
+
+- At 90% of the current 120,000-character active-room ceiling (108,000
+  characters), the runtime sends one dedicated, skippable Room Review
+  invitation.
+- At 95% (114,000 characters), it sends one clearer, still-skippable Room
+  Refresh invitation.
+- At 100% (120,000 characters), it runs a dedicated maintenance-only turn
+  before ordinary new work. The Agent cannot skip the process, but must still
+  make honest decisions about state, memories, and the Room Note; no system
+  compaction or invented summary is permitted.
+
+Each arrival is keyed to the Agent, conversation, and latest checkpoint
+position, so a successful refresh starts a fresh cycle and an earlier notice
+does not nag repeatedly. `room_refresh_trigger_receipts` and its event trail
+record claims, delivery, completion, maintenance-pending outcomes, and failures.
+The 100% maintenance turn exposes only continuity and Room Refresh tools. If it
+cannot finish, ordinary work remains paused and the receipt names the real
+blocker for Operator intervention.
+
 Preview validation — November 3, 2026: a disposable Soren QA room preserved a
 10-message archive, retained the compiler original plus an agent-approved
 revision, completed its agent-owned Room Refresh, and delivered the linked

@@ -48,6 +48,13 @@ import {
 } from "@/lib/source-materials-shared";
 import { runTool, toolDefinitions } from "@/lib/tools/registry";
 import { isCurrentWheelsDriver } from "@/lib/tools/wheels";
+import {
+  claimRoomRefreshTrigger,
+  completeRoomRefreshTrigger,
+  hasRequiredRoomRefreshMaintenance,
+  ROOM_REFRESH_NUDGE_TOOLS,
+  type RoomRefreshTriggerClaim
+} from "@/lib/room-refresh-triggers";
 
 type AnthropicMessage = {
   role: "user" | "assistant";
@@ -135,6 +142,8 @@ export type SendAgentMessageOptions = {
   attachments?: AttachmentInput[];
   onToolActivity?: (activity: RuntimeToolActivity) => void;
   cancellation?: RuntimeTurnCancellation;
+  /** Restrict a system-maintenance turn to an explicit, server-enforced tool set. */
+  allowedToolNames?: readonly string[];
   /**
    * Free Moment-only bound, counted per requested tool action. `null` means
    * the Operator selected No cap. Omit for ordinary chat and other sources.
@@ -177,6 +186,9 @@ export async function sendAgentMessage(
 
   const supabase = getSupabaseAdmin();
   const conversationId = await ensureConversation(supabase, agent);
+  if (shouldGateForRequiredRoomRefresh(source)) {
+    await settleRequiredRoomRefreshBeforeOrdinaryWork(agent, conversationId);
+  }
   const turnId = options.turnId ?? randomUUID();
   const existingMessages = await loadConversationMessages(supabase, conversationId);
   const checkpoint = latestCompactionCheckpoint(existingMessages);
@@ -219,7 +231,7 @@ export async function sendAgentMessage(
     }));
 
   const attachmentDelivery = await buildAttachmentDelivery(attachmentRefs);
-  const messageForModel = source === "free_time" || source === "work_packet_signal" || source === "operator_note_wake" || source === "agent_authored_wake" || source === "live_session" || source === "room_refresh_orientation"
+  const messageForModel = source === "free_time" || source === "work_packet_signal" || source === "operator_note_wake" || source === "agent_authored_wake" || source === "live_session" || source === "room_refresh_orientation" || source === "room_refresh_capacity" || source === "room_refresh_maintenance"
     ? messageWithContextReceipt(message, contextReceipt)
     : message;
   const modelMessage = buildAttachmentPromptTextWithDelivery(
@@ -253,7 +265,8 @@ export async function sendAgentMessage(
     source,
     onToolActivity: options.onToolActivity,
     cancellation: options.cancellation,
-    freeMomentActionLimit: options.freeMomentActionLimit
+    freeMomentActionLimit: options.freeMomentActionLimit,
+    allowedToolNames: options.allowedToolNames
   });
 
   const assistantText = extractAssistantText(data);
@@ -337,6 +350,10 @@ export async function sendAgentMessage(
       conversationId,
       toolEvents
     });
+  }
+
+  if (!isRoomRefreshTriggerSource(source)) {
+    await deliverRoomRefreshCapacityTrigger(agent, conversationId);
   }
 
   return {
@@ -438,6 +455,66 @@ async function deliverQueuedRoomRefreshOrientation({
   }
 }
 
+const ROOM_REFRESH_TRIGGER_SOURCES = new Set([
+  "room_refresh_capacity",
+  "room_refresh_maintenance"
+]);
+
+function isRoomRefreshTriggerSource(source: string) {
+  return ROOM_REFRESH_TRIGGER_SOURCES.has(source);
+}
+
+function shouldGateForRequiredRoomRefresh(source: string) {
+  return !isRoomRefreshTriggerSource(source) && source !== "room_refresh_orientation";
+}
+
+async function deliverRoomRefreshCapacityTrigger(agent: AgentName, conversationId: string) {
+  if (!(await hasCompactionWriteAccess(agent))) {
+    return;
+  }
+  const trigger = await claimRoomRefreshTrigger(agent, conversationId);
+  if (!trigger) {
+    return;
+  }
+  await deliverRoomRefreshTrigger(agent, trigger);
+}
+
+async function settleRequiredRoomRefreshBeforeOrdinaryWork(agent: AgentName, conversationId: string) {
+  if (!(await hasCompactionWriteAccess(agent))) {
+    return;
+  }
+  const trigger = await claimRoomRefreshTrigger(agent, conversationId, { maintenanceOnly: true });
+  if (trigger) {
+    await deliverRoomRefreshTrigger(agent, trigger);
+  }
+  if (await hasRequiredRoomRefreshMaintenance(agent, conversationId)) {
+    throw new Error("Room Refresh maintenance is required before this agent can begin ordinary work.");
+  }
+}
+
+async function deliverRoomRefreshTrigger(agent: AgentName, trigger: RoomRefreshTriggerClaim) {
+  try {
+    const result = await sendAgentMessage(agent, trigger.prompt, {
+      source: trigger.maintenance ? "room_refresh_maintenance" : "room_refresh_capacity",
+      ...(trigger.maintenance ? { allowedToolNames: ROOM_REFRESH_NUDGE_TOOLS } : {})
+    });
+    await completeRoomRefreshTrigger(trigger, {
+      refreshed: result.tool_events.some(
+        (event) => event.ok && event.tool_name === "supabase_send_room_refresh"
+      )
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Room Refresh trigger delivery error.";
+    await completeRoomRefreshTrigger(trigger, { refreshed: false, error: message });
+    throw error;
+  }
+}
+
+async function hasCompactionWriteAccess(agent: AgentName) {
+  const profile = await loadAgentCapabilityProfile(getSupabaseAdmin(), agent);
+  return isSurfaceAllowed(profile, "compaction", "write");
+}
+
 export class EmptyAssistantResponseError extends Error {
   constructor() {
     super("Anthropic response did not include text content.");
@@ -454,7 +531,8 @@ async function runAnthropicToolLoop({
   source,
   onToolActivity,
   cancellation,
-  freeMomentActionLimit: requestedFreeMomentActionLimit
+  freeMomentActionLimit: requestedFreeMomentActionLimit,
+  allowedToolNames
 }: {
   apiKey: string;
   agent: AgentName;
@@ -466,6 +544,7 @@ async function runAnthropicToolLoop({
   onToolActivity?: (activity: RuntimeToolActivity) => void;
   cancellation?: RuntimeTurnCancellation;
   freeMomentActionLimit?: FreeMomentActionLimit;
+  allowedToolNames?: readonly string[];
 }): Promise<ToolLoopResult> {
   const model = modelForAgent(agent);
   const maxTokens = maxResponseTokens();
@@ -491,6 +570,9 @@ async function runAnthropicToolLoop({
     filterToolsForAgent(supabase, agent, toolDefinitions)
   ]);
   const hasWheelsDrivePermission = isSurfaceAllowed(profile, "wheels", "write");
+  const availableTools = allowedToolNames
+    ? tools.filter((tool) => allowedToolNames.includes(tool.name))
+    : tools;
 
   for (let round = 0; ; round += 1) {
     throwIfForceStopped(cancellation);
@@ -551,7 +633,7 @@ async function runAnthropicToolLoop({
       maxTokens,
       system,
       messages,
-      tools,
+      tools: availableTools,
       signal: cancellation?.signal,
       source
     });
@@ -570,7 +652,7 @@ async function runAnthropicToolLoop({
       request: {
         maxTokens,
         messageCount,
-        toolCount: tools.length
+        toolCount: availableTools.length
       }
     });
     const toolUses = toolUseBlocks(data);
