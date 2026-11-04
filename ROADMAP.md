@@ -229,7 +229,9 @@ Requirements:
 
 ### 6. Usage, Cost, And Cache Accounting
 
-Status: first implementation slice landed; budget UX still planned.
+Status: raw provider-neutral ledger is landed. Decision-support expansion is
+in preview: time-window rollups, immutable rate snapshots, cache/latency and
+cold-start diagnostics, and advisory-only budget policy records.
 
 Purpose: make runtime cost and pressure visible before autonomous activity grows.
 
@@ -245,7 +247,9 @@ Scope:
 - Add conversation-level and agent-level totals. Agent and global totals are in
   `/api/health`; richer conversation panels remain future work.
 - Surface cache and token totals in `/api/health`.
-- Add warning thresholds before expensive operations.
+- Add warning thresholds before expensive operations. Thresholds must remain
+  advisory in the current runtime: they inform an Operator decision and never
+  silently block an Agent or a turn.
 - Track search/fetch/tool usage counts.
 - Consider per-agent budget panels.
 - Add rough cost estimates through pricing adapters only after raw usage logging

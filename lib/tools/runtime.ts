@@ -16,7 +16,12 @@ import {
   filterToolsForAgent,
   loadAgentCapabilityProfile
 } from "@/lib/capability-profile";
-import { loadRecentUsageEvents, loadUsageTotals } from "@/lib/model-usage";
+import {
+  loadRecentUsageEvents,
+  loadUsageBudgetStatus,
+  loadUsageTotals,
+  loadUsageWindows
+} from "@/lib/model-usage";
 import {
   createOperatorNote,
   getOperatorNote,
@@ -85,7 +90,11 @@ export async function getRuntimeUsage(agent: AgentName, input: unknown) {
     MAX_USAGE_EVENT_LIMIT
   );
   const supabase = getSupabaseAdmin();
-  const totals = await loadUsageTotals(supabase, agent);
+  const [totals, windows, budgets] = await Promise.all([
+    loadUsageTotals(supabase, agent),
+    loadUsageWindows(supabase, agent),
+    loadUsageBudgetStatus(supabase, agent)
+  ]);
   const recent = includeRecent
     ? await loadRecentUsageEvents(supabase, agent, limit)
     : { table_present: totals.table_present, error: null, events: [] };
@@ -96,6 +105,8 @@ export async function getRuntimeUsage(agent: AgentName, input: unknown) {
     agent,
     scope: "active_agent_only",
     totals,
+    windows,
+    advisory_budgets: budgets,
     recent_events: recent.events,
     recent_error: recent.error,
     limits: {

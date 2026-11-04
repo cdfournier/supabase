@@ -28,6 +28,11 @@ import {
 } from "@/lib/free-moment-action-budget";
 import { latestCompactionCheckpoint, messagesAfterCheckpoint } from "@/lib/compaction";
 import { recordModelUsage } from "@/lib/model-usage";
+import {
+  beginModelRequest,
+  elapsedModelRequestMs,
+  type ModelRequestMeasurement
+} from "@/lib/runtime-instance";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
   shouldSettleAfterToolUse,
@@ -451,16 +456,36 @@ async function runAnthropicToolLoop({
 
     const messageCount = messages.length;
     cancellation?.onPhaseChange?.("model");
-    const data = await callAnthropic({
-      apiKey,
-      model,
-      maxTokens,
-      system,
-      messages,
-      tools,
-      signal: cancellation?.signal,
-      source
-    });
+    const measurement = beginModelRequest("anthropic", model);
+    let data: AnthropicResponse;
+    try {
+      data = await callAnthropic({
+        apiKey,
+        model,
+        maxTokens,
+        system,
+        messages,
+        tools,
+        signal: cancellation?.signal,
+        source
+      });
+    } catch (error) {
+      await recordFailedModelUsage({
+        agent,
+        conversationId,
+        turnId,
+        source,
+        operation: "chat_tool_loop",
+        round,
+        model,
+        maxTokens,
+        messageCount,
+        toolCount: tools.length,
+        measurement,
+        error
+      });
+      throw error;
+    }
     await recordModelUsage(getSupabaseAdmin(), {
       provider: "anthropic",
       model: data.model || model,
@@ -473,6 +498,9 @@ async function runAnthropicToolLoop({
       providerRequestId: data.id ?? null,
       stopReason: data.stop_reason ?? null,
       usage: data.usage,
+      runtimeInstanceId: measurement.runtimeInstanceId,
+      coldStart: measurement.coldStart,
+      latencyMs: elapsedModelRequestMs(measurement),
       request: {
         maxTokens,
         messageCount,
@@ -832,16 +860,36 @@ async function settleAfterCancellation({
       content: cancellationClosingPrompt(source)
     }
   ];
-  const settlementData = await callAnthropic({
-    apiKey,
-    model,
-    maxTokens,
-    system,
-    messages: settlementMessages,
-    tools: [],
-    signal: cancellation?.signal,
-    source
-  });
+  const measurement = beginModelRequest("anthropic", model);
+  let settlementData: AnthropicResponse;
+  try {
+    settlementData = await callAnthropic({
+      apiKey,
+      model,
+      maxTokens,
+      system,
+      messages: settlementMessages,
+      tools: [],
+      signal: cancellation?.signal,
+      source
+    });
+  } catch (error) {
+    await recordFailedModelUsage({
+      agent,
+      conversationId,
+      turnId,
+      source,
+      operation: "chat_tool_loop_cancel_close",
+      round: null,
+      model,
+      maxTokens,
+      messageCount: settlementMessages.length,
+      toolCount: 0,
+      measurement,
+      error
+    });
+    throw error;
+  }
 
   await recordModelUsage(getSupabaseAdmin(), {
     provider: "anthropic",
@@ -855,6 +903,9 @@ async function settleAfterCancellation({
     providerRequestId: settlementData.id ?? null,
     stopReason: settlementData.stop_reason ?? null,
     usage: settlementData.usage,
+    runtimeInstanceId: measurement.runtimeInstanceId,
+    coldStart: measurement.coldStart,
+    latencyMs: elapsedModelRequestMs(measurement),
     request: {
       maxTokens,
       messageCount: settlementMessages.length,
@@ -964,16 +1015,36 @@ async function settleAfterToolLimit({
       )
     : withToolLimitSettlementPrompt(messages, maxRounds ?? 0, blockedToolNames);
   cancellation?.onPhaseChange?.("model");
-  const settlementData = await callAnthropic({
-    apiKey,
-    model,
-    maxTokens,
-    system,
-    messages: settlementMessages,
-    tools: [],
-    signal: cancellation?.signal,
-    source
-  });
+  const measurement = beginModelRequest("anthropic", model);
+  let settlementData: AnthropicResponse;
+  try {
+    settlementData = await callAnthropic({
+      apiKey,
+      model,
+      maxTokens,
+      system,
+      messages: settlementMessages,
+      tools: [],
+      signal: cancellation?.signal,
+      source
+    });
+  } catch (error) {
+    await recordFailedModelUsage({
+      agent,
+      conversationId,
+      turnId,
+      source,
+      operation: "chat_tool_loop_settle_after_limit",
+      round: round + 1,
+      model,
+      maxTokens,
+      messageCount: settlementMessages.length,
+      toolCount: 0,
+      measurement,
+      error
+    });
+    throw error;
+  }
   await recordModelUsage(getSupabaseAdmin(), {
     provider: "anthropic",
     model: settlementData.model || model,
@@ -986,6 +1057,9 @@ async function settleAfterToolLimit({
     providerRequestId: settlementData.id ?? null,
     stopReason: settlementData.stop_reason ?? null,
     usage: settlementData.usage,
+    runtimeInstanceId: measurement.runtimeInstanceId,
+    coldStart: measurement.coldStart,
+    latencyMs: elapsedModelRequestMs(measurement),
     request: {
       maxTokens,
       messageCount: settlementMessages.length,
@@ -1476,6 +1550,60 @@ class FreeMomentRequestTimeoutError extends Error {
     super(`Free Moment provider request timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`);
     this.name = "FreeMomentRequestTimeoutError";
   }
+}
+
+async function recordFailedModelUsage(input: {
+  agent: AgentName;
+  conversationId: string;
+  turnId: string;
+  source: string;
+  operation: string;
+  round: number | null;
+  model: string;
+  maxTokens: number;
+  messageCount: number;
+  toolCount: number;
+  measurement: ModelRequestMeasurement;
+  error: unknown;
+}) {
+  const error = asError(input.error);
+  await recordModelUsage(getSupabaseAdmin(), {
+    provider: "anthropic",
+    model: input.model,
+    agent: input.agent,
+    conversationId: input.conversationId,
+    turnId: input.turnId,
+    source: input.source,
+    operation: input.operation,
+    round: input.round,
+    ok: false,
+    coldStart: input.measurement.coldStart,
+    runtimeInstanceId: input.measurement.runtimeInstanceId,
+    latencyMs: elapsedModelRequestMs(input.measurement),
+    failureKind: anthropicFailureKind(error),
+    usage: {},
+    request: {
+      maxTokens: input.maxTokens,
+      messageCount: input.messageCount,
+      toolCount: input.toolCount
+    }
+  });
+}
+
+function anthropicFailureKind(error: Error) {
+  if (error instanceof FreeMomentRequestTimeoutError) {
+    return "timeout";
+  }
+  if (error instanceof AnthropicResponseError) {
+    return `http_${error.status}`;
+  }
+  if (error.name === "AbortError") {
+    return "aborted";
+  }
+  if (error.name === "TypeError") {
+    return "transport";
+  }
+  return "unknown";
 }
 
 function isRetryableAnthropicFailure(error: Error) {

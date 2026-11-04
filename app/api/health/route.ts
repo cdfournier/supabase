@@ -19,7 +19,8 @@ import {
   filterToolsForAgent,
   loadAgentCapabilityProfile
 } from "@/lib/capability-profile";
-import { loadUsageTotals } from "@/lib/model-usage";
+import { loadUsageBudgetStatus, loadUsageTotals, loadUsageWindows } from "@/lib/model-usage";
+import { runtimeInstanceStatus } from "@/lib/runtime-instance";
 import { statusWithSettings as freeMomentsStatusWithSettings } from "@/lib/free-time";
 import { statusWithSettings as operatorNoteWakeStatusWithSettings } from "@/lib/operator-note-wakes";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -51,11 +52,13 @@ export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
     const agents = await loadAgentList(supabase);
-    const [freeMomentsStatus, workPacketSignalsStatus, operatorNoteWakeStatus, usage] = await Promise.all([
+    const [freeMomentsStatus, workPacketSignalsStatus, operatorNoteWakeStatus, usage, usageWindows, budgetStatus] = await Promise.all([
       freeMomentsStatusWithSettings().catch(() => null),
       workPacketSignalsStatusWithSettings().catch(() => null),
       operatorNoteWakeStatusWithSettings().catch(() => null),
-      loadUsageTotals(supabase)
+      loadUsageTotals(supabase),
+      loadUsageWindows(supabase),
+      loadUsageBudgetStatus(supabase)
     ]);
     const agentHealth = [];
 
@@ -83,7 +86,8 @@ export async function GET() {
         work_packet_signals_enabled: workPacketSignalsStatus?.durable_enabled === true,
         work_packet_signals_running: workPacketSignalsStatus?.running === true,
         work_packet_signal_wakes_enabled: workPacketSignalsStatus?.wake_durable_enabled === true,
-        operator_note_wakes_enabled: operatorNoteWakeStatus?.durable_enabled === true
+        operator_note_wakes_enabled: operatorNoteWakeStatus?.durable_enabled === true,
+        runtime_instance: runtimeInstanceStatus()
       },
       env: {
         supabase_url: present("NEXT_PUBLIC_SUPABASE_URL"),
@@ -106,6 +110,8 @@ export async function GET() {
         pressure_basis: "approximate saved conversation character count; not tokenizer-accurate"
       },
       usage,
+      usage_windows: usageWindows,
+      usage_budgets: budgetStatus,
       agents: agentHealth
     });
   } catch (error) {
@@ -213,7 +219,11 @@ async function buildAgentHealth(
     : ((archiveResult.data?.[0] ?? null) as ArchiveHealthRow | null);
   const capabilityProfile = await loadAgentCapabilityProfile(supabase, agent);
   const availableTools = await filterToolsForAgent(supabase, agent, toolDefinitions);
-  const usage = await loadUsageTotals(supabase, agent);
+  const [usage, usageWindows, usageBudgets] = await Promise.all([
+    loadUsageTotals(supabase, agent),
+    loadUsageWindows(supabase, agent),
+    loadUsageBudgetStatus(supabase, agent)
+  ]);
 
   return {
     agent,
@@ -269,6 +279,8 @@ async function buildAgentHealth(
       blocked_tool_count: toolDefinitions.length - availableTools.length
     },
     usage,
+    usage_windows: usageWindows,
+    usage_budgets: usageBudgets,
     memory: {
       rows: memoryResult.count ?? memoryResult.data?.length ?? 0,
       active_rows: activeMemories.length,

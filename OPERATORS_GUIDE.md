@@ -255,8 +255,17 @@ agent needs a quick "how much headroom do I have?" check; use `/api/health` for
 the Operator-wide dashboard.
 
 V1 records raw provider usage plus normalized input, output, cache-read, and
-cache-creation token fields. It does not estimate dollars yet. Add budget
-warnings and pricing adapters only after raw usage logging has stayed reliable.
+cache-creation token fields. `sql/2026-11-04-runtime-accounting-decision-support.sql`
+adds decision-support metadata: first-call-after-runtime-boot markers, latency,
+failure class, time-window rollups, and an immutable public-rate estimate on
+new events. The estimate is a planning aid, not an invoice; old events remain
+honestly unpriced rather than being retrospectively guessed.
+
+The same migration adds optional 24-hour or 7-day global/agent budget policies.
+They are disabled unless explicitly configured and are advisory only: a warning
+is visible in Runtime health but never blocks an Agent, a Free Moment, or a
+chat turn. Update pricing by inserting a new effective `model_pricing_rates`
+row rather than mutating a historical rate.
 
 ## Cafe
 
