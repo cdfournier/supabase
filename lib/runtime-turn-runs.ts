@@ -188,7 +188,12 @@ async function handleWriteError(error: { code?: string; message?: string } | nul
   if (!error) {
     return;
   }
-  if (error.code === "42P01" || /relation .*runtime_turn_(runs|events).* does not exist/i.test(error.message ?? "")) {
+  if (
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    /relation .*runtime_turn_(runs|events).* does not exist/i.test(error.message ?? "") ||
+    /could not find .*runtime_turn_(runs|events).*schema cache/i.test(error.message ?? "")
+  ) {
     receiptsUnavailable = true;
     if (!warnedAboutUnavailableReceipts) {
       warnedAboutUnavailableReceipts = true;
