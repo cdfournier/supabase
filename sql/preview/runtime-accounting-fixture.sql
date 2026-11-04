@@ -24,7 +24,7 @@ values (
   'soren',
   'This is a disposable preview QA environment with no production history.',
   'Soren is verifying that a normal runtime turn produces an honest, additive accounting record.',
-  'Await the Operator\'s narrow QA instruction. Keep the response concise and do not create durable production-like memories.',
+  'Await the Operator''s narrow QA instruction. Keep the response concise and do not create durable production-like memories.',
   'Do not create durable production-like memory in this fixture.'
 )
 on conflict (agent) do update
