@@ -118,6 +118,7 @@ to answer, use tools, take a Free Moment, or refresh a room.
 | **Cache reads** | The percentage of recent prompt tokens served from Anthropic's prompt cache in the last 24 hours. | Higher is generally better for repeated stable context. Low or zero is a clue to inspect cadence or cache boundaries, not automatically a defect. |
 | **Avg model latency** | Mean provider-call duration over the last 24 hours. | Compare broad changes over several calls; a single slow tool loop or cold start is not a diagnosis. |
 | **24h budget** | The selected Agent's optional 24-hour advisory policy: unset, within limit, warning, over advisory limit, or needing a rate. | Informative only. It never blocks a chat turn, tool call, Free Moment, or wake. Policies are currently configured in SQL, not from this panel. |
+| **Migration lane** | The latest deliberate model-comparison receipt for the selected Agent, including its environment, baseline, candidate, and status. | A receipt is evidence, not a switch. `none recorded` means no comparison has been logged; use the model-migration runbook before treating a preview test as decision-ready. |
 | **Tools** | Total registered tool definitions in this runtime build. | A runtime inventory count, not the selected Agent's allowed-tool count. Capability Profile determines what an Agent can actually use. |
 | **Output cap** | `ANTHROPIC_MAX_TOKENS`, the maximum output tokens for one model response. | If a long answer appears clipped, consider increasing it for a later test and restart the server. |
 | **Rounds** | `ANTHROPIC_MAX_TOOL_ROUNDS`, the per-turn tool-loop ceiling. | A safety boundary on iterative tool work; `none` means no explicit ceiling. |
@@ -301,6 +302,16 @@ They are disabled unless explicitly configured and are advisory only: a warning
 is visible in Runtime health but never blocks an Agent, a Free Moment, or a
 chat turn. Update pricing by inserting a new effective `model_pricing_rates`
 row rather than mutating a historical rate.
+
+## Model Migration Safety Lane
+
+`MODEL_MIGRATION_RUNBOOK.md` defines the preview-only comparison procedure.
+The runtime resolves an Agent's model from an explicit per-Agent override,
+then the shared default, then a built-in fallback. This selection is process
+configuration; it does not rewrite identity or continuity records. The
+`model_migration_receipts` table records an Operator-owned test plan and its
+outcome, while Runtime health shows the latest receipt for the selected Agent.
+No receipt promotes a model or changes a running lane.
 
 ## Cafe
 

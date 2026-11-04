@@ -33,6 +33,7 @@ import {
   elapsedModelRequestMs,
   type ModelRequestMeasurement
 } from "@/lib/runtime-instance";
+import { modelForAgent } from "@/lib/model-lanes";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
   shouldSettleAfterToolUse,
@@ -1707,14 +1708,6 @@ async function readAnthropicResponse(response: Response): Promise<AnthropicRespo
       message: `Anthropic returned invalid JSON (${response.status}).`
     };
   }
-}
-
-function modelForAgent(agent: AgentName) {
-  if (agent === "soren") {
-    return process.env.ANTHROPIC_MODEL_SOREN || process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
-  }
-
-  return process.env.ANTHROPIC_MODEL_VARRO || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 }
 
 function withToolInstructions(system: string, maxTokens: number) {

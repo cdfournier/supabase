@@ -511,6 +511,18 @@ type UsageBudgetStatus = {
   }>;
 };
 
+type ModelMigrationStatus = {
+  table_present: boolean;
+  error: string | null;
+  receipt: {
+    environment: "preview" | "production";
+    baseline_model: string;
+    candidate_model: string;
+    status: "planned" | "running" | "passed" | "failed" | "rolled_back" | "skipped";
+    completed_at: string | null;
+  } | null;
+};
+
 type AgentHealth = {
   agent: AgentName;
   model: string;
@@ -547,6 +559,7 @@ type AgentHealth = {
   usage?: UsageTotals;
   usage_windows?: UsageWindows;
   usage_budgets?: UsageBudgetStatus;
+  model_migration?: ModelMigrationStatus;
 };
 
 type CompactionPreview = {
@@ -4399,6 +4412,23 @@ function formatBudgetStatus(
   return `within advisory limit${percentage}`;
 }
 
+function formatModelMigrationStatus(migration: ModelMigrationStatus | undefined) {
+  if (!migration || !migration.table_present) {
+    return "schema needed";
+  }
+
+  if (migration.error) {
+    return "check receipt";
+  }
+
+  if (!migration.receipt) {
+    return "none recorded";
+  }
+
+  const { baseline_model: baseline, candidate_model: candidate, environment, status } = migration.receipt;
+  return `${environment}: ${baseline} → ${candidate} (${status})`;
+}
+
 function FreeMomentActivityAudit({
   onAction,
   requestInProgress,
@@ -8066,6 +8096,10 @@ function RuntimeHealthPanel({
             <div>
               <dt>24h budget</dt>
               <dd>{formatBudgetStatus(activeBudget)}</dd>
+            </div>
+            <div>
+              <dt>Migration lane</dt>
+              <dd>{formatModelMigrationStatus(activeHealth?.model_migration)}</dd>
             </div>
             <div>
               <dt>Tools</dt>
