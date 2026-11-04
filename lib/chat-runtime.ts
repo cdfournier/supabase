@@ -10,7 +10,7 @@ import {
   loadConversationMessages,
   nextMessagePosition
 } from "@/lib/agent-context";
-import { anthropicCacheControl } from "@/lib/anthropic-cache";
+import { anthropicCacheControl, anthropicPromptCacheEnabled } from "@/lib/anthropic-cache";
 import {
   buildAttachmentDelivery,
   formatDeliverySummary
@@ -63,6 +63,16 @@ type AnthropicContentBlock = {
   type: string;
   [key: string]: unknown;
 };
+
+type AnthropicSystemBlock = {
+  type: "text";
+  text: string;
+  cache_control?: {
+    type: "ephemeral";
+  };
+};
+
+type AnthropicSystem = string | AnthropicSystemBlock[];
 
 type RuntimeToolEvent = {
   turn_id: string;
@@ -186,8 +196,9 @@ export async function sendAgentMessage(
     : existingMessages;
   const maxTokens = maxResponseTokens();
   const promptContext = await buildAgentPromptContext(supabase, agent);
-  let system = withCompactionCheckpoint(
-    withToolInstructions(promptContext.systemPrompt, maxTokens),
+  const cacheableSystem = withToolInstructions(promptContext.cacheableSystemPrompt, maxTokens);
+  let perTurnSystem = withCompactionCheckpoint(
+    promptContext.perTurnSystemPrompt,
     checkpoint ? contentToText(checkpoint.content) : ""
   );
   const historyLimit = configuredPositiveInteger("ANTHROPIC_HISTORY_MESSAGES", 10, {
@@ -211,7 +222,8 @@ export async function sendAgentMessage(
     conversationId,
     historyMessages.map((saved) => saved.turn_id).filter(Boolean) as string[]
   );
-  system = withRecentToolAudit(system, historyMessages, historyToolEvents);
+  perTurnSystem = withRecentToolAudit(perTurnSystem, historyMessages, historyToolEvents);
+  const system = systemWithCacheablePrefix(cacheableSystem, perTurnSystem);
 
   const messages: AnthropicMessage[] = historyMessages
     .map((saved) => ({
@@ -370,7 +382,7 @@ async function runAnthropicToolLoop({
   apiKey: string;
   agent: AgentName;
   conversationId: string;
-  system: string;
+  system: AnthropicSystem;
   messages: AnthropicMessage[];
   turnId: string;
   source: string;
@@ -840,7 +852,7 @@ async function settleAfterCancellation({
   apiKey: string;
   model: string;
   maxTokens: number;
-  system: string;
+  system: AnthropicSystem;
   messages: AnthropicMessage[];
   agent: AgentName;
   conversationId: string;
@@ -971,7 +983,7 @@ async function settleAfterToolLimit({
   apiKey: string;
   model: string;
   maxTokens: number;
-  system: string;
+  system: AnthropicSystem;
   messages: AnthropicMessage[];
   agent: AgentName;
   conversationId: string;
@@ -1321,6 +1333,29 @@ function withRecentToolAudit(
   ].join("\n\n");
 }
 
+function systemWithCacheablePrefix(
+  cacheableSystem: string,
+  perTurnSystem: string
+): AnthropicSystem {
+  const dynamic = perTurnSystem.trim();
+
+  if (!anthropicPromptCacheEnabled()) {
+    return [cacheableSystem, dynamic].filter(Boolean).join("\n\n");
+  }
+
+  // The explicit block keeps durable identity/context reusable even when the
+  // following clock or runtime audit changes. Top-level cache control remains
+  // enabled too, so Anthropic can advance the conversation-history cache.
+  return [
+    {
+      type: "text",
+      text: cacheableSystem,
+      cache_control: { type: "ephemeral" }
+    },
+    ...(dynamic ? [{ type: "text" as const, text: dynamic }] : [])
+  ];
+}
+
 function normalizeJsonRecord(value: unknown) {
   if (value === undefined) {
     return {};
@@ -1455,7 +1490,7 @@ async function callAnthropic({
   apiKey: string;
   model: string;
   maxTokens: number;
-  system: string;
+  system: AnthropicSystem;
   messages: AnthropicMessage[];
   tools: typeof toolDefinitions;
   signal?: AbortSignal;

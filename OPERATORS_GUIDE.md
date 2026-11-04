@@ -261,6 +261,13 @@ failure class, time-window rollups, and an immutable public-rate estimate on
 new events. The estimate is a planning aid, not an invoice; old events remain
 honestly unpriced rather than being retrospectively guessed.
 
+The runtime keeps its stable identity, capability, and durable-context prompt
+layer behind an explicit five-minute cache boundary. Live clock context,
+fresh Room Refresh material, and recent runtime audit context follow that
+boundary so a changing timestamp cannot invalidate the reusable prefix. The
+usage trail distinguishes cache creation from cache reads; use those fields to
+verify the economics rather than assuming caching is effective.
+
 The same migration adds optional 24-hour or 7-day global/agent budget policies.
 They are disabled unless explicitly configured and are advisory only: a warning
 is visible in Runtime health but never blocks an Agent, a Free Moment, or a
