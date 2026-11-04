@@ -21,7 +21,6 @@ import {
 } from "@/lib/capability-profile";
 import { loadUsageBudgetStatus, loadUsageTotals, loadUsageWindows } from "@/lib/model-usage";
 import { modelForAgent } from "@/lib/model-lanes";
-import { loadLatestModelMigrationReceipt } from "@/lib/model-migration";
 import { runtimeInstanceStatus } from "@/lib/runtime-instance";
 import { statusWithSettings as freeMomentsStatusWithSettings } from "@/lib/free-time";
 import { statusWithSettings as operatorNoteWakeStatusWithSettings } from "@/lib/operator-note-wakes";
@@ -221,11 +220,10 @@ async function buildAgentHealth(
     : ((archiveResult.data?.[0] ?? null) as ArchiveHealthRow | null);
   const capabilityProfile = await loadAgentCapabilityProfile(supabase, agent);
   const availableTools = await filterToolsForAgent(supabase, agent, toolDefinitions);
-  const [usage, usageWindows, usageBudgets, modelMigration] = await Promise.all([
+  const [usage, usageWindows, usageBudgets] = await Promise.all([
     loadUsageTotals(supabase, agent),
     loadUsageWindows(supabase, agent),
-    loadUsageBudgetStatus(supabase, agent),
-    loadLatestModelMigrationReceipt(supabase, agent)
+    loadUsageBudgetStatus(supabase, agent)
   ]);
 
   return {
@@ -284,7 +282,6 @@ async function buildAgentHealth(
     usage,
     usage_windows: usageWindows,
     usage_budgets: usageBudgets,
-    model_migration: modelMigration,
     memory: {
       rows: memoryResult.count ?? memoryResult.data?.length ?? 0,
       active_rows: activeMemories.length,

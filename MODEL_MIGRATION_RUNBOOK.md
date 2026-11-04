@@ -4,6 +4,11 @@ This is a safety runbook for a deliberate model comparison. It does **not**
 authorize a production model change. A migration receipt is evidence of a test,
 not an approval to promote its candidate.
 
+The receipt and preview fixture are intentionally dormant in the current
+Operator UI. They are retained as implementation scaffolding for a future,
+purpose-built model-upgrade workflow; today, inspect a receipt through the SQL
+editor rather than treating it as a Runtime-panel control.
+
 ## What changes — and what does not
 
 A runtime model lane is resolved when the server starts:
@@ -44,7 +49,8 @@ events. Removing the override and restarting is the normal rollback.
    a shell-history-friendly shared script.
 
 4. Reload the Operator UI. The selected Agent's **Model** row should name the
-   candidate. **Model comparison** should show the preview receipt as running.
+   candidate. The preview receipt is deliberately hidden from the current
+   Runtime panel; inspect it through the SQL editor if needed.
 5. Send one narrow, self-scoped QA prompt. The fixture should not touch outside
    surfaces. Verify the reply, capability posture, and `model_usage_events`
    receipt all name the expected Agent/model.
