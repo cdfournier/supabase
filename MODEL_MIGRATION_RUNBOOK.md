@@ -44,7 +44,7 @@ events. Removing the override and restarting is the normal rollback.
    a shell-history-friendly shared script.
 
 4. Reload the Operator UI. The selected Agent's **Model** row should name the
-   candidate. **Migration lane** should show the preview comparison as running.
+   candidate. **Model comparison** should show the preview receipt as running.
 5. Send one narrow, self-scoped QA prompt. The fixture should not touch outside
    surfaces. Verify the reply, capability posture, and `model_usage_events`
    receipt all name the expected Agent/model.

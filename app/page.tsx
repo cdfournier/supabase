@@ -8098,7 +8098,7 @@ function RuntimeHealthPanel({
               <dd>{formatBudgetStatus(activeBudget)}</dd>
             </div>
             <div>
-              <dt>Migration lane</dt>
+              <dt>Model comparison</dt>
               <dd>{formatModelMigrationStatus(activeHealth?.model_migration)}</dd>
             </div>
             <div>
