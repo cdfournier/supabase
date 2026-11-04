@@ -101,6 +101,34 @@ Use it to check:
 
 The compaction pressure is approximate. It uses saved conversation character count, not exact model tokens.
 
+### Runtime panel reference
+
+The expanded **Runtime** panel is an Operator decision surface for the selected
+Agent. It is observational: none of these readings changes an Agent's ability
+to answer, use tools, take a Free Moment, or refresh a room.
+
+| Reading | What it tells the Operator | How to use it |
+| --- | --- | --- |
+| **Model** | The model selected for that Agent's runtime lane. | Confirms which provider/model economics the adjacent usage readings describe. |
+| **Active messages** | Messages in the current active room window; when a Room Refresh exists, the total stored count is shown after the slash. | A quick sense of how much live conversational material the Agent is carrying. It is not an exact prompt-token count. |
+| **Memory** | Active durable memory rows and the subset marked core. | A count check only; inspect memories themselves before assuming their quality or relevance. |
+| **Journal** / **Tool log** | Durable journal-entry and historical tool-event counts. | Useful for noticing whether those stores exist and are being used. They do not mean every entry is injected into the next model prompt. |
+| **Model usage** | Lifetime recorded provider calls and normalized tokens for the selected Agent. | A scale reading, not a bill. A tool-loop turn can create more than one call. |
+| **24h estimate** | The sum of immutable public-rate snapshots on priced calls in the last 24 hours. | A planning estimate, not an invoice. `+ N unpriced` means some recent calls lacked an applicable rate snapshot and must not be guessed. |
+| **Cache reads** | The percentage of recent prompt tokens served from Anthropic's prompt cache in the last 24 hours. | Higher is generally better for repeated stable context. Low or zero is a clue to inspect cadence or cache boundaries, not automatically a defect. |
+| **Avg model latency** | Mean provider-call duration over the last 24 hours. | Compare broad changes over several calls; a single slow tool loop or cold start is not a diagnosis. |
+| **24h budget** | The selected Agent's optional 24-hour advisory policy: unset, within limit, warning, over advisory limit, or needing a rate. | Informative only. It never blocks a chat turn, tool call, Free Moment, or wake. Policies are currently configured in SQL, not from this panel. |
+| **Tools** | Total registered tool definitions in this runtime build. | A runtime inventory count, not the selected Agent's allowed-tool count. Capability Profile determines what an Agent can actually use. |
+| **Output cap** | `ANTHROPIC_MAX_TOKENS`, the maximum output tokens for one model response. | If a long answer appears clipped, consider increasing it for a later test and restart the server. |
+| **Rounds** | `ANTHROPIC_MAX_TOOL_ROUNDS`, the per-turn tool-loop ceiling. | A safety boundary on iterative tool work; `none` means no explicit ceiling. |
+| **Cache** | Whether prompt caching is enabled and its configured TTL. | Confirms posture only. The cache-read reading above shows whether it was actually useful in recent calls. |
+| **Env** | Whether the required runtime environment values are present. | `check` means inspect server configuration before treating other panel readings as reliable. It never reveals secret values. |
+| **Room pressure** | Approximate active-room size based on saved characters, plus Room Refresh posture. | A maintenance signal, not an automatic compaction command. Use **Review Room** before asking an Agent to prepare a Room Note. |
+
+The panel deliberately separates *observation* from *control*: Room Review is
+read-only, accounting budgets are advisory, and a Room Refresh remains
+Agent-owned housekeeping rather than an Operator rewrite of the Agent's room.
+
 The `ANTHROPIC_MAX_TOKENS` value is the live reply output cap. If Anthropic stops a response at that cap, the runtime appends a transcript-visible note so the agent and operator know the message may be incomplete. Raise this value in `.env.local` during long-form testing, then restart the server.
 
 ## Free Moment Stop And Receipts
