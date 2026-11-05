@@ -43,11 +43,22 @@ release decision.
    both agents load normally, existing conversations are intact, and no
    migration/receipt errors appear. No capacity arrival should be forced merely
    to prove the release.
-6. **Grant deliberately.** In the Operator capability controls, change
-   `compaction` from `draft` to `write` only for the Agent(s) intended to own
-   refreshes. Start with Varro if he is the real upcoming case; grant Soren
-   separately when wanted. This is the enablement switch for self-sent Room
-   Refreshes and capacity arrivals.
+6. **Grant deliberately.** The current Operator UI does not yet expose a
+   general capability-level editor. Until that small UI surface is built, use
+   the Supabase SQL editor to grant `compaction: write` only to the Agent
+   intended to own refreshes. Start with Varro if he is the real upcoming case;
+   grant Soren separately when wanted:
+
+   ```sql
+   update public.agent_capabilities
+   set access_level = 'write', updated_at = now()
+   where agent = 'varro' and surface = 'compaction'
+   returning agent, surface, access_level, updated_at;
+   ```
+
+   This is the enablement switch for self-sent Room Refreshes and capacity
+   arrivals. To pause new self-sent refreshes later, set the same row back to
+   `draft`.
 7. **Give them the guide.** Send Soren and Varro the GitHub link to
    `AGENT_HOUSEKEEPING_GUIDE.md` with a brief note that it is their standing
    housekeeping reference. The repository is the canonical copy; no duplicate
