@@ -19,7 +19,9 @@ import {
   filterToolsForAgent,
   loadAgentCapabilityProfile
 } from "@/lib/capability-profile";
-import { loadUsageTotals } from "@/lib/model-usage";
+import { loadUsageBudgetStatus, loadUsageTotals, loadUsageWindows } from "@/lib/model-usage";
+import { modelForAgent } from "@/lib/model-lanes";
+import { runtimeInstanceStatus } from "@/lib/runtime-instance";
 import { statusWithSettings as freeMomentsStatusWithSettings } from "@/lib/free-time";
 import { statusWithSettings as operatorNoteWakeStatusWithSettings } from "@/lib/operator-note-wakes";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -47,15 +49,24 @@ type ArchiveHealthRow = {
   created_at: string | null;
 };
 
+type RoomRefreshTriggerHealthRow = {
+  stage: "nudge_90" | "invitation_95" | "maintenance_100";
+  status: "queued" | "delivering" | "delivered" | "maintenance_pending" | "completed" | "failed";
+  pressure_percent: number;
+  updated_at: string | null;
+};
+
 export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
     const agents = await loadAgentList(supabase);
-    const [freeMomentsStatus, workPacketSignalsStatus, operatorNoteWakeStatus, usage] = await Promise.all([
+    const [freeMomentsStatus, workPacketSignalsStatus, operatorNoteWakeStatus, usage, usageWindows, budgetStatus] = await Promise.all([
       freeMomentsStatusWithSettings().catch(() => null),
       workPacketSignalsStatusWithSettings().catch(() => null),
       operatorNoteWakeStatusWithSettings().catch(() => null),
-      loadUsageTotals(supabase)
+      loadUsageTotals(supabase),
+      loadUsageWindows(supabase),
+      loadUsageBudgetStatus(supabase)
     ]);
     const agentHealth = [];
 
@@ -83,7 +94,8 @@ export async function GET() {
         work_packet_signals_enabled: workPacketSignalsStatus?.durable_enabled === true,
         work_packet_signals_running: workPacketSignalsStatus?.running === true,
         work_packet_signal_wakes_enabled: workPacketSignalsStatus?.wake_durable_enabled === true,
-        operator_note_wakes_enabled: operatorNoteWakeStatus?.durable_enabled === true
+        operator_note_wakes_enabled: operatorNoteWakeStatus?.durable_enabled === true,
+        runtime_instance: runtimeInstanceStatus()
       },
       env: {
         supabase_url: present("NEXT_PUBLIC_SUPABASE_URL"),
@@ -106,6 +118,8 @@ export async function GET() {
         pressure_basis: "approximate saved conversation character count; not tokenizer-accurate"
       },
       usage,
+      usage_windows: usageWindows,
+      usage_budgets: budgetStatus,
       agents: agentHealth
     });
   } catch (error) {
@@ -131,7 +145,8 @@ async function buildAgentHealth(
     archiveResult,
     journalResult,
     toolEventResult,
-    sourceAccessResult
+    sourceAccessResult,
+    roomRefreshTriggerResult
   ] = await Promise.all([
     supabase
       .from("conversations")
@@ -175,7 +190,15 @@ async function buildAgentHealth(
     supabase
       .from("source_material_access")
       .select("id", { count: "exact", head: false })
+      .eq("agent", agent),
+    supabase
+      .from("room_refresh_trigger_receipts")
+      .select("stage, status, pressure_percent, updated_at")
       .eq("agent", agent)
+      .eq("conversation_id", conversationId)
+      .in("status", ["delivering", "maintenance_pending"])
+      .order("updated_at", { ascending: false })
+      .limit(1)
   ]);
 
   if (conversationResult.error) {
@@ -211,9 +234,16 @@ async function buildAgentHealth(
   const latestArchive = archiveResult.error
     ? null
     : ((archiveResult.data?.[0] ?? null) as ArchiveHealthRow | null);
+  const activeRoomRefreshTrigger = roomRefreshTriggerResult.error
+    ? null
+    : ((roomRefreshTriggerResult.data?.[0] ?? null) as RoomRefreshTriggerHealthRow | null);
   const capabilityProfile = await loadAgentCapabilityProfile(supabase, agent);
   const availableTools = await filterToolsForAgent(supabase, agent, toolDefinitions);
-  const usage = await loadUsageTotals(supabase, agent);
+  const [usage, usageWindows, usageBudgets] = await Promise.all([
+    loadUsageTotals(supabase, agent),
+    loadUsageWindows(supabase, agent),
+    loadUsageBudgetStatus(supabase, agent)
+  ]);
 
   return {
     agent,
@@ -269,6 +299,16 @@ async function buildAgentHealth(
       blocked_tool_count: toolDefinitions.length - availableTools.length
     },
     usage,
+    usage_windows: usageWindows,
+    usage_budgets: usageBudgets,
+    room_refresh_trigger: activeRoomRefreshTrigger
+      ? {
+          stage: activeRoomRefreshTrigger.stage,
+          status: activeRoomRefreshTrigger.status,
+          pressure_percent: activeRoomRefreshTrigger.pressure_percent,
+          updated_at: activeRoomRefreshTrigger.updated_at
+        }
+      : null,
     memory: {
       rows: memoryResult.count ?? memoryResult.data?.length ?? 0,
       active_rows: activeMemories.length,
@@ -295,14 +335,6 @@ async function buildAgentHealth(
     },
     compaction_pressure: compactionPressure(savedCharacters)
   };
-}
-
-function modelForAgent(agent: AgentName) {
-  if (agent === "soren") {
-    return process.env.ANTHROPIC_MODEL_SOREN || process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
-  }
-
-  return process.env.ANTHROPIC_MODEL_VARRO || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 }
 
 function localTime() {

@@ -12,6 +12,8 @@ import {
 } from "@/lib/compaction";
 import { anthropicCacheControl } from "@/lib/anthropic-cache";
 import { recordModelUsage } from "@/lib/model-usage";
+import { beginModelRequest, elapsedModelRequestMs } from "@/lib/runtime-instance";
+import { modelForAgent } from "@/lib/model-lanes";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 type AnthropicResponse = {
@@ -141,50 +143,77 @@ async function compileWithAnthropic({
   source: CompactionSource;
 }) {
   const model = modelForAgent(agent);
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
+  const measurement = beginModelRequest("anthropic", model);
+  let response: Response;
+  let data: AnthropicResponse | null = null;
+  try {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        ...anthropicCacheControl(),
+        system: [
+          "You are a Room Note compiler for a persistent Agent runtime.",
+          "You do not modify data. You do not claim compaction has happened.",
+          "Your task is to draft a reviewable Room Note that helps the Agent feel like they blinked, not died.",
+          "Be specific, preserve texture, and mark uncertainty when the bounded source does not prove something.",
+          "",
+          PROPOSAL_OUTPUT_CONTRACT
+        ].join("\n"),
+        messages: [
+          {
+            role: "user",
+            content: [
+              preview.compaction_prompt,
+              "",
+              "Source metadata:",
+              JSON.stringify(sourceSummary(source), null, 2),
+              "",
+              "Selected transcript source:",
+              source.text,
+              "",
+              "Output contract:",
+              PROPOSAL_OUTPUT_CONTRACT
+            ].join("\n")
+          }
+        ]
+      })
+    });
+    data = await readAnthropicResponse(response);
+    if (!response.ok) {
+      const errorMessage =
+        data?.error?.message || data?.message || `Anthropic request failed: ${response.status}`;
+      throw new Error(errorMessage);
+    }
+  } catch (error) {
+    await recordModelUsage(getSupabaseAdmin(), {
+      provider: "anthropic",
       model,
-      max_tokens: maxTokens,
-      ...anthropicCacheControl(),
-      system: [
-        "You are a Room Note compiler for a persistent Agent runtime.",
-        "You do not modify data. You do not claim compaction has happened.",
-        "Your task is to draft a reviewable Room Note that helps the Agent feel like they blinked, not died.",
-        "Be specific, preserve texture, and mark uncertainty when the bounded source does not prove something.",
-        "",
-        PROPOSAL_OUTPUT_CONTRACT
-      ].join("\n"),
-      messages: [
-        {
-          role: "user",
-          content: [
-            preview.compaction_prompt,
-            "",
-            "Source metadata:",
-            JSON.stringify(sourceSummary(source), null, 2),
-            "",
-            "Selected transcript source:",
-            source.text,
-            "",
-            "Output contract:",
-            PROPOSAL_OUTPUT_CONTRACT
-          ].join("\n")
-        }
-      ]
-    })
-  });
-  const data = await readAnthropicResponse(response);
+      agent,
+      conversationId,
+      turnId: null,
+      source: requestSource,
+      operation: "compaction_compile",
+      round: 0,
+      ok: false,
+      coldStart: measurement.coldStart,
+      runtimeInstanceId: measurement.runtimeInstanceId,
+      latencyMs: elapsedModelRequestMs(measurement),
+      failureKind: error instanceof TypeError ? "transport" : "provider",
+      usage: data?.usage ?? {},
+      request: { maxTokens, messageCount: 1, toolCount: 0 }
+    });
+    throw error;
+  }
 
-  if (!response.ok) {
-    const errorMessage =
-      data?.error?.message || data?.message || `Anthropic request failed: ${response.status}`;
-    throw new Error(errorMessage);
+  if (!data) {
+    throw new Error("Anthropic Room Note compiler returned no response.");
   }
 
   await recordModelUsage(getSupabaseAdmin(), {
@@ -199,6 +228,9 @@ async function compileWithAnthropic({
     providerRequestId: data.id ?? null,
     stopReason: data.stop_reason ?? null,
     usage: data.usage,
+    runtimeInstanceId: measurement.runtimeInstanceId,
+    coldStart: measurement.coldStart,
+    latencyMs: elapsedModelRequestMs(measurement),
     request: {
       maxTokens,
       messageCount: 1,
@@ -259,14 +291,6 @@ function validateProposalComplete(proposal: string, stopReason: string | undefin
       "Room Note did not include required sections 6 and 7. Retry with a smaller max_chars transcript budget or a larger max_tokens value."
     );
   }
-}
-
-function modelForAgent(agent: AgentName) {
-  if (agent === "soren") {
-    return process.env.ANTHROPIC_MODEL_SOREN || process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
-  }
-
-  return process.env.ANTHROPIC_MODEL_VARRO || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 }
 
 function previewSummary(preview: Awaited<ReturnType<typeof buildCompactionPreview>>) {

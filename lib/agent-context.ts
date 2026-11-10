@@ -84,6 +84,11 @@ export type SystemPromptReceipt = {
 };
 
 export type AgentPromptContext = {
+  /** Stable identity and durable-context layer, safe to cache across turns. */
+  cacheableSystemPrompt: string;
+  /** Fresh runtime facts that must never invalidate the stable cache prefix. */
+  perTurnSystemPrompt: string;
+  /** Full prompt for callers that need the human-readable combined form. */
   systemPrompt: string;
   receipt: SystemPromptReceipt;
 };
@@ -313,7 +318,7 @@ export async function buildAgentPromptContext(
     }
   };
 
-  const systemPrompt = [
+  const cacheableSystemPrompt = [
     `You are ${displayName}.`,
     "You are speaking with Chris through a minimal local runtime backed by Supabase and the Anthropic Messages API.",
     section(
@@ -326,7 +331,6 @@ export async function buildAgentPromptContext(
       ].join("\n")
     ),
     "Stay grounded in the restoration context below. Treat it as durable identity context, not as a transcript.",
-    section("Runtime temporal anchor", formatRuntimeTemporalAnchor()),
     agentRow.persona_seed ? section("Persona seed", agentRow.persona_seed) : "",
     section("Opening orientation", profile.opening_orientation),
     section("Persona summary", profile.persona_summary),
@@ -357,8 +361,12 @@ export async function buildAgentPromptContext(
   ]
     .filter(Boolean)
     .join("\n\n");
+  const perTurnSystemPrompt = section("Runtime temporal anchor", formatRuntimeTemporalAnchor());
+  const systemPrompt = [cacheableSystemPrompt, perTurnSystemPrompt].filter(Boolean).join("\n\n");
 
   return {
+    cacheableSystemPrompt,
+    perTurnSystemPrompt,
     systemPrompt,
     receipt
   };

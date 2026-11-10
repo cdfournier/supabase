@@ -410,6 +410,16 @@ button {
   background: var(--error);
 }
 
+.room-refresh-task {
+  color: #7a4800;
+  font-weight: 700;
+  margin: 10px 0 0;
+}
+
+.room-refresh-task.pending {
+  color: var(--error);
+}
+
 .pressure p,
 .health-time,
 .health-empty,

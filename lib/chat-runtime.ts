@@ -10,7 +10,7 @@ import {
   loadConversationMessages,
   nextMessagePosition
 } from "@/lib/agent-context";
-import { anthropicCacheControl } from "@/lib/anthropic-cache";
+import { anthropicCacheControl, anthropicPromptCacheEnabled } from "@/lib/anthropic-cache";
 import {
   buildAttachmentDelivery,
   formatDeliverySummary
@@ -28,6 +28,12 @@ import {
 } from "@/lib/free-moment-action-budget";
 import { latestCompactionCheckpoint, messagesAfterCheckpoint } from "@/lib/compaction";
 import { recordModelUsage } from "@/lib/model-usage";
+import {
+  beginModelRequest,
+  elapsedModelRequestMs,
+  type ModelRequestMeasurement
+} from "@/lib/runtime-instance";
+import { modelForAgent } from "@/lib/model-lanes";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
   shouldSettleAfterToolUse,
@@ -69,6 +75,16 @@ type AnthropicContentBlock = {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+
+type AnthropicSystemBlock = {
+  type: "text";
+  text: string;
+  cache_control?: {
+    type: "ephemeral";
+  };
+};
+
+type AnthropicSystem = string | AnthropicSystemBlock[];
 
 type RuntimeToolEvent = {
   turn_id: string;
@@ -197,8 +213,9 @@ export async function sendAgentMessage(
     : existingMessages;
   const maxTokens = maxResponseTokens();
   const promptContext = await buildAgentPromptContext(supabase, agent);
-  let system = withCompactionCheckpoint(
-    withToolInstructions(promptContext.systemPrompt, maxTokens),
+  const cacheableSystem = withToolInstructions(promptContext.cacheableSystemPrompt, maxTokens);
+  let perTurnSystem = withCompactionCheckpoint(
+    promptContext.perTurnSystemPrompt,
     checkpoint ? contentToText(checkpoint.content) : ""
   );
   const historyLimit = configuredPositiveInteger("ANTHROPIC_HISTORY_MESSAGES", 10, {
@@ -222,7 +239,8 @@ export async function sendAgentMessage(
     conversationId,
     historyMessages.map((saved) => saved.turn_id).filter(Boolean) as string[]
   );
-  system = withRecentToolAudit(system, historyMessages, historyToolEvents);
+  perTurnSystem = withRecentToolAudit(perTurnSystem, historyMessages, historyToolEvents);
+  const system = systemWithCacheablePrefix(cacheableSystem, perTurnSystem);
 
   const messages: AnthropicMessage[] = historyMessages
     .map((saved) => ({
@@ -537,7 +555,7 @@ async function runAnthropicToolLoop({
   apiKey: string;
   agent: AgentName;
   conversationId: string;
-  system: string;
+  system: AnthropicSystem;
   messages: AnthropicMessage[];
   turnId: string;
   source: string;
@@ -627,16 +645,36 @@ async function runAnthropicToolLoop({
 
     const messageCount = messages.length;
     cancellation?.onPhaseChange?.("model");
-    const data = await callAnthropic({
-      apiKey,
-      model,
-      maxTokens,
-      system,
-      messages,
-      tools: availableTools,
-      signal: cancellation?.signal,
-      source
-    });
+    const measurement = beginModelRequest("anthropic", model);
+    let data: AnthropicResponse;
+    try {
+      data = await callAnthropic({
+        apiKey,
+        model,
+        maxTokens,
+        system,
+        messages,
+        tools: availableTools,
+        signal: cancellation?.signal,
+        source
+      });
+    } catch (error) {
+      await recordFailedModelUsage({
+        agent,
+        conversationId,
+        turnId,
+        source,
+        operation: "chat_tool_loop",
+        round,
+        model,
+        maxTokens,
+        messageCount,
+        toolCount: availableTools.length,
+        measurement,
+        error
+      });
+      throw error;
+    }
     await recordModelUsage(getSupabaseAdmin(), {
       provider: "anthropic",
       model: data.model || model,
@@ -649,6 +687,9 @@ async function runAnthropicToolLoop({
       providerRequestId: data.id ?? null,
       stopReason: data.stop_reason ?? null,
       usage: data.usage,
+      runtimeInstanceId: measurement.runtimeInstanceId,
+      coldStart: measurement.coldStart,
+      latencyMs: elapsedModelRequestMs(measurement),
       request: {
         maxTokens,
         messageCount,
@@ -988,7 +1029,7 @@ async function settleAfterCancellation({
   apiKey: string;
   model: string;
   maxTokens: number;
-  system: string;
+  system: AnthropicSystem;
   messages: AnthropicMessage[];
   agent: AgentName;
   conversationId: string;
@@ -1008,16 +1049,36 @@ async function settleAfterCancellation({
       content: cancellationClosingPrompt(source)
     }
   ];
-  const settlementData = await callAnthropic({
-    apiKey,
-    model,
-    maxTokens,
-    system,
-    messages: settlementMessages,
-    tools: [],
-    signal: cancellation?.signal,
-    source
-  });
+  const measurement = beginModelRequest("anthropic", model);
+  let settlementData: AnthropicResponse;
+  try {
+    settlementData = await callAnthropic({
+      apiKey,
+      model,
+      maxTokens,
+      system,
+      messages: settlementMessages,
+      tools: [],
+      signal: cancellation?.signal,
+      source
+    });
+  } catch (error) {
+    await recordFailedModelUsage({
+      agent,
+      conversationId,
+      turnId,
+      source,
+      operation: "chat_tool_loop_cancel_close",
+      round: null,
+      model,
+      maxTokens,
+      messageCount: settlementMessages.length,
+      toolCount: 0,
+      measurement,
+      error
+    });
+    throw error;
+  }
 
   await recordModelUsage(getSupabaseAdmin(), {
     provider: "anthropic",
@@ -1031,6 +1092,9 @@ async function settleAfterCancellation({
     providerRequestId: settlementData.id ?? null,
     stopReason: settlementData.stop_reason ?? null,
     usage: settlementData.usage,
+    runtimeInstanceId: measurement.runtimeInstanceId,
+    coldStart: measurement.coldStart,
+    latencyMs: elapsedModelRequestMs(measurement),
     request: {
       maxTokens,
       messageCount: settlementMessages.length,
@@ -1096,7 +1160,7 @@ async function settleAfterToolLimit({
   apiKey: string;
   model: string;
   maxTokens: number;
-  system: string;
+  system: AnthropicSystem;
   messages: AnthropicMessage[];
   agent: AgentName;
   conversationId: string;
@@ -1140,16 +1204,36 @@ async function settleAfterToolLimit({
       )
     : withToolLimitSettlementPrompt(messages, maxRounds ?? 0, blockedToolNames);
   cancellation?.onPhaseChange?.("model");
-  const settlementData = await callAnthropic({
-    apiKey,
-    model,
-    maxTokens,
-    system,
-    messages: settlementMessages,
-    tools: [],
-    signal: cancellation?.signal,
-    source
-  });
+  const measurement = beginModelRequest("anthropic", model);
+  let settlementData: AnthropicResponse;
+  try {
+    settlementData = await callAnthropic({
+      apiKey,
+      model,
+      maxTokens,
+      system,
+      messages: settlementMessages,
+      tools: [],
+      signal: cancellation?.signal,
+      source
+    });
+  } catch (error) {
+    await recordFailedModelUsage({
+      agent,
+      conversationId,
+      turnId,
+      source,
+      operation: "chat_tool_loop_settle_after_limit",
+      round: round + 1,
+      model,
+      maxTokens,
+      messageCount: settlementMessages.length,
+      toolCount: 0,
+      measurement,
+      error
+    });
+    throw error;
+  }
   await recordModelUsage(getSupabaseAdmin(), {
     provider: "anthropic",
     model: settlementData.model || model,
@@ -1162,6 +1246,9 @@ async function settleAfterToolLimit({
     providerRequestId: settlementData.id ?? null,
     stopReason: settlementData.stop_reason ?? null,
     usage: settlementData.usage,
+    runtimeInstanceId: measurement.runtimeInstanceId,
+    coldStart: measurement.coldStart,
+    latencyMs: elapsedModelRequestMs(measurement),
     request: {
       maxTokens,
       messageCount: settlementMessages.length,
@@ -1423,6 +1510,29 @@ function withRecentToolAudit(
   ].join("\n\n");
 }
 
+function systemWithCacheablePrefix(
+  cacheableSystem: string,
+  perTurnSystem: string
+): AnthropicSystem {
+  const dynamic = perTurnSystem.trim();
+
+  if (!anthropicPromptCacheEnabled()) {
+    return [cacheableSystem, dynamic].filter(Boolean).join("\n\n");
+  }
+
+  // The explicit block keeps durable identity/context reusable even when the
+  // following clock or runtime audit changes. Top-level cache control remains
+  // enabled too, so Anthropic can advance the conversation-history cache.
+  return [
+    {
+      type: "text",
+      text: cacheableSystem,
+      cache_control: { type: "ephemeral" }
+    },
+    ...(dynamic ? [{ type: "text" as const, text: dynamic }] : [])
+  ];
+}
+
 function normalizeJsonRecord(value: unknown) {
   if (value === undefined) {
     return {};
@@ -1557,7 +1667,7 @@ async function callAnthropic({
   apiKey: string;
   model: string;
   maxTokens: number;
-  system: string;
+  system: AnthropicSystem;
   messages: AnthropicMessage[];
   tools: typeof toolDefinitions;
   signal?: AbortSignal;
@@ -1654,6 +1764,60 @@ class FreeMomentRequestTimeoutError extends Error {
   }
 }
 
+async function recordFailedModelUsage(input: {
+  agent: AgentName;
+  conversationId: string;
+  turnId: string;
+  source: string;
+  operation: string;
+  round: number | null;
+  model: string;
+  maxTokens: number;
+  messageCount: number;
+  toolCount: number;
+  measurement: ModelRequestMeasurement;
+  error: unknown;
+}) {
+  const error = asError(input.error);
+  await recordModelUsage(getSupabaseAdmin(), {
+    provider: "anthropic",
+    model: input.model,
+    agent: input.agent,
+    conversationId: input.conversationId,
+    turnId: input.turnId,
+    source: input.source,
+    operation: input.operation,
+    round: input.round,
+    ok: false,
+    coldStart: input.measurement.coldStart,
+    runtimeInstanceId: input.measurement.runtimeInstanceId,
+    latencyMs: elapsedModelRequestMs(input.measurement),
+    failureKind: anthropicFailureKind(error),
+    usage: {},
+    request: {
+      maxTokens: input.maxTokens,
+      messageCount: input.messageCount,
+      toolCount: input.toolCount
+    }
+  });
+}
+
+function anthropicFailureKind(error: Error) {
+  if (error instanceof FreeMomentRequestTimeoutError) {
+    return "timeout";
+  }
+  if (error instanceof AnthropicResponseError) {
+    return `http_${error.status}`;
+  }
+  if (error.name === "AbortError") {
+    return "aborted";
+  }
+  if (error.name === "TypeError") {
+    return "transport";
+  }
+  return "unknown";
+}
+
 function isRetryableAnthropicFailure(error: Error) {
   if (error instanceof FreeMomentRequestTimeoutError) {
     return true;
@@ -1720,14 +1884,6 @@ async function readAnthropicResponse(response: Response): Promise<AnthropicRespo
       message: `Anthropic returned invalid JSON (${response.status}).`
     };
   }
-}
-
-function modelForAgent(agent: AgentName) {
-  if (agent === "soren") {
-    return process.env.ANTHROPIC_MODEL_SOREN || process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
-  }
-
-  return process.env.ANTHROPIC_MODEL_VARRO || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 }
 
 function withToolInstructions(system: string, maxTokens: number) {
