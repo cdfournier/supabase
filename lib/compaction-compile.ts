@@ -13,6 +13,7 @@ import {
 import { anthropicCacheControl } from "@/lib/anthropic-cache";
 import { recordModelUsage } from "@/lib/model-usage";
 import { beginModelRequest, elapsedModelRequestMs } from "@/lib/runtime-instance";
+import { modelForAgent } from "@/lib/model-lanes";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 type AnthropicResponse = {
@@ -290,14 +291,6 @@ function validateProposalComplete(proposal: string, stopReason: string | undefin
       "Room Note did not include required sections 6 and 7. Retry with a smaller max_chars transcript budget or a larger max_tokens value."
     );
   }
-}
-
-function modelForAgent(agent: AgentName) {
-  if (agent === "soren") {
-    return process.env.ANTHROPIC_MODEL_SOREN || process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
-  }
-
-  return process.env.ANTHROPIC_MODEL_VARRO || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 }
 
 function previewSummary(preview: Awaited<ReturnType<typeof buildCompactionPreview>>) {

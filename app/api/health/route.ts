@@ -20,6 +20,7 @@ import {
   loadAgentCapabilityProfile
 } from "@/lib/capability-profile";
 import { loadUsageBudgetStatus, loadUsageTotals, loadUsageWindows } from "@/lib/model-usage";
+import { modelForAgent } from "@/lib/model-lanes";
 import { runtimeInstanceStatus } from "@/lib/runtime-instance";
 import { statusWithSettings as freeMomentsStatusWithSettings } from "@/lib/free-time";
 import { statusWithSettings as operatorNoteWakeStatusWithSettings } from "@/lib/operator-note-wakes";
@@ -334,14 +335,6 @@ async function buildAgentHealth(
     },
     compaction_pressure: compactionPressure(savedCharacters)
   };
-}
-
-function modelForAgent(agent: AgentName) {
-  if (agent === "soren") {
-    return process.env.ANTHROPIC_MODEL_SOREN || process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
-  }
-
-  return process.env.ANTHROPIC_MODEL_VARRO || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 }
 
 function localTime() {
