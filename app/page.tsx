@@ -544,6 +544,12 @@ type AgentHealth = {
     percent: number;
     note: string;
   };
+  room_refresh_trigger?: {
+    stage: "nudge_90" | "invitation_95" | "maintenance_100";
+    status: "delivering" | "maintenance_pending";
+    pressure_percent: number;
+    updated_at: string | null;
+  } | null;
   usage?: UsageTotals;
   usage_windows?: UsageWindows;
   usage_budgets?: UsageBudgetStatus;
@@ -7961,6 +7967,8 @@ function RuntimeHealthPanel({
 }) {
   const envOk = health ? Object.values(health.env).every(Boolean) : false;
   const pressure = activeHealth?.compaction_pressure;
+  const pressurePercent = Math.min(100, Math.max(0, pressure?.percent ?? 0));
+  const roomRefreshTrigger = activeHealth?.room_refresh_trigger ?? null;
   const usage24Hours = activeHealth?.usage_windows?.last_24_hours;
   const activeBudget = activeHealth?.usage_budgets?.policies.find(
     (policy) => policy.scope === "agent" && policy.agent === activeHealth?.agent && policy.window_hours === 24
@@ -8096,14 +8104,36 @@ function RuntimeHealthPanel({
           <div className="pressure">
             <div className="pressure-row">
               <span>Room pressure</span>
-              <strong>{pressure?.level ?? "unknown"}</strong>
+              <strong>
+                {pressure?.level ?? "unknown"}
+                {pressure ? ` · ${pressure.percent}%` : ""}
+              </strong>
             </div>
-            <div className="pressure-track">
+            <div
+              aria-label={pressure ? `Room pressure ${pressure.percent}%` : "Room pressure unknown"}
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={pressure ? pressurePercent : undefined}
+              className="pressure-track"
+              role="progressbar"
+            >
               <span
                 className={`pressure-fill ${pressure?.level ?? "low"}`}
-                style={{ width: `${Math.min(100, Math.max(0, pressure?.percent ?? 0))}%` }}
+                style={{ width: `${pressurePercent}%` }}
               />
             </div>
+            {roomRefreshTrigger?.status === "delivering" ? (
+              <p className="room-refresh-task" role="status">
+                {roomRefreshTrigger.stage === "maintenance_100"
+                  ? "Housekeeping in progress · Room Refresh maintenance is running."
+                  : "Room Review arrival is being delivered."}
+              </p>
+            ) : null}
+            {roomRefreshTrigger?.status === "maintenance_pending" ? (
+              <p className="room-refresh-task pending" role="status">
+                Housekeeping remains required before ordinary work can resume.
+              </p>
+            ) : null}
             <p>{health?.compaction.status ?? "unknown"} · {health?.compaction.mode ?? "manual"}</p>
             {activeHealth.conversation.latest_checkpoint_at ? (
               <p>room refresh active; raw transcript retained</p>

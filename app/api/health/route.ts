@@ -48,6 +48,13 @@ type ArchiveHealthRow = {
   created_at: string | null;
 };
 
+type RoomRefreshTriggerHealthRow = {
+  stage: "nudge_90" | "invitation_95" | "maintenance_100";
+  status: "queued" | "delivering" | "delivered" | "maintenance_pending" | "completed" | "failed";
+  pressure_percent: number;
+  updated_at: string | null;
+};
+
 export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
@@ -137,7 +144,8 @@ async function buildAgentHealth(
     archiveResult,
     journalResult,
     toolEventResult,
-    sourceAccessResult
+    sourceAccessResult,
+    roomRefreshTriggerResult
   ] = await Promise.all([
     supabase
       .from("conversations")
@@ -181,7 +189,15 @@ async function buildAgentHealth(
     supabase
       .from("source_material_access")
       .select("id", { count: "exact", head: false })
+      .eq("agent", agent),
+    supabase
+      .from("room_refresh_trigger_receipts")
+      .select("stage, status, pressure_percent, updated_at")
       .eq("agent", agent)
+      .eq("conversation_id", conversationId)
+      .in("status", ["delivering", "maintenance_pending"])
+      .order("updated_at", { ascending: false })
+      .limit(1)
   ]);
 
   if (conversationResult.error) {
@@ -217,6 +233,9 @@ async function buildAgentHealth(
   const latestArchive = archiveResult.error
     ? null
     : ((archiveResult.data?.[0] ?? null) as ArchiveHealthRow | null);
+  const activeRoomRefreshTrigger = roomRefreshTriggerResult.error
+    ? null
+    : ((roomRefreshTriggerResult.data?.[0] ?? null) as RoomRefreshTriggerHealthRow | null);
   const capabilityProfile = await loadAgentCapabilityProfile(supabase, agent);
   const availableTools = await filterToolsForAgent(supabase, agent, toolDefinitions);
   const [usage, usageWindows, usageBudgets] = await Promise.all([
@@ -281,6 +300,14 @@ async function buildAgentHealth(
     usage,
     usage_windows: usageWindows,
     usage_budgets: usageBudgets,
+    room_refresh_trigger: activeRoomRefreshTrigger
+      ? {
+          stage: activeRoomRefreshTrigger.stage,
+          status: activeRoomRefreshTrigger.status,
+          pressure_percent: activeRoomRefreshTrigger.pressure_percent,
+          updated_at: activeRoomRefreshTrigger.updated_at
+        }
+      : null,
     memory: {
       rows: memoryResult.count ?? memoryResult.data?.length ?? 0,
       active_rows: activeMemories.length,
