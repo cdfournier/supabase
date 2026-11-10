@@ -464,6 +464,8 @@ type Health = {
     pressure_basis: string;
   };
   usage?: UsageTotals;
+  usage_windows?: UsageWindows;
+  usage_budgets?: UsageBudgetStatus;
   agents: AgentHealth[];
 };
 
@@ -476,6 +478,37 @@ type UsageTotals = {
   cache_read_tokens: number;
   cache_creation_tokens: number;
   total_tokens: number;
+  successful_calls: number;
+  failed_calls: number;
+  cold_start_calls: number;
+  priced_calls: number;
+  unpriced_calls: number;
+  estimated_cost_usd: number;
+  total_latency_ms: number;
+  average_latency_ms: number | null;
+  cache_read_percent: number | null;
+};
+
+type UsageWindows = {
+  last_24_hours: UsageTotals;
+  last_7_days: UsageTotals;
+  lifetime: UsageTotals;
+};
+
+type UsageBudgetStatus = {
+  table_present: boolean;
+  error: string | null;
+  policies: Array<{
+    scope: "global" | "agent";
+    agent: AgentName | null;
+    window_hours: 24 | 168;
+    enabled: boolean;
+    limit_usd: number | null;
+    warning_percent: number;
+    estimated_cost_usd: number;
+    percent_of_limit: number | null;
+    status: "disabled" | "unpriced" | "ok" | "warning" | "over_limit";
+  }>;
 };
 
 type AgentHealth = {
@@ -512,6 +545,8 @@ type AgentHealth = {
     note: string;
   };
   usage?: UsageTotals;
+  usage_windows?: UsageWindows;
+  usage_budgets?: UsageBudgetStatus;
 };
 
 type CompactionPreview = {
@@ -4327,6 +4362,43 @@ function formatWorkDuration(durationMs: number | null) {
   return `Worked for ${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 }
 
+function formatUsd(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4
+  }).format(value);
+}
+
+function formatBudgetStatus(
+  policy:
+    | {
+        enabled: boolean;
+        limit_usd: number | null;
+        status: "disabled" | "unpriced" | "ok" | "warning" | "over_limit";
+        percent_of_limit: number | null;
+      }
+    | undefined
+) {
+  if (!policy || !policy.enabled || policy.limit_usd === null) {
+    return "not set";
+  }
+
+  if (policy.status === "unpriced") {
+    return "needs rate";
+  }
+
+  const percentage = policy.percent_of_limit === null ? "" : ` (${policy.percent_of_limit}%)`;
+  if (policy.status === "over_limit") {
+    return `over advisory limit${percentage}`;
+  }
+  if (policy.status === "warning") {
+    return `advisory warning${percentage}`;
+  }
+  return `within advisory limit${percentage}`;
+}
+
 function FreeMomentActivityAudit({
   onAction,
   requestInProgress,
@@ -7889,6 +7961,10 @@ function RuntimeHealthPanel({
 }) {
   const envOk = health ? Object.values(health.env).every(Boolean) : false;
   const pressure = activeHealth?.compaction_pressure;
+  const usage24Hours = activeHealth?.usage_windows?.last_24_hours;
+  const activeBudget = activeHealth?.usage_budgets?.policies.find(
+    (policy) => policy.scope === "agent" && policy.agent === activeHealth?.agent && policy.window_hours === 24
+  );
 
   return (
     <section className={`health-panel ${expanded ? "" : "collapsed"}`} aria-label="Runtime health">
@@ -7958,6 +8034,38 @@ function RuntimeHealthPanel({
                       activeHealth.usage?.total_tokens ?? 0
                     ).toLocaleString()} tokens`}
               </dd>
+            </div>
+            <div>
+              <dt>24h estimate</dt>
+              <dd>
+                {usage24Hours?.error
+                  ? "schema needed"
+                  : usage24Hours
+                    ? usage24Hours.unpriced_calls
+                      ? `${formatUsd(usage24Hours.estimated_cost_usd)} + ${usage24Hours.unpriced_calls} unpriced`
+                      : formatUsd(usage24Hours.estimated_cost_usd)
+                    : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt>Cache reads</dt>
+              <dd>
+                {usage24Hours?.cache_read_percent === null || usage24Hours?.cache_read_percent === undefined
+                  ? "—"
+                  : `${usage24Hours.cache_read_percent}% of prompt tokens`}
+              </dd>
+            </div>
+            <div>
+              <dt>Avg model latency</dt>
+              <dd>
+                {usage24Hours?.average_latency_ms === null || usage24Hours?.average_latency_ms === undefined
+                  ? "—"
+                  : formatWorkDuration(usage24Hours.average_latency_ms)}
+              </dd>
+            </div>
+            <div>
+              <dt>24h budget</dt>
+              <dd>{formatBudgetStatus(activeBudget)}</dd>
             </div>
             <div>
               <dt>Tools</dt>
