@@ -1,12 +1,19 @@
 import "server-only";
 
-import type { AgentName } from "@/lib/agent-context";
+import { conversationIdFor, type AgentName } from "@/lib/agent-context";
 import {
   isRuntimeTurnForceStoppedError,
   RuntimeTurnForceStoppedError,
   sendAgentMessage,
+  deliverQueuedRoomRefreshAfterSafeBoundary,
   type RuntimeToolActivity
 } from "@/lib/chat-runtime";
+import {
+  activeRoomActivity,
+  claimRoomActivity,
+  releaseRoomActivity,
+  type RoomActivity
+} from "@/lib/room-activity";
 import {
   ChatTurnStore,
   type ChatTurnSnapshot,
@@ -59,7 +66,12 @@ function chatTurnStore() {
 }
 
 export function startChatTurn(input: StartInput) {
-  return chatTurnStore().start(input.agent, async ({ cancellation, reportActivity, reportPhase, turn }) => {
+  const active = activeRoomActivity(input.agent);
+  if (active) {
+    return { blocked_by: active, started: false as const, turn: null };
+  }
+
+  const started = chatTurnStore().start(input.agent, async ({ cancellation, reportActivity, reportPhase, turn }) => {
     await startRuntimeTurnRun({ id: turn.turn_id, agent: input.agent, source: "chat_api" });
 
     try {
@@ -108,8 +120,29 @@ export function startChatTurn(input: StartInput) {
       });
       throw forceStopped ? new RuntimeTurnForceStoppedError() : error;
     }
+  }, {
+    onSettled: (turn) => {
+      releaseRoomActivity(input.agent, turn.turn_id);
+      void deliverQueuedRoomRefreshAfterSafeBoundary(input.agent, conversationIdFor(turn.agent)).catch((error) => {
+        console.error("Could not deliver staged Room Refresh after chat turn.", error);
+      });
+    }
   });
+
+  if (!started.started) {
+    return { ...started, blocked_by: null as RoomActivity | null };
+  }
+
+  const claimed = claimRoomActivity({ agent: input.agent, id: started.turn.turn_id, kind: "chat_turn" });
+  if (!claimed.claimed) {
+    // Calls are synchronous until the store schedules its microtask, so this
+    // is only a defensive backstop for future runtime entry points.
+    throw new Error(`Could not claim ${input.agent}'s room for the chat turn.`);
+  }
+
+  return { ...started, blocked_by: null as RoomActivity | null };
 }
+
 
 export function getChatTurn(turnId: string) {
   return chatTurnStore().get(turnId);

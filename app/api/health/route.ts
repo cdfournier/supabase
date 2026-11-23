@@ -51,9 +51,20 @@ type ArchiveHealthRow = {
 
 type RoomRefreshTriggerHealthRow = {
   stage: "nudge_90" | "invitation_95" | "maintenance_100";
-  status: "queued" | "delivering" | "delivered" | "maintenance_pending" | "completed" | "failed";
+  status: "queued" | "waiting_for_active_turn" | "delivering" | "delivered" | "maintenance_pending" | "completed" | "cancelled" | "failed";
   pressure_percent: number;
   updated_at: string | null;
+};
+
+type RoomTransitionHealthRow = {
+  id: string;
+  trigger: string;
+  status: "queued" | "waiting_for_active_turn" | "in_progress" | "cancel_requested" | "completed" | "deferred" | "cancelled" | "failed" | "interrupted";
+  stage: "queued" | "waiting" | "model" | "tool" | "wrap_up" | "finished";
+  started_at: string | null;
+  updated_at: string;
+  cancellation_requested_at: string | null;
+  last_activity: Record<string, unknown> | null;
 };
 
 export async function GET() {
@@ -146,7 +157,8 @@ async function buildAgentHealth(
     journalResult,
     toolEventResult,
     sourceAccessResult,
-    roomRefreshTriggerResult
+    roomRefreshTriggerResult,
+    roomTransitionResult
   ] = await Promise.all([
     supabase
       .from("conversations")
@@ -198,6 +210,14 @@ async function buildAgentHealth(
       .eq("conversation_id", conversationId)
       .in("status", ["delivering", "maintenance_pending"])
       .order("updated_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("room_transition_runs")
+      .select("id, trigger, status, stage, started_at, updated_at, cancellation_requested_at, last_activity")
+      .eq("agent", agent)
+      .eq("conversation_id", conversationId)
+      .in("status", ["queued", "waiting_for_active_turn", "in_progress", "cancel_requested"])
+      .order("updated_at", { ascending: false })
       .limit(1)
   ]);
 
@@ -237,6 +257,12 @@ async function buildAgentHealth(
   const activeRoomRefreshTrigger = roomRefreshTriggerResult.error
     ? null
     : ((roomRefreshTriggerResult.data?.[0] ?? null) as RoomRefreshTriggerHealthRow | null);
+  const activeRoomTransition = roomTransitionResult.error
+    ? null
+    : ((roomTransitionResult.data?.[0] ?? null) as RoomTransitionHealthRow | null);
+  const roomTransitionTimeline = activeRoomTransition
+    ? await loadRoomTransitionTimeline(supabase, activeRoomTransition.id)
+    : [];
   const capabilityProfile = await loadAgentCapabilityProfile(supabase, agent);
   const availableTools = await filterToolsForAgent(supabase, agent, toolDefinitions);
   const [usage, usageWindows, usageBudgets] = await Promise.all([
@@ -309,6 +335,19 @@ async function buildAgentHealth(
           updated_at: activeRoomRefreshTrigger.updated_at
         }
       : null,
+    room_transition: activeRoomTransition
+      ? {
+          id: activeRoomTransition.id,
+          trigger: activeRoomTransition.trigger,
+          status: activeRoomTransition.status,
+          stage: activeRoomTransition.stage,
+          started_at: activeRoomTransition.started_at,
+          updated_at: activeRoomTransition.updated_at,
+          cancellation_requested_at: activeRoomTransition.cancellation_requested_at,
+          last_activity: activeRoomTransition.last_activity ?? {},
+          timeline: roomTransitionTimeline
+        }
+      : null,
     memory: {
       rows: memoryResult.count ?? memoryResult.data?.length ?? 0,
       active_rows: activeMemories.length,
@@ -335,6 +374,26 @@ async function buildAgentHealth(
     },
     compaction_pressure: compactionPressure(savedCharacters)
   };
+}
+
+async function loadRoomTransitionTimeline(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  runId: string
+) {
+  const { data, error } = await supabase
+    .from("room_transition_events")
+    .select("event_type, message, created_at")
+    .eq("run_id", runId)
+    .order("created_at", { ascending: true })
+    .limit(8);
+  if (error) {
+    return [];
+  }
+  return (data ?? []).map((event) => ({
+    event_type: String(event.event_type),
+    message: String(event.message),
+    created_at: String(event.created_at)
+  }));
 }
 
 function localTime() {

@@ -48,7 +48,8 @@ export class ChatTurnStore<Agent extends string, Result, Activity = unknown> {
 
   start(
     agent: Agent,
-    run: (context: ChatTurnRunContext<Agent, Result, Activity>) => Promise<Result>
+    run: (context: ChatTurnRunContext<Agent, Result, Activity>) => Promise<Result>,
+    options: { onSettled?: (turn: ChatTurnSnapshot<Agent, Result, Activity>) => void } = {}
   ) {
     this.pruneCompletedTurns();
 
@@ -102,6 +103,7 @@ export class ChatTurnStore<Agent extends string, Result, Activity = unknown> {
         turn.finished_at = new Date().toISOString();
         turn.result = result;
         this.releaseAgent(agent, turn.turn_id);
+        options.onSettled?.(turn);
       })
       .catch((error) => {
         turn.status = cancellation.forceStopRequested ? "forced_stop" : "failed";
@@ -109,6 +111,7 @@ export class ChatTurnStore<Agent extends string, Result, Activity = unknown> {
         turn.finished_at = new Date().toISOString();
         turn.error = error instanceof Error ? error.message : "Unknown error while running chat turn.";
         this.releaseAgent(agent, turn.turn_id);
+        options.onSettled?.(turn);
       });
 
     return { turn, started: true };

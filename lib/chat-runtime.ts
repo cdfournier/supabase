@@ -57,10 +57,24 @@ import { isCurrentWheelsDriver } from "@/lib/tools/wheels";
 import {
   claimRoomRefreshTrigger,
   completeRoomRefreshTrigger,
+  deferRoomRefreshTrigger,
   hasRequiredRoomRefreshMaintenance,
+  queueRoomRefreshTrigger,
   ROOM_REFRESH_NUDGE_TOOLS,
   type RoomRefreshTriggerClaim
 } from "@/lib/room-refresh-triggers";
+import {
+  activeRoomActivity,
+  claimRoomActivity,
+  releaseRoomActivity
+} from "@/lib/room-activity";
+import {
+  activeRoomTransitionForAgent,
+  reconcileInterruptedRoomTransitions,
+  registerRoomTransitionController,
+  updateRoomTransitionActivity
+} from "@/lib/room-transition-runs";
+import { RuntimeTurnCancelController } from "@/lib/free-moment-cancel-controller";
 
 type AnthropicMessage = {
   role: "user" | "assistant";
@@ -370,8 +384,8 @@ export async function sendAgentMessage(
     });
   }
 
-  if (!isRoomRefreshTriggerSource(source)) {
-    await deliverRoomRefreshCapacityTrigger(agent, conversationId);
+  if (!isRoomRefreshTriggerSource(source) && source !== "room_refresh_orientation") {
+    await queueRoomRefreshCapacityTrigger(agent, conversationId);
   }
 
   return {
@@ -486,45 +500,121 @@ function shouldGateForRequiredRoomRefresh(source: string) {
   return !isRoomRefreshTriggerSource(source) && source !== "room_refresh_orientation";
 }
 
-async function deliverRoomRefreshCapacityTrigger(agent: AgentName, conversationId: string) {
+async function queueRoomRefreshCapacityTrigger(agent: AgentName, conversationId: string) {
   if (!(await hasCompactionWriteAccess(agent))) {
     return;
   }
+
+  const trigger = await queueRoomRefreshTrigger(agent, conversationId);
+  if (!trigger) {
+    return;
+  }
+
+  const active = activeRoomActivity(agent);
+  if (active) {
+    await deferRoomRefreshTrigger(trigger, active);
+  }
+}
+
+/**
+ * Capacity arrivals run only after the room's current owner has released it.
+ * Chat and Free Moment lifecycles call this from their safe boundaries.
+ */
+export async function deliverQueuedRoomRefreshAfterSafeBoundary(agent: AgentName, conversationId: string) {
+  await reconcileInterruptedRoomTransitions();
+  if (!(await hasCompactionWriteAccess(agent))) {
+    return;
+  }
+
+  const active = activeRoomActivity(agent);
+  if (active) {
+    const queued = await queueRoomRefreshTrigger(agent, conversationId);
+    if (queued) {
+      await deferRoomRefreshTrigger(queued, active);
+    }
+    return;
+  }
+
   const trigger = await claimRoomRefreshTrigger(agent, conversationId);
   if (!trigger) {
     return;
   }
-  await deliverRoomRefreshTrigger(agent, trigger);
+
+  const activity = claimRoomActivity({ agent, id: trigger.id, kind: "room_refresh" });
+  if (!activity.claimed) {
+    await deferRoomRefreshTrigger(trigger, activity.active);
+    return;
+  }
+
+  try {
+    await deliverRoomRefreshTrigger(agent, trigger);
+  } finally {
+    releaseRoomActivity(agent, trigger.id);
+  }
 }
 
 async function settleRequiredRoomRefreshBeforeOrdinaryWork(agent: AgentName, conversationId: string) {
   if (!(await hasCompactionWriteAccess(agent))) {
     return;
   }
-  const trigger = await claimRoomRefreshTrigger(agent, conversationId, { maintenanceOnly: true });
-  if (trigger) {
-    await deliverRoomRefreshTrigger(agent, trigger);
+
+  const trigger = await queueRoomRefreshTrigger(agent, conversationId, { maintenanceOnly: true });
+  const active = activeRoomActivity(agent);
+  if (trigger && active) {
+    await deferRoomRefreshTrigger(trigger, active);
+  } else if (trigger) {
+    await deliverQueuedRoomRefreshAfterSafeBoundary(agent, conversationId);
   }
+
   if (await hasRequiredRoomRefreshMaintenance(agent, conversationId)) {
     throw new Error("Room Refresh maintenance is required before this agent can begin ordinary work.");
   }
 }
 
 async function deliverRoomRefreshTrigger(agent: AgentName, trigger: RoomRefreshTriggerClaim) {
+  const transition = await activeRoomTransitionForAgent(agent, trigger.conversation_id);
+  const cancellation = new RuntimeTurnCancelController();
+  const unregisterCancellation = transition
+    ? registerRoomTransitionController(transition.id, cancellation)
+    : () => undefined;
+
   try {
     const result = await sendAgentMessage(agent, trigger.prompt, {
       source: trigger.maintenance ? "room_refresh_maintenance" : "room_refresh_capacity",
-      ...(trigger.maintenance ? { allowedToolNames: ROOM_REFRESH_NUDGE_TOOLS } : {})
+      ...(trigger.maintenance ? { allowedToolNames: ROOM_REFRESH_NUDGE_TOOLS } : {}),
+      cancellation: {
+        signal: cancellation.abortController.signal,
+        isCancellationRequested: () => cancellation.gracefulStopRequested,
+        onPhaseChange: (phase) => {
+          void updateRoomTransitionActivity(trigger.id, phase, {
+            phase,
+            message: phase === "model"
+              ? "Waiting for the model."
+              : phase === "tool"
+                ? "Using a Room Transition tool."
+                : "Writing a safe closing note."
+          }).catch((error) => {
+            console.error("Could not persist Room Transition activity.", error);
+          });
+        }
+      }
     });
     await completeRoomRefreshTrigger(trigger, {
       refreshed: result.tool_events.some(
         (event) => event.ok && event.tool_name === "supabase_send_room_refresh"
-      )
+      ),
+      cancelled: cancellation.gracefulStopRequested
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Room Refresh trigger delivery error.";
-    await completeRoomRefreshTrigger(trigger, { refreshed: false, error: message });
+    await completeRoomRefreshTrigger(trigger, {
+      refreshed: false,
+      cancelled: cancellation.gracefulStopRequested,
+      error: cancellation.gracefulStopRequested ? null : message
+    });
     throw error;
+  } finally {
+    unregisterCancellation();
   }
 }
 

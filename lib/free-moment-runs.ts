@@ -43,22 +43,22 @@ type FreeMomentRunRow = Omit<FreeMomentRunReceipt, "agent" | "last_activity"> & 
 let receiptsUnavailable = false;
 let warnedAboutUnavailableReceipts = false;
 
-export async function startFreeMomentRun(agent: AgentName) {
+export async function startFreeMomentRun(agent: AgentName, id: string = randomUUID()) {
   if (receiptsUnavailable) {
-    return ephemeralReceipt(agent);
+    return ephemeralReceipt(agent, id);
   }
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("free_moment_runs")
-    .insert({ agent, source: "free_time", status: "running", phase: "preparing" })
+    .insert({ id, agent, source: "free_time", status: "running", phase: "preparing" })
     .select("id, agent, status, phase, started_at, cancellation_requested_at, cancellation_mode, cancellation_reason, last_activity, completed_at, error")
     .single();
 
   if (error || !data) {
     if (isReceiptTableUnavailable(error)) {
       noteUnavailableReceipts();
-      return ephemeralReceipt(agent);
+      return ephemeralReceipt(agent, id);
     }
     throw new Error(`Could not create Free Moment receipt: ${error?.message ?? "no row returned"}`);
   }
@@ -304,9 +304,9 @@ function defaultFinishMessage(status: FreeMomentRunStatus) {
   return messages[status] ?? "Free Moment ended.";
 }
 
-function ephemeralReceipt(agent: AgentName): FreeMomentRunReceipt {
+function ephemeralReceipt(agent: AgentName, id: string = `ephemeral-${randomUUID()}`): FreeMomentRunReceipt {
   return {
-    id: `ephemeral-${randomUUID()}`,
+    id,
     agent,
     status: "running",
     phase: "preparing",

@@ -42,6 +42,24 @@ test("chat turns acknowledge immediately, complete in the background, and releas
   assert.notEqual(nextTurn.turn.turn_id, started.turn.turn_id);
 });
 
+test("chat turn settlement callback runs after the agent is released", async () => {
+  const store = new ChatTurnStore<"soren", { reply: string }>();
+  let settledWithActiveAgent = true;
+
+  store.start(
+    "soren",
+    async () => ({ reply: "finished" }),
+    {
+      onSettled: () => {
+        settledWithActiveAgent = store.active().some((turn) => turn.agent === "soren");
+      }
+    }
+  );
+
+  await settle();
+  assert.equal(settledWithActiveAgent, false);
+});
+
 test("chat turn failures remain readable and release the agent", async () => {
   const store = new ChatTurnStore<"soren" | "varro", never>();
   const started = store.start("varro", async () => {

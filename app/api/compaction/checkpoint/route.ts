@@ -9,6 +9,7 @@ import {
   finalizeCompactionArchive,
   formatCompactionCheckpoint
 } from "@/lib/compaction";
+import { activeRoomActivity, claimRoomActivity, releaseRoomActivity } from "@/lib/room-activity";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 const MAX_CHECKPOINT_CHARS = 30_000;
@@ -36,6 +37,27 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseAdmin();
     const conversationId = await ensureConversation(supabase, agent);
+    const active = activeRoomActivity(agent);
+    if (active) {
+      return NextResponse.json(
+        {
+          error: `Housekeeping is waiting for ${active.kind.replaceAll("_", " ")} to reach a safe boundary. Review and send the Room Note again once the room is free.`
+        },
+        { status: 409 }
+      );
+    }
+    const transitionId = randomUUID();
+    const ownership = claimRoomActivity({ agent, id: transitionId, kind: "room_refresh" });
+    if (!ownership.claimed) {
+      return NextResponse.json(
+        {
+          error: `Housekeeping is waiting for ${ownership.active.kind.replaceAll("_", " ")} to reach a safe boundary. Review and send the Room Note again once the room is free.`
+        },
+        { status: 409 }
+      );
+    }
+
+    try {
     const checkpointMessageId = randomUUID();
     const source = String(body.source ?? "compiled_compaction_proposal");
     const proposalId = proposalIdFromBody(body.proposal_id, source);
@@ -83,6 +105,9 @@ export async function POST(request: Request) {
       next_step:
         "Restart or continue normally. The runtime will use this Room Refresh plus messages after it as active context."
     });
+    } finally {
+      releaseRoomActivity(agent, transitionId);
+    }
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown Room Refresh error" },

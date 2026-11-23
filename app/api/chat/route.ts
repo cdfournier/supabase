@@ -26,20 +26,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Message is required." }, { status: 400 });
     }
 
-    const { turn, started } = startChatTurn({ agent, message, attachments });
+    const result = startChatTurn({ agent, message, attachments });
 
-    if (!started) {
+    if (!result.started) {
+      const blockedBy = result.blocked_by;
       return NextResponse.json(
         {
-          error: `${agent} already has a turn in progress.`,
-          turn_id: turn.turn_id,
-          status: turn.status
+          error: blockedBy
+            ? `${agent}'s room is currently owned by ${blockedBy.kind.replaceAll("_", " ")}; this message was not started.`
+            : `${agent} already has a turn in progress.`,
+          ...(result.turn
+            ? { turn_id: result.turn.turn_id, status: result.turn.status }
+            : { blocked_by: blockedBy })
         },
         { status: 409 }
       );
     }
 
-    return NextResponse.json(turn, { status: 202 });
+    return NextResponse.json(result.turn, { status: 202 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },

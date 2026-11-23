@@ -546,9 +546,20 @@ type AgentHealth = {
   };
   room_refresh_trigger?: {
     stage: "nudge_90" | "invitation_95" | "maintenance_100";
-    status: "delivering" | "maintenance_pending";
+    status: "waiting_for_active_turn" | "delivering" | "maintenance_pending";
     pressure_percent: number;
     updated_at: string | null;
+  } | null;
+  room_transition?: {
+    id: string;
+    trigger: string;
+    status: "queued" | "waiting_for_active_turn" | "in_progress" | "cancel_requested" | "completed" | "deferred" | "cancelled" | "failed" | "interrupted";
+    stage: "queued" | "waiting" | "model" | "tool" | "wrap_up" | "finished";
+    started_at: string | null;
+    updated_at: string;
+    cancellation_requested_at: string | null;
+    last_activity: Record<string, unknown>;
+    timeline: Array<{ event_type: string; message: string; created_at: string }>;
   } | null;
   usage?: UsageTotals;
   usage_windows?: UsageWindows;
@@ -2056,6 +2067,31 @@ export default function Home() {
   }, [activeMessages.length, selectedAgent]);
 
   useEffect(() => {
+    const hasActiveRoomTransition = Boolean(
+      health?.agents.some((agent) => {
+        const status = agent.room_transition?.status;
+        return status === "queued" || status === "waiting_for_active_turn" || status === "in_progress" || status === "cancel_requested";
+      })
+    );
+
+    if (!hasActiveRoomTransition) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
+      void fetch("/api/health", { cache: "no-store" })
+        .then((response) => readJsonResponse<Health & { error?: string }>(response))
+        .then((data) => setHealth(data))
+        .catch(() => undefined);
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [health]);
+
+  useEffect(() => {
     const hasActiveFreeMoment = Boolean(freeTime?.active_run);
     const shouldPoll = Boolean(
       freeTime?.running || freeTime?.turn_in_progress || hasActiveFreeMoment || freeTimeRequestInProgress
@@ -2367,6 +2403,28 @@ export default function Home() {
       );
     } finally {
       setCheckpointLoading(false);
+    }
+  }
+
+  async function cancelRoomTransition(transitionId: string) {
+    setCompactionError("");
+    try {
+      const response = await fetch(`/api/room-transitions/${encodeURIComponent(transitionId)}/cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const data = await readJsonResponse<{ error?: string }>(response);
+      if (!response.ok) {
+        throw new Error(data.error || "Could not cancel Room Transition.");
+      }
+      const healthResponse = await fetch("/api/health", { cache: "no-store" });
+      const healthData = await readJsonResponse<Health & { error?: string }>(healthResponse);
+      if (healthResponse.ok) {
+        setHealth(healthData);
+      }
+    } catch (cancelError) {
+      setCompactionError(cancelError instanceof Error ? cancelError.message : "Could not cancel Room Transition.");
     }
   }
 
@@ -3807,6 +3865,7 @@ export default function Home() {
           compileLoading={compileLoading}
           expanded={controlPanels.runtime}
           health={health}
+          onCancelRoomTransition={cancelRoomTransition}
           onCompileProposal={compileCompactionProposal}
           onToggle={() => toggleControlPanel("runtime")}
           onLoadApprovedProposal={loadApprovedCompactionProposal}
@@ -7953,6 +8012,7 @@ function RuntimeHealthPanel({
   compileLoading,
   expanded,
   health,
+  onCancelRoomTransition,
   onCompileProposal,
   onLoadApprovedProposal,
   onPreviewCompaction,
@@ -7968,6 +8028,7 @@ function RuntimeHealthPanel({
   compileLoading: boolean;
   expanded: boolean;
   health: Health | null;
+  onCancelRoomTransition: (transitionId: string) => void;
   onCompileProposal: () => void;
   onLoadApprovedProposal: () => void;
   onPreviewCompaction: () => void;
@@ -7979,6 +8040,7 @@ function RuntimeHealthPanel({
   const pressure = activeHealth?.compaction_pressure;
   const pressurePercent = Math.min(100, Math.max(0, pressure?.percent ?? 0));
   const roomRefreshTrigger = activeHealth?.room_refresh_trigger ?? null;
+  const roomTransition = activeHealth?.room_transition ?? null;
   const usage24Hours = activeHealth?.usage_windows?.last_24_hours;
   const activeBudget = activeHealth?.usage_budgets?.policies.find(
     (policy) => policy.scope === "agent" && policy.agent === activeHealth?.agent && policy.window_hours === 24
@@ -8139,10 +8201,44 @@ function RuntimeHealthPanel({
                   : "Room Review arrival is being delivered."}
               </p>
             ) : null}
+            {roomRefreshTrigger?.status === "waiting_for_active_turn" ? (
+              <p className="room-refresh-task pending" role="status">
+                Housekeeping is staged until the active room turn reaches a safe boundary.
+              </p>
+            ) : null}
             {roomRefreshTrigger?.status === "maintenance_pending" ? (
               <p className="room-refresh-task pending" role="status">
                 Housekeeping remains required before ordinary work can resume.
               </p>
+            ) : null}
+            {roomTransition ? (
+              <div className="room-transition" role="status">
+                <p>
+                  <strong>Room Transition · {roomTransition.status.replaceAll("_", " ")}</strong>
+                  {` · ${roomTransition.trigger.replaceAll("_", " ")} · ${roomTransition.stage}`}
+                </p>
+                <p>{typeof roomTransition.last_activity.message === "string" ? roomTransition.last_activity.message : "Waiting for the next safe step."}</p>
+                {roomTransition.timeline.length ? (
+                  <ol className="room-transition-timeline">
+                    {roomTransition.timeline.map((event) => (
+                      <li key={`${event.created_at}-${event.event_type}`}>
+                        <time dateTime={event.created_at}>{formatShortTime(event.created_at)}</time>
+                        {event.message}
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
+                {roomTransition.status === "queued" || roomTransition.status === "waiting_for_active_turn" || roomTransition.status === "in_progress" || roomTransition.status === "cancel_requested" ? (
+                  <button
+                    className="quiet-action"
+                    disabled={roomTransition.status === "cancel_requested"}
+                    onClick={() => onCancelRoomTransition(roomTransition.id)}
+                    type="button"
+                  >
+                    {roomTransition.status === "cancel_requested" ? "Stopping safely" : "Cancel Room Transition"}
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             <p>{health?.compaction.status ?? "unknown"} · {health?.compaction.mode ?? "manual"}</p>
             {activeHealth.conversation.latest_checkpoint_at ? (

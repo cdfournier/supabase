@@ -1,5 +1,6 @@
 import "server-only";
-import type { AgentName } from "@/lib/agent-context";
+import { randomUUID } from "node:crypto";
+import { conversationIdFor, type AgentName } from "@/lib/agent-context";
 import {
   actionLimitForSurface,
   isSurfaceAllowed,
@@ -7,6 +8,7 @@ import {
   writeActionLimitForSurface
 } from "@/lib/capability-profile";
 import {
+  deliverQueuedRoomRefreshAfterSafeBoundary,
   isRuntimeTurnForceStoppedError,
   sendAgentMessage,
   type RuntimeToolActivity
@@ -22,6 +24,11 @@ import {
   type FreeMomentRunReceipt
 } from "@/lib/free-moment-runs";
 import { FreeMomentCancelController } from "@/lib/free-moment-cancel-controller";
+import {
+  activeRoomActivity,
+  claimRoomActivity,
+  releaseRoomActivity
+} from "@/lib/room-activity";
 import {
   loadRecentFreeMomentSchedulerEvents,
   recordFreeMomentSchedulerEvent,
@@ -433,6 +440,28 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
   }
 
   const actionLimit = actionLimitForSurface(capabilityProfile, "free_moments");
+  const existingActivity = activeRoomActivity(agent);
+  if (existingActivity) {
+    await addEvent(
+      "tick_skipped",
+      `Free Moment deferred for ${agent}; the room is owned by ${existingActivity.kind.replaceAll("_", " ")}.`,
+      agent,
+      { active_activity_id: existingActivity.id, active_activity_kind: existingActivity.kind }
+    );
+    return "skipped";
+  }
+
+  const roomActivityId = randomUUID();
+  const roomClaim = claimRoomActivity({ agent, id: roomActivityId, kind: "free_moment" });
+  if (!roomClaim.claimed) {
+    await addEvent(
+      "tick_skipped",
+      `Free Moment deferred for ${agent}; the room is owned by ${roomClaim.active.kind.replaceAll("_", " ")}.`,
+      agent,
+      { active_activity_id: roomClaim.active.id, active_activity_kind: roomClaim.active.kind }
+    );
+    return "skipped";
+  }
 
   await addEvent("turn_started", `Free Moment turn started for ${agent}.`, agent, {
     action_limit: actionLimit,
@@ -441,8 +470,9 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
   let receipt: FreeMomentRunReceipt;
 
   try {
-    receipt = await startFreeMomentRun(agent);
+    receipt = await startFreeMomentRun(agent, roomActivityId);
   } catch (error) {
+    releaseRoomActivity(agent, roomActivityId);
     const message = error instanceof Error ? error.message : "Could not create a Free Moment receipt.";
     state.lastError = message;
     state.lastAgent = agent;
@@ -561,6 +591,10 @@ async function runAgentTurn(agent: AgentName): Promise<FreeMomentRunOutcome> {
     }
     state.lastAgent = agent;
     state.lastTurnAt = new Date().toISOString();
+    releaseRoomActivity(agent, roomActivityId);
+    void deliverQueuedRoomRefreshAfterSafeBoundary(agent, conversationIdFor(agent)).catch((error) => {
+      console.error("Could not deliver staged Room Refresh after Free Moment.", error);
+    });
   }
 
   return outcome;

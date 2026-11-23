@@ -6,6 +6,13 @@ import {
   loadConversationMessages
 } from "@/lib/agent-context";
 import { latestCompactionCheckpoint, messagesAfterCheckpoint } from "@/lib/compaction";
+import type { RoomActivity } from "@/lib/room-activity";
+import {
+  ensureRoomTransition,
+  finishRoomTransition,
+  markRoomTransitionInProgress,
+  markRoomTransitionWaiting
+} from "@/lib/room-transition-runs";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const ROOM_REFRESH_NUDGE_TOOLS = [
@@ -25,10 +32,12 @@ export const ROOM_REFRESH_NUDGE_TOOLS = [
 export type RoomRefreshTriggerStage = "nudge_90" | "invitation_95" | "maintenance_100";
 export type RoomRefreshTriggerStatus =
   | "queued"
+  | "waiting_for_active_turn"
   | "delivering"
   | "delivered"
   | "maintenance_pending"
   | "completed"
+  | "cancelled"
   | "failed";
 
 export type RoomRefreshTrigger = {
@@ -63,6 +72,58 @@ export async function claimRoomRefreshTrigger(
     return null;
   }
 
+  const trigger = await queueRoomRefreshTrigger(agent, conversationId, options);
+
+  if (!trigger) {
+    return null;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const claimableStatuses = trigger.stage === "maintenance_100"
+    ? ["queued", "waiting_for_active_turn", "maintenance_pending", "failed"]
+    : ["queued", "waiting_for_active_turn"];
+  const { data, error } = await supabase
+    .from("room_refresh_trigger_receipts")
+    .update({
+      status: "delivering",
+      attempts: trigger.attempts + 1,
+      last_error: null,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", trigger.id)
+    .in("status", claimableStatuses)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingSchemaError(error)) {
+      return null;
+    }
+    throw new Error(`Could not claim Room Refresh trigger: ${error.message}`);
+  }
+  if (!data) {
+    return null;
+  }
+
+  const claimed = normalizeTrigger(data);
+  await recordTriggerEvent(claimed.id, "delivery_claimed", "Room Refresh capacity arrival claimed for delivery.", {
+    attempts: claimed.attempts,
+    pressure_percent: claimed.pressure_percent,
+    stage: claimed.stage
+  });
+  await markRoomTransitionInProgress(claimed.id);
+  return {
+    ...claimed,
+    maintenance: claimed.stage === "maintenance_100",
+    prompt: promptFor(claimed)
+  };
+}
+
+export async function queueRoomRefreshTrigger(
+  agent: AgentName,
+  conversationId: string,
+  options: { maintenanceOnly?: boolean } = {}
+): Promise<RoomRefreshTrigger | null> {
   const supabase = getSupabaseAdmin();
   const messages = await loadConversationMessages(supabase, conversationId);
   const checkpoint = latestCompactionCheckpoint(messages);
@@ -119,55 +180,53 @@ export async function claimRoomRefreshTrigger(
     throw new Error(`Could not read queued Room Refresh trigger: ${existingError?.message ?? "no row returned"}`);
   }
 
-  const claimableStatuses = stage === "maintenance_100"
-    ? ["queued", "maintenance_pending", "failed"]
-    : ["queued"];
-  const { data, error } = await supabase
+  const trigger = normalizeTrigger(existing);
+  await ensureRoomTransition({
+    agent: trigger.agent,
+    conversationId: trigger.conversation_id,
+    triggerReceiptId: trigger.id,
+    trigger: trigger.stage
+  });
+  return trigger;
+}
+
+export async function deferRoomRefreshTrigger(trigger: RoomRefreshTrigger, active: RoomActivity) {
+  const message = `Room Refresh is waiting for ${active.kind.replaceAll("_", " ")} to reach a safe boundary.`;
+  const { data, error } = await getSupabaseAdmin()
     .from("room_refresh_trigger_receipts")
     .update({
-      status: "delivering",
-      attempts: Number(existing.attempts ?? 0) + 1,
+      status: "waiting_for_active_turn",
       last_error: null,
-      saved_characters: savedCharacters,
-      pressure_percent: pressurePercent,
-      updated_at: now
+      updated_at: new Date().toISOString()
     })
-    .eq("agent", agent)
-    .eq("conversation_id", conversationId)
-    .eq("cycle_checkpoint_position", cycleCheckpointPosition)
-    .eq("stage", stage)
-    .in("status", claimableStatuses)
-    .select("*")
-    .maybeSingle();
+    .eq("id", trigger.id)
+    .in("status", ["queued", "waiting_for_active_turn"])
+    .select("id");
 
   if (error) {
     if (isMissingSchemaError(error)) {
-      return null;
+      return;
     }
-    throw new Error(`Could not claim Room Refresh trigger: ${error.message}`);
-  }
-  if (!data) {
-    return null;
+    throw new Error(`Could not defer Room Refresh trigger: ${error.message}`);
   }
 
-  const trigger = normalizeTrigger(data);
-  await recordTriggerEvent(trigger.id, "delivery_claimed", "Room Refresh capacity arrival claimed for delivery.", {
-    attempts: trigger.attempts,
-    pressure_percent: trigger.pressure_percent,
-    stage: trigger.stage
-  });
-  return {
-    ...trigger,
-    maintenance: trigger.stage === "maintenance_100",
-    prompt: promptFor(trigger)
-  };
+  if (data?.length) {
+    await recordTriggerEvent(trigger.id, "deferred_for_active_turn", message, {
+      active_activity_id: active.id,
+      active_activity_kind: active.kind,
+      active_since: active.started_at
+    });
+    await markRoomTransitionWaiting(trigger.id, active);
+  }
 }
 
 export async function completeRoomRefreshTrigger(
   trigger: RoomRefreshTrigger,
-  options: { refreshed: boolean; error?: string | null }
+  options: { refreshed: boolean; cancelled?: boolean; error?: string | null }
 ) {
-  const status: RoomRefreshTriggerStatus = options.refreshed
+  const status: RoomRefreshTriggerStatus = options.cancelled
+    ? "cancelled"
+    : options.refreshed
     ? "completed"
     : trigger.stage === "maintenance_100"
       ? "maintenance_pending"
@@ -193,12 +252,19 @@ export async function completeRoomRefreshTrigger(
       status,
       status === "completed"
         ? "Room Refresh maintenance completed with an agent-owned refresh."
+        : status === "cancelled"
+          ? "Room Refresh capacity arrival was cancelled at a safe boundary."
         : status === "maintenance_pending"
           ? "Room Refresh maintenance ended without a refresh and remains required."
           : status === "failed"
             ? "Room Refresh capacity arrival failed before it could settle."
             : "Room Refresh capacity arrival was delivered.",
       options.error ? { error: options.error.slice(0, 2_000) } : {}
+    );
+    await finishRoomTransition(
+      trigger.id,
+      status === "completed" ? "completed" : status === "cancelled" ? "cancelled" : status === "failed" ? "failed" : "deferred",
+      { error: options.error ?? null }
     );
   }
 }
@@ -219,7 +285,7 @@ export async function hasRequiredRoomRefreshMaintenance(agent: AgentName, conver
     .eq("conversation_id", conversationId)
     .eq("cycle_checkpoint_position", cycleCheckpointPosition)
     .eq("stage", "maintenance_100")
-    .in("status", ["queued", "delivering", "maintenance_pending", "failed"])
+    .in("status", ["queued", "waiting_for_active_turn", "delivering", "maintenance_pending", "failed"])
     .limit(1)
     .maybeSingle();
 
