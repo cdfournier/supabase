@@ -951,6 +951,7 @@ type ControlPanelState = Record<ControlPanelKey, boolean>;
 
 const defaultAgent: AgentName = "soren";
 const freeTimePollMs = 30_000;
+const activeFreeTimePollMs = 5_000;
 const workPacketSignalsPollMs = 15_000;
 const liveTranscriptLimit = 120;
 const chatTurnPollMs = 1500;
@@ -1244,7 +1245,7 @@ export default function Home() {
 
   const loadFreeTimeStatus = useCallback(async () => {
     try {
-      const response = await fetch("/api/free-time");
+      const response = await fetch("/api/free-time", { cache: "no-store" });
       const data = await readJsonResponse<FreeTimeStatus & { error?: string }>(response);
 
       if (!response.ok) {
@@ -2055,8 +2056,9 @@ export default function Home() {
   }, [activeMessages.length, selectedAgent]);
 
   useEffect(() => {
+    const hasActiveFreeMoment = Boolean(freeTime?.active_run);
     const shouldPoll = Boolean(
-      freeTime?.running || freeTime?.turn_in_progress || freeTimeRequestInProgress
+      freeTime?.running || freeTime?.turn_in_progress || hasActiveFreeMoment || freeTimeRequestInProgress
     );
 
     if (!freeTimeStatusLoadedRef.current) {
@@ -2070,12 +2072,18 @@ export default function Home() {
 
     const interval = window.setInterval(() => {
       void loadFreeTimeStatus();
-    }, freeTimePollMs);
+    }, hasActiveFreeMoment ? activeFreeTimePollMs : freeTimePollMs);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [freeTime?.running, freeTime?.turn_in_progress, freeTimeRequestInProgress, loadFreeTimeStatus]);
+  }, [
+    freeTime?.active_run,
+    freeTime?.running,
+    freeTime?.turn_in_progress,
+    freeTimeRequestInProgress,
+    loadFreeTimeStatus
+  ]);
 
   useEffect(() => {
     const shouldPoll = Boolean(
@@ -4218,12 +4226,6 @@ export default function Home() {
           </section>
         ) : null}
 
-        <FreeMomentActivityAudit
-          requestInProgress={freeTimeRequestInProgress}
-          status={freeTime}
-          onAction={runFreeTimeAction}
-        />
-
         <div className="transcript" ref={transcriptRef}>
           {loading ? <p className="empty">Loading seeded context...</p> : null}
 
@@ -4437,10 +4439,10 @@ function FreeMomentActivityAudit({
     <>
       <details className="tool-audit free-moment-audit" open>
         <summary>
-          <span>Tool activity</span>
+          <span>Live Free Moment</span>
           <span>{`${agentName}'s Free Moment active · ${elapsed}`}</span>
         </summary>
-        <div className="free-moment-audit-body">
+        <div aria-live="polite" className="free-moment-audit-body">
           <div className="tool-call-meta">
             <strong>{activityLabel}</strong>
             <span>
@@ -6441,7 +6443,9 @@ function FreeTimePanel({
   error: string;
   expanded: boolean;
   loading: boolean;
-  onAction: (action: "start" | "stop" | "tick") => void;
+  onAction: (
+    action: "start" | "stop" | "tick" | "cancel_current" | "force_stop_current"
+  ) => void;
   onActionLimit: (agent: AgentName, actionLimit: number | null) => Promise<boolean>;
   onToggle: () => void;
   requestInProgress: boolean;
@@ -6542,6 +6546,12 @@ function FreeTimePanel({
               Wake {selectedAgent} Now
             </button>
           </div>
+
+          <FreeMomentActivityAudit
+            requestInProgress={requestInProgress}
+            status={status}
+            onAction={onAction}
+          />
 
           <FreeMomentActionBudgets
             disabled={disabled}
